@@ -686,11 +686,18 @@ function parse_file_by_type!(data::ExpertModeData, file_type::String, file_path:
                         if length(tokens) >= 2
                             idx = safe_parse_int(tokens[1], -1)
                             value = safe_parse_float(tokens[2])
+                            # --- parton-mode (fork addition) ---
+                            # ParaQPTrans は運動量射影では複素位相 exp(2πi k·R)。
+                            # 3 列目(虚部)を読まないと k ≠ 0 で位相が丸ごと落ち、
+                            # しかもエラーにならず「重み 0 の項」として静かに消える。
+                            # 2 列の既存ファイルは虚部 0 として従来どおり読める。
+                            imag_value = length(tokens) >= 3 ? safe_parse_float(tokens[3]) : 0.0
+                            # --- end parton-mode ---
                             if idx >= 0
                                 while length(para_qp_trans) <= idx
                                     push!(para_qp_trans, ComplexF64(0.0))
                                 end
-                                para_qp_trans[idx+1] = ComplexF64(value)
+                                para_qp_trans[idx+1] = ComplexF64(value, imag_value)
                             end
                             line_idx += 1
                             break

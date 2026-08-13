@@ -110,8 +110,22 @@ end
     parton_ensure_qp!(data)
 
 QP 写像と重みを用意する。qptransidx.def が無い入力では恒等写像 1 本
-(n_qp = 1、重み 1)を実体化する。射影ありの入力ではパーサが埋めた
-qp_trans / qp_trans_sgn をそのまま使う。
+(n_qp = 1、重み 1)を実体化する。
+
+## 添字規約(v3.6)
+
+`qptransidx.def` から読んだ `data.qp_trans` は **値が 0-based**(upstream の
+`slater_update.jl:642` が `xqp[ri+1]` の結果をそのまま 0-based サイトとして
+扱う規約)。一方パートン側の契約 1/2/3/5 は写像の返り値を **Φ の行番号**として
+使うので 1-based でなければならない。
+
+DESIGN §3.1 規則 8 の「0→1based 変換は一箇所だけ」を qp 写像にも適用し、
+**ここで 1 回だけ**変換する。使用箇所(5 箇所)ごとに `+1` を足す方式にしない —
+今後の追加で忘れると静かに 1 行ずれる。
+
+変換は冪等にしてある(既に 1-based なら触らない)。恒等フォールバックが
+`collect(1:n_site)` を入れる経路と、パーサが 0-based を入れる経路の両方が
+ここを通るため。
 """
 function parton_ensure_qp!(data::ExpertModeData)
     n_site = data.modpara.nsite
@@ -120,7 +134,39 @@ function parton_ensure_qp!(data::ExpertModeData)
         data.qp_trans_sgn = [ones(Int, n_site)]
         data.modpara.nmp_trans = 1
         data.para_qp_trans = ComplexF64[1]
+    else
+        parton_normalize_qp_trans!(data)
     end
     MVMCExpertModeParsers.init_qp_weight!(data)
+    return data
+end
+
+"""
+    parton_normalize_qp_trans!(data)
+
+`data.qp_trans` を 0-based → 1-based に正規化する(冪等)。
+
+判定は「値の最小が 0 なら 0-based」。写像は全単射なので 0-based なら必ず 0 を
+含み、1-based なら必ず 1..n_site に収まる。どちらでもない値があれば入力が
+壊れているのでエラーにする(黙って 1 行ずれるより落とす)。
+"""
+function parton_normalize_qp_trans!(data::ExpertModeData)
+    n_site = data.modpara.nsite
+    for (qp, m) in enumerate(data.qp_trans)
+        length(m) == n_site || throw(ArgumentError(
+            "qptransidx.def: mapping $qp has $(length(m)) entries, expected Nsite = $n_site"))
+        lo, hi = extrema(m)
+        if lo == 0 && hi == n_site - 1
+            data.qp_trans[qp] = m .+ 1                 # 0-based → 1-based
+        elseif lo == 1 && hi == n_site
+            # 既に 1-based(恒等フォールバック経路)。何もしない
+        else
+            throw(ArgumentError(
+                "qptransidx.def: mapping $qp has values in [$lo, $hi]; expected either " *
+                "0-based [0, $(n_site - 1)] or 1-based [1, $n_site]"))
+        end
+        length(Set(data.qp_trans[qp])) == n_site || throw(ArgumentError(
+            "qptransidx.def: mapping $qp is not a bijection on the sites"))
+    end
     return data
 end
