@@ -64,7 +64,6 @@ const MVMC_KEYWORDS = Dict{String,String}(
     "InOrbitalParallel" => "inorbitalparallel.def",
     "InOrbitalGeneral" => "inorbitalgeneral.def",
     "InOptTrans" => "inopttrans.def",
-    "InPartonMFPara" => "inpmfpara.def", # Parton-mode (fork addition)
 )
 
 # Keyword indices matching C enum KWIdxInt
