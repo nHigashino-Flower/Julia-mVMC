@@ -84,6 +84,13 @@ mutable struct PartonMFHamiltonian
     dh_uo_scratch::Matrix{ComplexF64}
     min_gap::Float64
 
+    # フレーバー対称フラグ(v3.9 det^F 高速路)。idx 写像と t^(f) が全フレーバーで
+    # 一致し、かつ PartonFlavorSymFast ≠ 0 のとき true。契約 0 の build が解決する。
+    # true なら H^(f)・Φ^(f)・∂Φ^(f) が全フレーバーで同一なので、f=1 だけ計算して
+    # 残りへコピーし、振幅ブロックは 1 フレーバー分だけ持つ(PartonAmplitudeData
+    # の n_stored = 1)。
+    flavor_symmetric::Bool
+
     # ゲージ平坦方向(起動時に契約 0 の build が解決する。DESIGN §2.5)
     # - gauge_scale_groups[g]: 同時に実数正倍できる idx 集合。独立なスケール群の数は
     #   idx のフレーバー共有パターンで決まるので、フレーバー数を仮定しないこと
@@ -106,6 +113,7 @@ mutable struct PartonMFHamiltonian
             [[zeros(ComplexF64, n_site, n_elec) for _ = 1:n_dof] for _ = 1:n_flavor],
             zeros(ComplexF64, n_site, n_elec),
             Inf,
+            false,
             Vector{Int}[],
             Vector{Int}[],
             Float64[],
@@ -294,21 +302,34 @@ mutable struct PartonAmplitudeData
     n_flavor::Int
     n_elec::Int
 
-    function PartonAmplitudeData(n_qp::Int, n_flavor::Int, n_elec::Int)
-        n_block = n_qp * n_flavor
+    # 実際に保持するフレーバーブロック数(v3.9 det^F 高速路)。
+    # フレーバー対称なら 1(全物理フレーバー f が同じブロックへ別名参照される)、
+    # そうでなければ n_flavor。**書き込み側のループ(契約 1 の再計算・契約 3 の
+    # 更新・契約 2/5 の重い縮約)は 1:n_stored を回り、読み出し側の積・和は
+    # 1:n_flavor のまま**別名ブロックを読む — これで積の評価順が変わらず、
+    # det / ip / 比 / E_loc は高速路 ON/OFF でビット一致する。
+    n_stored::Int
+
+    function PartonAmplitudeData(n_qp::Int, n_flavor::Int, n_elec::Int;
+                                 n_stored::Int = n_flavor)
+        n_stored == n_flavor || n_stored == 1 || throw(ArgumentError(
+            "n_stored must be 1 (flavor-symmetric) or n_flavor, got $n_stored"))
+        n_block = n_qp * n_stored
         new(
             zeros(ComplexF64, n_block * n_elec * n_elec),
             zeros(ComplexF64, n_block),
             n_qp,
             n_flavor,
             n_elec,
+            n_stored,
         )
     end
 end
 
-"(qp, f) → ブロック番号(1-based)。ストライドを書いてよい場所その 1。"
+"(qp, f) → ブロック番号(1-based)。ストライドを書いてよい場所その 1。
+対称レイアウト(n_stored = 1)では全フレーバーが同じブロックへ別名参照される。"
 @inline block_index(amp::PartonAmplitudeData, qp::Int, f::Int) =
-    (qp - 1) * amp.n_flavor + f
+    (qp - 1) * amp.n_stored + min(f, amp.n_stored)
 
 "(qp, f) の A⁻¹ を Ne×Ne 行列ビューとして返す。ストライドを書いてよい場所その 2。"
 @inline function inv_block(amp::PartonAmplitudeData, qp::Int, f::Int)
@@ -347,6 +368,32 @@ end
 # =====================================================================
 
 """
+    PartonMainCalThreadContext
+
+測定フェーズ(`parton_main_cal!`)のサンプル並列(§4 層 2)用のスレッド別
+ワークスペース。**サンプル並列が正しいのは測定フェーズが乱数を消費しない**
+(保存済み配置を舐めるだけ)から。マルコフ連鎖(`parton_make_sample!`)には
+適用しないこと — 乱数消費順が再現性そのもの。
+
+蓄積のビット一致は「並列フェーズはサンプルごとの (E_loc, O) を書くだけ、
+縮約はサンプル順の逐次パスで従来と同一の演算列」という構成で保証する。
+スレッド数にも依存しない(チャンク割りは並列フェーズの独立計算にしか
+影響しない)。
+
+メモリは (cfg + amp + ws + 単一 O ベクトル) × n_thread と、サンプル別の
+(E_loc, O) が len(sr_opt_o) × NVMCSample。
+"""
+mutable struct PartonMainCalThreadContext
+    cfgs::Vector{PartonConfiguration}
+    amps::Vector{PartonAmplitudeData}
+    wss::Vector{PartonSamplingWorkspace}
+    timers::Vector{CTimer}
+    e_all::Vector{ComplexF64}       # サンプル別 E_loc
+    ok_all::Vector{Bool}            # ノード上(ip ≈ 0)でなかったか
+    o_all::Matrix{ComplexF64}       # サンプル別 O(列 = サンプル)
+end
+
+"""
     PartonOptimizationState
 
 既存機構への窓口(`state`)とパートン固有の 4 部品をまとめた外箱。
@@ -360,7 +407,20 @@ mutable struct PartonOptimizationState
     workspace::PartonSamplingWorkspace
     mfham::PartonMFHamiltonian
     physham::PartonPhysHamiltonian
+
+    # §4 層 2 のスレッド別ワークスペース(遅延確保。逐次経路では nothing のまま)
+    thread_ctx::Union{Nothing,PartonMainCalThreadContext}
 end
+
+# 既存の 6 引数構築(スレッド文脈なし)を維持する
+PartonOptimizationState(
+    state::VMCOptimizationState,
+    amp::PartonAmplitudeData,
+    config::PartonConfiguration,
+    workspace::PartonSamplingWorkspace,
+    mfham::PartonMFHamiltonian,
+    physham::PartonPhysHamiltonian,
+) = PartonOptimizationState(state, amp, config, workspace, mfham, physham, nothing)
 
 # 既存関数への委譲。新しい振る舞いは足さず、`state` へ橋渡しするだけ。
 weight_average_we!(ctx::ParallelContext, st::PartonOptimizationState,

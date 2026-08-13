@@ -204,6 +204,9 @@ function parse_modpara_parameter!(
         params.parton_block_update_size = safe_parse_int(value, DEFAULT_PARTON_BLOCK_UPDATE_SIZE)
     elseif name == "PartonGaugeFix"
         params.parton_gauge_fix = safe_parse_int(value, DEFAULT_PARTON_GAUGE_FIX)
+    elseif name == "PartonFlavorSymFast"
+        params.parton_flavor_sym_fast =
+            safe_parse_int(value, DEFAULT_PARTON_FLAVOR_SYM_FAST)
     elseif name == "NParticle" || name == "NPartonPerFlavor"
         # NElec の別名。同一フィールドへ書き、食い違いはパースエラー(DESIGN §2.1)。
         # NElec 側の分岐は upstream のまま触らないので、別名が後に来た場合のみ検出できる。

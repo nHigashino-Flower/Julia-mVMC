@@ -156,23 +156,49 @@ function parton_calculate_o!(
             end
             tr_re = zero(ComplexF64)
             tr_im = zero(ComplexF64)
-            for f = 1:amp.n_flavor
-                Ainv = inv_block(amp, qp, f)
-                dPhiR = mfham.dorbitals[f][2k - 1]
-                dPhiI = mfham.dorbitals[f][2k]
+            if amp.n_stored == amp.n_flavor
+                # 標準経路。総和順は従来と逐語一致(既定の挙動を 1 bit も
+                # 変えないため、下の高速路と共通化しない)。
+                for f = 1:amp.n_flavor
+                    Ainv = inv_block(amp, qp, f)
+                    dPhiR = mfham.dorbitals[f][2k - 1]
+                    dPhiI = mfham.dorbitals[f][2k]
+                    for m = 1:Ne
+                        r = particle_site(cfg, f, m)
+                        rr = qmap[r]
+                        s = qsgn[r]
+                        a_re = zero(ComplexF64)
+                        a_im = zero(ComplexF64)
+                        @inbounds for n = 1:Ne          # 転置積(共役なし)
+                            a_re += dPhiR[rr, n] * Ainv[n, m]
+                            a_im += dPhiI[rr, n] * Ainv[n, m]
+                        end
+                        tr_re += s * a_re
+                        tr_im += s * a_im
+                    end
+                end
+            else
+                # 対称高速路(v3.9): 固縛により全フレーバーの寄与が同一なので
+                # Σ_f Tr → F · Tr。O(Ne²) の縮約が 1/F になる。総和の結合順だけが
+                # 変わるので ON/OFF の O の差は丸め(1e-14)以内 — §8-14 が実測を出す。
+                Ainv = inv_block(amp, qp, 1)
+                dPhiR = mfham.dorbitals[1][2k - 1]
+                dPhiI = mfham.dorbitals[1][2k]
                 for m = 1:Ne
-                    r = particle_site(cfg, f, m)
+                    r = particle_site(cfg, 1, m)
                     rr = qmap[r]
                     s = qsgn[r]
                     a_re = zero(ComplexF64)
                     a_im = zero(ComplexF64)
-                    @inbounds for n = 1:Ne          # 転置積(共役なし)
+                    @inbounds for n = 1:Ne              # 転置積(共役なし)
                         a_re += dPhiR[rr, n] * Ainv[n, m]
                         a_im += dPhiI[rr, n] * Ainv[n, m]
                     end
                     tr_re += s * a_re
                     tr_im += s * a_im
                 end
+                tr_re *= amp.n_flavor
+                tr_im *= amp.n_flavor
             end
             w = qp_weight[qp] * prodd
             o_re += w * tr_re
@@ -332,6 +358,118 @@ end
 # ---------------------------------------------------------------------
 
 """
+    parton_sample_threading_enabled() -> Bool
+
+§4 層 2(測定フェーズのサンプル並列)の opt-in ゲート。既存 threading.jl の
+作法どおり `JULIA_MVMC_INNER_THREADS=1` かつ複数スレッド起動時のみ true。
+既定は逐次。C-mVMC が OMP で回しているのはまさにこのループで、upstream Julia が
+無効化しているのは C の総和順序をビット再現するため — パートン経路は縮約を
+サンプル順の逐次パスに分離することでビット一致を保ったまま並列化できる。
+"""
+@inline parton_sample_threading_enabled() = vmc_inner_threading_requested(true)
+
+"チャンク t(1-based)が受け持つサンプル範囲。連続・決定的。"
+@inline _parton_chunk(t::Int, nt::Int, n::Int) =
+    (1 + div((t - 1) * n, nt)):div(t * n, nt)
+
+"""
+    _parton_thread_ctx!(pstate, data, nt, len_o) -> PartonMainCalThreadContext
+
+スレッド別ワークスペースを遅延確保する(寸法が合えば再利用)。
+"""
+function _parton_thread_ctx!(
+    pstate::PartonOptimizationState, data::ExpertModeData, nt::Int, len_o::Int)
+    mp = data.modpara
+    amp = pstate.amp
+    n_sample = mp.nvmc_sample
+    ctx = pstate.thread_ctx
+    if ctx isa PartonMainCalThreadContext &&
+       length(ctx.cfgs) == nt &&
+       size(ctx.o_all) == (len_o, n_sample) &&
+       length(ctx.amps[1].inv_a) == length(amp.inv_a)
+        return ctx
+    end
+    ctx = PartonMainCalThreadContext(
+        [PartonConfiguration(mp.nsite, mp.nelec, mp.nflavor, 1) for _ = 1:nt],
+        [PartonAmplitudeData(amp.n_qp, amp.n_flavor, amp.n_elec;
+                             n_stored = amp.n_stored) for _ = 1:nt],
+        [PartonSamplingWorkspace(amp.n_elec, amp.n_qp * amp.n_stored) for _ = 1:nt],
+        [CTimer(false) for _ = 1:nt],
+        zeros(ComplexF64, n_sample),
+        fill(false, n_sample),
+        zeros(ComplexF64, len_o, n_sample),
+    )
+    pstate.thread_ctx = ctx
+    return ctx
+end
+
+"""
+    _parton_main_cal_samples_threaded!(pstate, data, qp_weight, n_proj,
+                                       gauge_proj, α_now, c_timer)
+
+§4 層 2 の並列フェーズ: 保存済みサンプルごとの (E_loc, O) を計算して
+サンプル別バッファへ書く。**乱数は一切消費しない**(このフェーズに rng は
+存在しない)。各スレッドは自分の cfg / amp / ws だけに書き、サンプル別
+バッファへの書き込みは列単位で排他。縮約は呼び出し側の逐次パスが行う。
+
+E_loc / O の値はスレッド割りに依らずサンプルごとに決定的(逐次と同一の
+入力から同一の演算列で計算される)なので、後段の逐次縮約と合わせて
+**全体がスレッド数に依らずビット一致**する(§8-15 が機械検証)。
+"""
+function _parton_main_cal_samples_threaded!(
+    pstate::PartonOptimizationState,
+    data::ExpertModeData,
+    qp_weight,
+    n_proj::Int,
+    gauge_proj::Bool,
+    α_now::Vector{ComplexF64},
+    c_timer::CTimer,
+)
+    mp = data.modpara
+    sr = pstate.state.sr_opt
+    nt = Base.Threads.nthreads()
+    len_o = length(sr.sr_opt_o)
+    ctx = _parton_thread_ctx!(pstate, data, nt, len_o)
+    for t = 1:nt
+        ctx.timers[t] = CTimer(ctimer_enabled(c_timer))
+    end
+
+    n_sample = mp.nvmc_sample
+    Base.Threads.@threads :static for t = 1:nt
+        cfg_t = ctx.cfgs[t]
+        amp_t = ctx.amps[t]
+        ws_t = ctx.wss[t]
+        timer_t = ctx.timers[t]
+        # E_loc が pstate 越しに amp/cfg/ws を読むので、スレッド分をまとめた
+        # 外箱を作る(state / mfham / physham は読み取り共有)
+        ps_t = PartonOptimizationState(
+            pstate.state, amp_t, cfg_t, ws_t, pstate.mfham, pstate.physham)
+        for s in _parton_chunk(t, nt, n_sample)
+            parton_restore_sample_from!(cfg_t, pstate.config, s)
+            parton_recompute_amplitude_all!(amp_t, pstate.mfham, cfg_t, data, ws_t)
+            ip = parton_calculate_ip(amp_t, qp_weight)
+            if abs(ip) < 1e-30
+                ctx.ok_all[s] = false
+                continue
+            end
+            ctimer_start!(timer_t, 808)
+            ctx.e_all[s] = parton_local_energy(ps_t, data, ip)
+            ctimer_stop!(timer_t, 808)
+            ctimer_start!(timer_t, 809)
+            parton_fill_sr_opt_o!(
+                view(ctx.o_all, :, s), amp_t, pstate.mfham, cfg_t, data,
+                qp_weight, ip, n_proj;
+                project_gauge = gauge_proj, alpha = α_now)
+            ctimer_stop!(timer_t, 809)
+            ctx.ok_all[s] = true
+        end
+    end
+    # スレッド別タイマは合算(808/809 は CPU 秒の総和になる点に注意)
+    ctimer_merge_all!(c_timer, ctx.timers)
+    return ctx
+end
+
+"""
     parton_main_cal!(pstate, data)
 
 契約 4 と 5 をサンプルごとに回してエネルギーと SR 量を蓄積する。
@@ -345,7 +483,10 @@ O の蓄積は既存の `calculate_oo!` / `calculate_oo_store!` にそのまま�
 非正則であることは蓄積側に影響しない。
 """
 function parton_main_cal!(pstate::PartonOptimizationState, data::ExpertModeData;
-                          c_timer::CTimer = CTIMER_DISABLED)
+                          c_timer::CTimer = CTIMER_DISABLED,
+                          force_threaded::Union{Nothing,Bool} = nothing)
+    # `force_threaded` は §8-15(並列 = 逐次のビット一致)の検証専用。
+    # 本番経路では渡さない(既定 nothing = env と nthreads による自動判定)。
     amp = pstate.amp
     cfg = pstate.config
     mfham = pstate.mfham
@@ -378,29 +519,49 @@ function parton_main_cal!(pstate::PartonOptimizationState, data::ExpertModeData;
     n_stored = 0
     use_store && fill!(sr.sr_opt_o_store, 0)
 
-    for s = 1:mp.nvmc_sample
-        parton_restore_sample!(cfg, s)
-        parton_recompute_amplitude_all!(amp, mfham, cfg, data, ws)
-        ip = parton_calculate_ip(amp, qp_weight)
-        if abs(ip) < 1e-30
-            n_skipped += 1        # ノード上のサンプル。寄与できないので飛ばす
-            continue
-        end
+    threaded = force_threaded === nothing ?
+        (parton_sample_threading_enabled() &&
+         mp.nvmc_sample >= Base.Threads.nthreads()) : force_threaded
+    ctx = threaded ?
+        _parton_main_cal_samples_threaded!(
+            pstate, data, qp_weight, n_proj, gauge_proj, α_now, c_timer) : nothing
 
-        ctimer_start!(c_timer, 808)
-        e = parton_local_energy(pstate, data, ip)
-        ctimer_stop!(c_timer, 808)
+    for s = 1:mp.nvmc_sample
+        local e::ComplexF64
+        if threaded
+            # 並列フェーズが済ませたサンプル別の (E_loc, O) を読むだけ。
+            # 縮約はこの逐次ループがサンプル順に行うので、蓄積の演算列は
+            # 逐次経路と完全に同一 = ビット一致(スレッド数にも依らない)。
+            if !ctx.ok_all[s]
+                n_skipped += 1
+                continue
+            end
+            e = ctx.e_all[s]
+            copyto!(sr.sr_opt_o, view(ctx.o_all, :, s))
+        else
+            parton_restore_sample!(cfg, s)
+            parton_recompute_amplitude_all!(amp, mfham, cfg, data, ws)
+            ip = parton_calculate_ip(amp, qp_weight)
+            if abs(ip) < 1e-30
+                n_skipped += 1        # ノード上のサンプル。寄与できないので飛ばす
+                continue
+            end
+
+            ctimer_start!(c_timer, 808)
+            e = parton_local_energy(pstate, data, ip)
+            ctimer_stop!(c_timer, 808)
+
+            ctimer_start!(c_timer, 809)
+            parton_fill_sr_opt_o!(
+                sr.sr_opt_o, amp, mfham, cfg, data, qp_weight, ip, n_proj;
+                project_gauge = gauge_proj, alpha = α_now)
+            ctimer_stop!(c_timer, 809)
+        end
         w = 1.0
 
         energy.wc += w
         energy.etot += w * e
         energy.etot2 += w * conj(e) * e
-
-        ctimer_start!(c_timer, 809)
-        parton_fill_sr_opt_o!(
-            sr.sr_opt_o, amp, mfham, cfg, data, qp_weight, ip, n_proj;
-            project_gauge = gauge_proj, alpha = α_now)
-        ctimer_stop!(c_timer, 809)
 
         if use_store
             calculate_oo_store!(

@@ -128,8 +128,31 @@ function parton_build_mf_templates!(mfham::PartonMFHamiltonian, data::ExpertMode
         mfham.is_onsite_group[k] = group_kind[k] === :onsite
     end
 
+    # --- フレーバー対称の検出(v3.9 det^F 高速路)------------------------------
+    # idx 写像と係数 t^(f) が全フレーバーで一致するなら、任意の α に対して
+    # H^(f) が全フレーバーで同一 → Φ / ∂Φ / A ブロックも同一。
+    # 判定は「(k, site1, site2, coeff) の集合がフレーバー間で一致するか」。
+    # onsite/hopping 分類は群単位(is_onsite_group)なので自動的に共通。
+    # 同じ物理を h.c. の向きを変えて書いた入力((s1,s2,t) vs (s2,s1,conj t))は
+    # 保守的に非対称と判定する — 正しさは変わらず、高速路が効かないだけ。
+    mfham.flavor_symmetric =
+        data.modpara.parton_flavor_sym_fast != 0 &&
+        _parton_templates_flavor_symmetric(template, n_flavor, n_idx)
+
     parton_resolve_gauge_groups!(mfham, data)
     return mfham
+end
+
+"テンプレートの (k, site1, site2, coeff) 集合が全フレーバーで一致するか。"
+function _parton_templates_flavor_symmetric(
+    template::Vector{Vector{PartonMFTemplateEntry}}, n_flavor::Int, n_idx::Int)
+    n_flavor >= 2 || return false          # F=1 に高速化の意味はない
+    sig(f) = sort!([
+        (k, e.site1, e.site2, real(e.coeff), imag(e.coeff))
+        for k = 1:n_idx for e in template[k] if e.flavor == f
+    ])
+    ref = sig(1)
+    return all(sig(f) == ref for f = 2:n_flavor)
 end
 
 """
@@ -260,6 +283,16 @@ function parton_update_orbitals!(
     mfham.min_gap = Inf
     n_site = size(mfham.h_mf[1], 1)
     for f in eachindex(mfham.h_mf)
+        if mfham.flavor_symmetric && f > 1
+            # 対称なら H^(f) は f=1 と同一。eigen を繰り返す代わりにコピーする。
+            # 同一入力の LAPACK は決定的なので値は変わらない(コピーはそれを
+            # 定義で保証する)。バンド出力などが全フレーバー分を読むので、
+            # f > 1 も空にはしない。
+            mfham.eig_vals[f] .= mfham.eig_vals[1]
+            mfham.eig_vecs[f] .= mfham.eig_vecs[1]
+            mfham.orbitals[f] .= mfham.orbitals[1]
+            continue
+        end
         F = eigen(Hermitian(mfham.h_mf[f]))
         mfham.eig_vals[f] .= F.values
         mfham.eig_vecs[f] .= F.vectors
@@ -299,13 +332,23 @@ end
 function parton_update_orbital_derivatives!(mfham::PartonMFHamiltonian, n_elec::Int)
     n_site = size(mfham.h_mf[1], 1)
     n_un = n_site - n_elec
+    # W は dh_uo_scratch(n_site × Ne)の先頭 n_un 行を間借りする。専用バッファを
+    # 足さないのは、旧経路の dHUo(この scratch の本来の用途)が rank-1 化で
+    # 不要になり、まるごと空いたため。
+    W = view(mfham.dh_uo_scratch, 1:n_un, :)
     for f in eachindex(mfham.h_mf)
+        if mfham.flavor_symmetric && f > 1
+            # 対称なら ∂Φ^(f) も f=1 と同一(H・テンプレートとも同一)。
+            # コピーは gemm(O(NSite·n_un·Ne))より n_un 倍安い。
+            for dof in eachindex(mfham.dorbitals[f])
+                mfham.dorbitals[f][dof] .= mfham.dorbitals[1][dof]
+            end
+            continue
+        end
         U = mfham.eig_vecs[f]
         ev = mfham.eig_vals[f]
         Uo = @view U[:, 1:n_elec]
         Uu = @view U[:, (n_elec + 1):n_site]
-        # 分母 D[u, n] = ε_n − ε_{Ne+u}(u = 非占有, n = 占有)
-        D = [ev[n] - ev[n_elec + u] for u = 1:n_un, n = 1:n_elec]
 
         for k = 1:mfham.n_idx
             onsite = mfham.is_onsite_group[k]
@@ -317,28 +360,56 @@ function parton_update_orbital_derivatives!(mfham::PartonMFHamiltonian, n_elec::
                     continue
                 end
 
-                # dHUo = (∂θ H^(f)) · U_occ をテンプレートのスパース走査で構築
-                dHUo = mfham.dh_uo_scratch
-                fill!(dHUo, 0)
+                # W = Uu'(∂θH)Uo を、ボンドごとの rank-1 更新で直接積み上げる。
+                # 旧経路の「dHUo を疎に組む → 密 gemm」は gemm の時点で疎性が
+                # 消えて O(n_un·n_site·Ne) だった。rank-1 なら O(b_k·n_un·Ne)。
+                #
+                #   ∂H/∂Re α = T + T†   → t·(s1,s2) + conj(t)·(s2,s1)
+                #   ∂H/∂Im α = i(T − T†) → c·(s1,s2) + conj(c)·(s2,s1), c = i·t
+                #   onsite(t 実)       → t·(s1,s1)
+                #
+                # (a, s1, s2) は W += a · Uu'[:, s1] ⊗ Uo[s2, :] の意。
+                # conj(c) = −i·conj(t) が −T† 側を正しく運ぶ(旧経路と同一の式)。
+                fill!(W, 0)
                 for e in mfham.template[k]
                     e.flavor == f || continue
                     t = e.coeff
                     if onsite                                    # 対角: t は実
-                        @views dHUo[e.site1, :] .+= t .* Uo[e.site1, :]
-                    elseif part == 1                             # T + T†
-                        @views dHUo[e.site1, :] .+= t .* Uo[e.site2, :]
-                        @views dHUo[e.site2, :] .+= conj(t) .* Uo[e.site1, :]
-                    else                                         # i (T − T†)
-                        c = im * t
-                        @views dHUo[e.site1, :] .+= c .* Uo[e.site2, :]
-                        @views dHUo[e.site2, :] .+= conj(c) .* Uo[e.site1, :]
+                        _parton_w_rank1!(W, Uu, Uo, t, e.site1, e.site1, n_un, n_elec)
+                    else
+                        c = part == 1 ? t : im * t
+                        _parton_w_rank1!(W, Uu, Uo, c, e.site1, e.site2, n_un, n_elec)
+                        _parton_w_rank1!(W, Uu, Uo, conj(c), e.site2, e.site1,
+                                         n_un, n_elec)
                     end
                 end
 
-                W = Uu' * dHUo                    # (n_un × n_elec)。随伴で正しい
-                mul!(dPhi, Uu, W ./ D)            # ∂Φ = U_unocc (W ./ D)
+                # 分母 D[u, n] = ε_n − ε_{Ne+u} をインプレースで割る(バッファ不要)
+                @inbounds for n = 1:n_elec, u = 1:n_un
+                    W[u, n] /= ev[n] - ev[n_elec + u]
+                end
+                mul!(dPhi, Uu, W)                 # ∂Φ = U_unocc (W ./ D)
             end
         end
     end
     return nothing
 end
+
+"""
+    _parton_w_rank1!(W, Uu, Uo, a, s1, s2, n_un, n_elec)
+
+`W += a · Uu'[:, s1] ⊗ Uo[s2, :]`(rank-1 更新)。`Uu'[:, s1][u] = conj(Uu[s1, u])`
+の随伴(共役)は契約 0′ では正しい(DESIGN §1.5 / §7 — ブラとの真の内積。
+振幅側の転置積規則と混同しないこと)。
+"""
+@inline function _parton_w_rank1!(W, Uu, Uo, a::ComplexF64, s1::Int, s2::Int,
+                                  n_un::Int, n_elec::Int)
+    @inbounds for n = 1:n_elec
+        an = a * Uo[s2, n]
+        @simd for u = 1:n_un
+            W[u, n] += an * conj(Uu[s1, u])
+        end
+    end
+    return nothing
+end
+

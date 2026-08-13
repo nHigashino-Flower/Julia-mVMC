@@ -57,11 +57,15 @@ function parton_build_optimization_state(
         parton_build_mf_templates!(mfham, data)
     end
 
+    # det^F 高速路(v3.9): フレーバー対称ならブロックを 1 フレーバー分だけ持つ。
+    # 判定はテンプレート build が済ませている(PartonFlavorSymFast=0 なら false)。
+    n_stored = mfham.flavor_symmetric ? 1 : mp.nflavor
+
     return PartonOptimizationState(
         state,
-        PartonAmplitudeData(n_qp, mp.nflavor, mp.nelec),
+        PartonAmplitudeData(n_qp, mp.nflavor, mp.nelec; n_stored = n_stored),
         PartonConfiguration(mp.nsite, mp.nelec, mp.nflavor, mp.nvmc_sample),
-        PartonSamplingWorkspace(mp.nelec, n_qp * mp.nflavor),
+        PartonSamplingWorkspace(mp.nelec, n_qp * n_stored),
         mfham,
         parton_build_phys_hamiltonian(data),
     )
@@ -138,6 +142,21 @@ function parton_restore_sample!(cfg::PartonConfiguration, s::Int)
     n = cfg.n_flavor * cfg.n_elec
     copyto!(cfg.ele_idx, 1, cfg.stored_ele_idx, (s - 1) * n + 1, n)
     _rebuild_cfg_from_idx!(cfg)
+    return nothing
+end
+
+"""
+    parton_restore_sample_from!(dst, src, s)
+
+`src` の保存済みサンプル s を**別の** cfg(スレッドローカル)へ復元する。
+§4 層 2 のサンプル並列用: 各スレッドが自分の作業配置に読み出すだけで、
+`src` の保存領域は読み取り専用のまま共有される。
+"""
+function parton_restore_sample_from!(
+    dst::PartonConfiguration, src::PartonConfiguration, s::Int)
+    n = src.n_flavor * src.n_elec
+    copyto!(dst.ele_idx, 1, src.stored_ele_idx, (s - 1) * n + 1, n)
+    _rebuild_cfg_from_idx!(dst)
     return nothing
 end
 
@@ -322,9 +341,8 @@ function parton_amplitude_ratio!(
     for qp = 1:amp.n_qp
         rr = data.qp_trans[qp][r_new]
         s = data.qp_trans_sgn[qp][r_new]
-        p_old = one(ComplexF64)
-        p_new = one(ComplexF64)
-        for f = 1:amp.n_flavor
+        # O(Ne) の縮約は保持ブロックだけ(対称なら f=1 のみ)。
+        for f = 1:amp.n_stored
             b = block_index(amp, qp, f)
             Ainv = inv_block(amp, qp, f)
             Φ = mfham.orbitals[f]
@@ -332,10 +350,16 @@ function parton_amplitude_ratio!(
             @inbounds for n = 1:amp.n_elec
                 R += Φ[rr, n] * Ainv[n, m]    # 転置積。dot は使わない(共役が入る)
             end
-            R *= s
-            ws.ratio_blocks[b] = R
+            ws.ratio_blocks[b] = s * R
+        end
+        # 積は物理フレーバーのループのまま(対称時は別名ブロックを F 回読む =
+        # R^F・det^F)。評価順が従来と同一なので高速路 ON/OFF でビット一致する。
+        p_old = one(ComplexF64)
+        p_new = one(ComplexF64)
+        for f = 1:amp.n_flavor
+            b = block_index(amp, qp, f)
             p_old *= amp.det_a[b]
-            p_new *= amp.det_a[b] * R
+            p_new *= amp.det_a[b] * ws.ratio_blocks[b]
         end
         ip_old += qp_weight[qp] * p_old
         ip_new += qp_weight[qp] * p_new
@@ -364,7 +388,9 @@ function parton_update_amplitude!(
     ratio_floor::Float64 = 1e-12,
 )
     Ne = amp.n_elec
-    for qp = 1:amp.n_qp, f = 1:amp.n_flavor
+    # 書き込みは保持ブロックだけ(対称なら f=1 のみ)。物理フレーバー全部を回すと
+    # 別名ブロックへ同じ rank-1 更新が F 回かかって壊れる。
+    for qp = 1:amp.n_qp, f = 1:amp.n_stored
         b = block_index(amp, qp, f)
         R = ws.ratio_blocks[b]
         abs(R) < ratio_floor && return :need_recompute   # ノード踏み抜き

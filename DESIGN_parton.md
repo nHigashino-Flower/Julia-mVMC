@@ -1,8 +1,8 @@
 # DESIGN: パートン平均場モード for Julia-mVMC
 
-- ステータス: **M2 前半完了**(運動量射影の配線・検証まで。§8 の 0〜13 と P 層 P0〜P2 全緑・
+- ステータス: **M2 前半完了**(運動量射影の配線・検証まで。§8 の 0〜15 と P 層 P0〜P2 全緑・
   既存回帰全緑。残り: 物理密度 Jastrow)
-- 改訂: v3.8 (2026-08-13) — QP の門番(§8-12)と CB 模型の QP 構成(§8-13)。v3.7 で gather の向きを確定
+- 改訂: v3.9 (2026-08-13) — 性能: 契約0′ rank-1 / det^F 高速路 / 測定フェーズのサンプル並列(§7 性能ポリシー)
 - ベース: tmisawa/Julia-mVMC v0.5.0(fork、ブランチ `parton-mode`)
 
 ## 0. 目的と位置づけ
@@ -117,6 +117,8 @@ per-QP 軌道は実体化しない(行置換+符号なので gather 時に写像
 - **`PartonBlockUpdateSize`**: 受理 N 回ごとに振幅を厳密再計算する錨の周期(既定 16)。
   C-mVMC の `NBlockUpdateSize`(スレーター行列のブロック更新閾値)とは**意味が違う**ので、
   同名を避けてフォーク固有の接頭辞を付けてある
+- **`PartonFlavorSymFast`**(v3.9): 1=フレーバー対称の自動検出 + det^F 高速路(既定)/
+  0=強制無効(完全に従来経路)。対称判定はテンプレート build が行う(§7)
 - 必須設定(門番が検査): `2Sz=0`(デフォルト −1=FSZ の罠)、`ComplexType=1`, `NVMCCalMode=0`,
   `NSRCG=0`, `NLanczosMode=0`, `NSPGaussLeg=1`, `NSPStot=0`, `NCond=-1`, `NLocSpin=0`,
   `NOrbitalIdx=0`, `NNeuron=0`, `NExUpdatePath=6`, `NSplitSize=1`(M1)
@@ -483,6 +485,40 @@ stochastic_opt!(案 B 後は MF ブロックも解く)/ weight_average / paralle
 - ホットループ内アロケーションゼロ。eigen/lu の小確保は頻度が低く許容
 - デバッグ恒等式: v[m]==R / gather vs 実体化 / 錨の冪等性
 
+### 性能ポリシー(v3.9)
+
+**大原則: 最適化は厳密に同じ値を出す。** 数式の変更は含まない。合格条件は
+§8 の等式テスト群(8-2 / 8-4 / 8-7 / 8-8 / 8-14 / 8-15)が緑のままであること。
+
+- **契約 0′ は rank-1 蓄積**: `W = Uu'(∂θH)Uo` をボンドごとに
+  `W += a · Uu'[:, s1] ⊗ Uo[s2, :]` で直接積み上げる(`_parton_w_rank1!`)。
+  「dHUo を疎に組む → 密 gemm」は gemm の時点で疎性が消えて
+  O(n_un·NSite·Ne) だった。rank-1 なら O(b_k·n_un·Ne)。W は空いた
+  `dh_uo_scratch` の先頭 n_un 行を間借り、分母除算はインプレース(バッファ増なし)
+- **det^F 高速路**(§2.1 `PartonFlavorSymFast`): idx 写像と t^(f) が全フレーバーで
+  一致(= 任意の α で H^(f) が同一)なら、eigen/∂Φ は f=1 だけ計算して残りへ
+  コピー、振幅ブロックは 1 フレーバー分だけ保持(`PartonAmplitudeData.n_stored`)。
+  **書き込みループは 1:n_stored、読み出しの積・和は 1:n_flavor のまま別名ブロックを
+  読む** — 積の評価順が変わらないので det/inv/ip/比/E_loc は ON/OFF でビット一致。
+  唯一 O の Tr だけ Σ_f Tr → F·Tr と総和順が変わる(実測 ≤1.3e-16、E2E の E_var
+  軌道で ≤4.1e-14/100 step)。ストライドは block_index / inv_block の 2 関数に
+  閉じたまま(§5)
+- **スレッド化は opt-in**(`JULIA_MVMC_INNER_THREADS=1`、既存 threading.jl の作法)。
+  既定は逐次で従来とビット同一。対象は**測定フェーズのサンプル並列のみ**
+  (§4 層 2): `parton_main_cal!` は保存済み配置を舐めるだけで**乱数を消費しない**
+  ので並列化が正当。マルコフ連鎖(`parton_make_sample!`)は本質的に逐次
+  (乱数消費順 = 再現性)で、絶対に触らない。
+  **ビット一致の構成**: 並列フェーズはサンプル別の (E_loc, O) を書くだけ、
+  縮約(energy / OO / HO / store)はサンプル順の逐次パスが従来と同一の演算列で
+  行う。スレッド数にも依存しない(E2E で zvo_out / SRinfo / pmfpara_opt / var の
+  全ファイルが逐次とバイト一致、8 スレッドで main_cal 2.3 倍)。
+  注: Julia の Task 生成は task-local `default_rng()` を設計上進める(fork 仕様)が、
+  パートン本番経路は明示 rng オブジェクトのみを使い default_rng を使わないので
+  再現性に影響しない(§8-15 が機械検証)
+- **縮約の総和順は既定経路では 1 bit も変えない**: 契約 5 の標準経路(非対称)は
+  高速路と共通化せず逐語のまま残す。共通化すると (f, m) の走査順が変わり、
+  既存 run の再現がビットレベルで壊れる
+
 ## 8. 検証戦略(テストはこの順で)
 
 0. 回帰ベースライン: PartonMode=0 で既存テスト全緑(着手前後に実施)
@@ -566,6 +602,17 @@ stochastic_opt!(案 B 後は MF ブロックも解く)/ weight_average / paralle
    位相・n_qp の配線のどれかが狂うと破れる、(6) 参照実装 `make_QNPidx` と同じ
    本数・同じ並進であること、(7) 参照準拠 QP でも (5) が成り立つこと。
    実装: `test/physics/test_p2_qp_translation.jl`
+14. **det^F 高速路の等式**(v3.9 追加、恒久): 高速路 ON / OFF で det_a・inv_a・
+   ip・比・E_loc が**ビット一致**(積の評価順を変えない設計の検証)、O は総和順の
+   変更ぶんだけ許容(実測 F=2: 0.0、F=3: 1.3e-16、閾値 1e-14)。対称でない入力
+   (フレーバーで idx を割る / t を変える)で自動 OFF、`PartonFlavorSymFast = 0`
+   で強制 OFF。F=2 / F=3、n_qp = 2、契約 3 の高速更新後のブロック一致まで。
+   実装: `MVMCOptimizers.jl/test/test_parton_detpow.jl`
+15. **測定フェーズのサンプル並列**(v3.9 追加、恒久): `force_threaded` で並列経路を
+   強制し、逐次と energy / OO / HO / store の**全要素ビット一致**(store / 非 store
+   両経路、スレッド文脈の再利用経路も)。明示 rng オブジェクトの列が不変であること。
+   `julia -t N` でも同じテストがそのまま実スレッド検証になる。
+   実装: `MVMCOptimizers.jl/test/test_parton_threading.jl`
 
    **QP 構成の 2 系統に注意**(v3.8 で判明): 参照実装には
    `build_QNPTransSiteList`(全並進 Nu = Nsite/2 本)と `make_QNPidx`(x 方向
@@ -592,12 +639,17 @@ stochastic_opt!(案 B 後は MF ブロックも解く)/ weight_average / paralle
   最適化ランドスケープの問題と確定(REPORT §12-4。ウォームスタートなら留まる)。
   残り: 既存 Gutzwiller は固縛で自明化(全占有サイトが常にダブロン)
   → **物理密度 n^b ベースの Jastrow を RBM 前例に倣い新設**
-- **M3**: PhysCal、det^F 高速路(フレーバー対称入力の検出時)、log 空間 det、NSplitSize>1、
+- **M3**: PhysCal、log 空間 det、NSplitSize>1、
   eigen ワークスペース化、命名・負債整理(返済トリガー: M1 全緑)
 
 ## 10. リスクと未決事項
 
 - [ ] 物理密度 Jastrow の設計(M2)。それまで parton_log_proj_ratio は恒等 0
+- [ ] **`NSplitSize > 1` を門番が拒否している理由は「未検証」**(v3.9 明記)。
+  comm1 グループ内のサンプル分割はパートンの保存配置・振幅の持ち方と噛み合うかを
+  確かめていないだけで、原理的な障害は特定していない。解禁は M3 の検証作業
+  (プレーンな複数ランク MPI = 層 1 は動作確認済み: 2 ランクで E_var が
+  単一ランクと統計誤差内一致、サンプル総数 n_rank 倍)
 - [x] modpara フィールド実名の照合 — `nvmc_warmup` はそのまま存在。`parton_block_update_size` は
   Julia 移植に相当物が無かったので新設(modpara キー `PartonBlockUpdateSize`、既定 16)
 - [x] parton_sync_parameters! の詳細 — `pack_parameters` → `bcast!` → `unpack_parameters!` の
@@ -612,6 +664,38 @@ stochastic_opt!(案 B 後は MF ブロックも解く)/ weight_average / paralle
 
 ## 11. 決定ログ(要約)
 
+- v3.9 (2026-08-13, 性能): **数式不変の最適化一式**(§7 性能ポリシー / §8-14 / §8-15)。
+  まず CalcTimer で実測してから実装した(32 サイト・1500 サンプル・200 step:
+  main_cal 73〜81% ≫ sampling 17〜26% ≫ 契約0′ 0.6〜1.2% — 想定表の
+  「契約0′ が重い」はこのサイズでは外れ。優先順位は実測に従い、§1/§2 は指示どおり
+  無条件実施)。
+  (1) **契約 0′ を rank-1 蓄積へ**。gemm 版との一致は全 dof・全フレーバーで
+  1.2e-16、ホットループのアロケーションは 0 bytes(実測)。
+  (2) **det^F 高速路**(`PartonFlavorSymFast`、既定 ON・自動検出)。
+  検出は「テンプレートの (k, s1, s2, t) 集合がフレーバー間で一致」— h.c. の向きを
+  変えて書いた等価入力は保守的に非対称と判定(正しさは不変、高速路が効かないだけ)。
+  対称ケース実測 1.51 倍(:orbit n_qp=2: 契約1 2.0× / 契約3 1.9× / 契約5 2.1×)、
+  メモリ 1/F。E2E は step 0 ビット一致・100 step 軌道で ≤4.1e-14。
+  (3) **測定フェーズのサンプル並列**(層 2)。8 スレッドで main_cal 2.3 倍・
+  全出力ファイルが逐次と**バイト一致**(縮約をサンプル順の逐次パスに分離する構成)。
+  MPI(層 1)は 2 ランクで統計一致を確認。
+  **層 3(サンプリング中の内側ループ)は実装しない(実測に基づく決定)**:
+  契約 1/2/3 の (qp, f) ブロックは典型 4 個で、既存 threading.jl の発火閾値
+  (max(64, nthreads))を大きく下回り、実装しても発火しない。契約 5 の k ループは
+  main_cal にしか現れず層 2 が包含する(@threads の入れ子は不可)。n_qp·F が
+  数十を超える系が現れたら再訪。
+  **不採用(指示 §5 の記録)**:
+  - *W = Φ·InvM トリック*(比を O(1) で引く): W 構築 O(NSite·Ne²) に対し
+    ボンド毎ドット積は O(N_bond·Ne) ≈ O(4·NSite·Ne) で、Ne > 4 ではドット積の
+    方が安い。受理毎の W 更新 O(NSite·Ne) も提案数 ≫ 受理数で不利
+  - *測定のサンプリングへの統合*(main_cal のサンプル毎の錨を消す): 保留。
+    サンプリング中にも周期錨が入るので節約は錨コストの 3 割程度で、
+    PhysCal(M3)が保存配置を再測定する道を塞ぐ
+  `PartonBlockUpdateSize` の実測(§3): 16/32/64/128 で錨直前の乖離は
+  1e-13(det 相対)/ 1e-11(A⁻¹)級で **B に対する増加傾向なし**(累積誤差より
+  1 手の丸めが支配的)。錨 [804] は線形に減る(0.23→0.03s)が全体比が小さく、
+  wall は 4.2→4.0s。既定 16 は据え置き(変更は指示待ち。推奨値の議論は
+  コミットメッセージ / 報告参照)
 - v3.8 (2026-08-13, M2): **QP の門番と CB 模型の QP 構成**(§8-12 / §8-13)。
   (1) 門番 `validate_parton_qp` を追加。`NMPTrans`(modpara.def)と qptransidx.def
   由来の配列は別経路なので、片方だけ書き忘れると重み 0 の項が黙って落ちる。
