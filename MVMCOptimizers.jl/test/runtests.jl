@@ -60,6 +60,7 @@ end
 # --- parton-mode (fork addition) ---
 @testset "Parton Mode Tests" begin
     include("test_parton_locator.jl")
+    include("test_parton_types.jl")
 end
 
 @testset "Unit Tests" begin

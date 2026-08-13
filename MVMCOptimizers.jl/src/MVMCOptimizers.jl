@@ -80,6 +80,7 @@ include("run_phys_cal_from_namelist.jl")
 # --- parton-mode (fork addition) ---
 # パートンモードの新規実装。標準経路(PartonMode = 0)からは一切呼ばれない。
 # include はこの順(types が先頭必須)。
+include("parton_types.jl")
 
 # Export main functions
 export ParallelContext, serial_context, build_parallel_context, is_output_rank

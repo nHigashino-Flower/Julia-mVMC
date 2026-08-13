@@ -1,257 +1,323 @@
-""" 
-    Accessor for Paton-based VMC ('PartonVMCCalMode = 1')
+"""
+パートン平均場 VMC モードの型・アクセサ・委譲メソッド
+--- parton-mode (fork addition) ---
 
-   Defining Number of Physical particle (NParticle), Parton per flavor (NPartonPerFlavor) and Total Parton (NPartonTot) 
-   Nelec is regarded as number of parton per flavor. In addition, we assume the 'NParticle == NPartonPerFlavor' system.
-   so, when 'PartonVMCCalMode = 1', we assume that,
+DESIGN_parton.md §5(構造体カタログ)に対応する。標準経路(`PartonMode = 0`)
+からは一切参照されない。
 
-   NPartonPerFlavor = NElec
-   NParticle = NElec
-   NPartonTot = NFlavor*NElec
-   NSite2 = NFlavor*NSite
-""" 
+粒子数の関係(`PartonMode = 1`):
 
-# call from n_flavor, n_elec and n_site
+    NPartonPerFlavor = NElec        # NElec はフレーバーあたりのパートン数
+    NParticle        = NElec        # 物理粒子数(固縛により一致)
+    NPartonTot       = NFlavor * NElec
+    NSiteFlavor      = NFlavor * NSite
+
+添字文字の約束(DESIGN §5): サイトは `ri, rj` / フレーバーは `fi, fj` /
+パックした配置空間の添字は `rfi = ri + fi * n_site`。軌道の行空間(サイトのみ)
+と配置空間(サイト⊗フレーバー)は別の空間なので混ぜない。
+"""
+
+# =====================================================================
+# 派生量アクセサ(冗長保持はしない。NElec だけが格納された量)
+# =====================================================================
+
 n_parton_per_flavor(n_elec::Int) = n_elec
 n_parton_total(n_elec::Int, n_flavor::Int) = n_flavor * n_elec
 n_phys_particle(n_elec::Int) = n_elec
-n_site_flavor(n_site::Int, n_flavor::Int) = n_flavor*n_site
+n_site_flavor(n_site::Int, n_flavor::Int) = n_flavor * n_site
 
-# call from ModParaParameters (Multi Dispacth)
 n_parton_per_flavor(modpara::ModParaParameters) = n_parton_per_flavor(modpara.nelec)
 n_parton_total(modpara::ModParaParameters) = n_parton_total(modpara.nelec, modpara.nflavor)
 n_phys_particle(modpara::ModParaParameters) = n_phys_particle(modpara.nelec)
-n_site_flavor(modpara::ModParaParameters) = n_site_flavor(modpara.nsite, modpara.nflavor) 
+n_site_flavor(modpara::ModParaParameters) = n_site_flavor(modpara.nsite, modpara.nflavor)
 
-# call from ExpertModeData (Multi Dispacth)
 n_parton_per_flavor(data::ExpertModeData) = n_parton_per_flavor(data.modpara)
-n_parton_total(data::ExpertModeData)      = n_parton_total(data.modpara)
-n_phys_particle(data::ExpertModeData)     = n_phys_particle(data.modpara)
-n_site_flavor(data.ExpertModeData) = n_site_flavor(data.modpara)
+n_parton_total(data::ExpertModeData) = n_parton_total(data.modpara)
+n_phys_particle(data::ExpertModeData) = n_phys_particle(data.modpara)
+n_site_flavor(data::ExpertModeData) = n_site_flavor(data.modpara)
+
+# =====================================================================
+# 意味層: 平均場ハミルトニアン
+# =====================================================================
 
 """
+    PartonMFTemplateEntry
 
-Data types for Parton-based VMC optimization based on types.jl
-
+∂H/∂α_k の定数テンプレートの 1 成分。`H^(f)_ij(α) = α_k · t^(f)_ij` の
+(i, j, f, t) を 1-based で保持する(0-based からの変換は
+`parton_build_mf_templates!` の一箇所だけで行う)。
 """
-
-mutable struct PartonOptimizationState
-    state    :: VMCOptimizationState   # 再利用機構への窓口
-    parton_amp_data :: PartonAmplitudeData       # 振幅エンジンの状態
-    parton_config ::  PartonConfiguration
-    parton_workspace :: PartonSamplingWorkspace
-    parton_mfhamiltonian :: PartonMFHamiltonian
+struct PartonMFTemplateEntry
+    site1::Int
+    site2::Int
+    flavor::Int
+    coeff::ComplexF64
 end
-
-stochastic_opt!(d, st::PartonOptimizationState, t=CTIMER_DISABLED) = stochastic_opt!(d, st.vmc, t)
-weight_average_we!(st::PartonOptimizationState)                    = weight_average_we!(st.vmc)
-weight_average_sr_opt!(st::PartonOptimizationState)                = weight_average_sr_opt!(st.vmc)
-output_data!(d, st::PartonOptimizationState, step; kw...)          = output_data!(d, st.vmc, step; kw...)
-reduce_counter!(ctx, st::PartonOptimizationState)                  = reduce_counter!(ctx, st.vmc)
 
 """
     PartonMFHamiltonian
 
-Parton mean-field related data for VMC calclation
-"""
+平均場ハミルトニアンと、そこから作られる軌道・軌道微分。
 
+固定部(起動時に契約 0 の `parton_build_mf_templates!` が 1 回組む):
+- `n_idx`: フレーバーを解決したあとの変分グループ数
+- `template[k]`: グループ k に属する (i, j, f, t) の並び
+- `is_onsite_group[k]`: h.c. なし直接加算・Im 凍結の対象か
+
+α 依存部(SR ステップごとに契約 0/0′ が更新):
+- `h_mf[f]`, `eig_vals[f]`, `eig_vecs[f]`(摂動論の分母に非占有まで要る)
+- `orbitals[f]`: 占有ブロック Φ^(f)(n_site × n_elec)
+- `dorbitals[f][dof]`: ∂Φ^(f)/∂θ。dof = 2k-1 が Re α_k、2k が Im α_k
+- `dh_uo_scratch`: 契約 0′ の作業行列(n_site × n_elec)
+- `min_gap`: HOMO-LUMO ギャップ(縮退検知)
+"""
 mutable struct PartonMFHamiltonian
-    # ---- 固定部(起動時に1回組む)----
-    n_idx           :: Int                          # フレーバー解決後の変分グループ数
-    template        :: Vector{Vector{NTuple{4,Any}}} # k → [(ri, rj, f, t)] ※型は実装時に具体化
-    is_onsite_group :: Vector{Bool}                 # k → Im凍結・h.c.なし加算の対象か
-    # ---- α依存部(SRステップ毎に契約0が更新)----
-    h_mf     :: Vector{Matrix{ComplexF64}}  # f → H^(f)(α)     (n_site × n_site)
-    eig_vals :: Vector{Vector{Float64}}     # f → ε_n(全固有値。摂動論の分母用)
-    eig_vecs :: Vector{Matrix{ComplexF64}}  # f → 全固有ベクトル(非占有も保持)
-    orbitals :: Vector{Matrix{ComplexF64}}  # f → Φ^(f) = 占有ブロック (n_site × n_elec)
-    min_gap  :: Float64                     # 縮退検知(DESIGN §8)
+    n_idx::Int
+    template::Vector{Vector{PartonMFTemplateEntry}}
+    is_onsite_group::Vector{Bool}
+
+    h_mf::Vector{Matrix{ComplexF64}}
+    eig_vals::Vector{Vector{Float64}}
+    eig_vecs::Vector{Matrix{ComplexF64}}
+    orbitals::Vector{Matrix{ComplexF64}}
+    dorbitals::Vector{Vector{Matrix{ComplexF64}}}
+    dh_uo_scratch::Matrix{ComplexF64}
+    min_gap::Float64
+
+    function PartonMFHamiltonian(n_site::Int, n_elec::Int, n_flavor::Int, n_idx::Int)
+        n_dof = 2 * n_idx
+        new(
+            n_idx,
+            [PartonMFTemplateEntry[] for _ = 1:n_idx],
+            fill(false, n_idx),
+            [zeros(ComplexF64, n_site, n_site) for _ = 1:n_flavor],
+            [zeros(Float64, n_site) for _ = 1:n_flavor],
+            [zeros(ComplexF64, n_site, n_site) for _ = 1:n_flavor],
+            [zeros(ComplexF64, n_site, n_elec) for _ = 1:n_flavor],
+            [[zeros(ComplexF64, n_site, n_elec) for _ = 1:n_dof] for _ = 1:n_flavor],
+            zeros(ComplexF64, n_site, n_elec),
+            Inf,
+        )
+    end
 end
 
-"""
-    ElectronConfiguration
+# =====================================================================
+# 速度層: 配置
+# =====================================================================
 
-Electron configuration for VMC sampling.
+"""
+    PartonConfiguration
+
+固縛パートン配置。既存の `ElectronConfiguration` は内部コンストラクタが
+2 フレーバー(スピン)の寸法を焼き付けているので、一般 F 用に自前で持つ。
+
+- `ele_idx[(f-1)*n_elec + m]`: フレーバー f の粒子 m が居るサイト(1-based)
+- `ele_cfg[(f-1)*n_site + r]`: サイト r に居る粒子番号、空きは -1
+- `ele_num[(f-1)*n_site + r]`: サイト r の占有数(0 か 1)
+- `stored_ele_idx`: サンプル s の配置(`(s-1)*n_flavor*n_elec + ...`)
+- `burn_flag`: burn-in 済みか。C 版のように counter[11] を間借りせず Bool で持つ
+- `counter[1]` = 試行数、`counter[2]` = 受理数
+
+固縛(全フレーバーが常に同一サイト集合を占有)は `assert_flavors_locked` で
+錨と同じタイミングに検査する。
 """
 mutable struct PartonConfiguration
-    ele_idx::Vector{Int}      # Electron indices [sample][mi+si*Ne]
-    ele_cfg::Vector{Int}      # Electron configuration [sample][ri+si*Nsite]
-    ele_num::Vector{Int}      # Electron number [sample][ri+si*Nsite]
-    ele_proj_cnt::Vector{Int} # Projection count [sample][proj]
+    ele_idx::Vector{Int}
+    ele_cfg::Vector{Int}
+    ele_num::Vector{Int}
 
-    # Temporary arrays for sampling (single sample)
-    tmp_ele_idx::Vector{Int}      # Temporary electron indices [mi+si*Ne]
-    tmp_ele_cfg::Vector{Int}      # Temporary electron configuration [ri+si*Nsite]
-    tmp_ele_num::Vector{Int}      # Temporary electron number [ri+si*Nsite]
-    tmp_ele_proj_cnt::Vector{Int} # Temporary projection count [proj]
-
-    # Burn-in sample storage
     burn_ele_idx::Vector{Int}
-    burn_ele_cfg::Vector{Int}
-    burn_ele_num::Vector{Int}
-    burn_ele_proj_cnt::Vector{Int}
+    burn_flag::Bool
 
-    # Counters for statistics
-    counter::Vector{Int}  # Various counters (hopping attempts, accepts, etc.)
+    stored_ele_idx::Vector{Int}
 
-    function PartonConfiguration(
-        n_sample::Int,
-        n_site::Int,
-        n_elec::Int,
-        n_proj::Int,
-        n_flavor::Int
-    )
-        n_parton_tot = n_parton_total(n_elec, n_flavor)
-        n_sitef = n_site_flavor(n_site, n_flavor)
+    counter::Vector{Int}
 
-       
+    n_site::Int
+    n_elec::Int
+    n_flavor::Int
+
+    function PartonConfiguration(n_site::Int, n_elec::Int, n_flavor::Int, n_sample::Int)
+        n_tot = n_parton_total(n_elec, n_flavor)
+        n_sf = n_site_flavor(n_site, n_flavor)
         new(
-            zeros(Int, n_sample * n_parton_tot),
-            zeros(Int, n_sample * n_sitef),
-            zeros(Int, n_sample * n_sitef),
-            zeros(Int, n_sample * n_proj),
-            # Temporary arrays
-            zeros(Int, n_parton_tot),
-            zeros(Int, n_sitef),
-            zeros(Int, n_sitef),
-            zeros(Int, n_proj),
-            # Burn-in arrays
-            zeros(Int, n_parton_tot + n_sitef + n_sitef + n_proj),  # Combined storage
-            zeros(Int, n_sitef),
-            zeros(Int, n_sitef),
-            zeros(Int, n_proj),
-            # Counters
+            zeros(Int, n_tot),
+            fill(-1, n_sf),
+            zeros(Int, n_sf),
+            zeros(Int, n_tot),
+            false,
+            zeros(Int, n_sample * n_tot),
             zeros(Int, 10),
+            n_site,
+            n_elec,
+            n_flavor,
         )
     end
 end
 
-"""
-    SlaterMatrixData
+"フレーバー f の粒子 m が居るサイト(1-based)。"
+@inline particle_site(cfg::PartonConfiguration, f::Int, m::Int) =
+    cfg.ele_idx[(f - 1) * cfg.n_elec + m]
 
-Slater matrix and inverse matrix data.
+"""
+サイト r が占有されているか。固縛なので全フレーバーで同じ答になり、
+フレーバー 1 を代表として読む。
+"""
+@inline is_occupied(cfg::PartonConfiguration, r::Int) = cfg.ele_num[r] != 0
+
+"""
+    place_particle!(cfg, f, m, r)
+
+初期配置用: フレーバー f の粒子 m をサイト r に置く(移動元なし)。
+"""
+function place_particle!(cfg::PartonConfiguration, f::Int, m::Int, r::Int)
+    base = (f - 1) * cfg.n_site
+    cfg.ele_idx[(f - 1) * cfg.n_elec + m] = r
+    cfg.ele_cfg[base + r] = m
+    cfg.ele_num[base + r] = 1
+    return nothing
+end
+
+"""
+    move_particle!(cfg, f, m, r_old, r_new)
+
+フレーバー f の粒子 m を r_old から r_new へ動かす。ele_idx / ele_cfg /
+ele_num の 3 点を同時に更新する唯一の経路で、固縛を守るために
+`parton_update_ele_config!` から全フレーバー分まとめて呼ばれる。
+"""
+function move_particle!(cfg::PartonConfiguration, f::Int, m::Int, r_old::Int, r_new::Int)
+    base = (f - 1) * cfg.n_site
+    cfg.ele_idx[(f - 1) * cfg.n_elec + m] = r_new
+    cfg.ele_cfg[base + r_old] = -1
+    cfg.ele_num[base + r_old] = 0
+    cfg.ele_cfg[base + r_new] = m
+    cfg.ele_num[base + r_new] = 1
+    return nothing
+end
+
+"""
+    assert_flavors_locked(cfg)
+
+固縛不変条件の検査: 全フレーバーが同一サイト集合を、同一の粒子番号で占有して
+いること。破れていれば error を投げる。
+"""
+function assert_flavors_locked(cfg::PartonConfiguration)
+    for f = 2:cfg.n_flavor, m = 1:cfg.n_elec
+        r1 = particle_site(cfg, 1, m)
+        rf = particle_site(cfg, f, m)
+        rf == r1 || error(
+            "flavor lock violated: particle $m is on site $r1 for flavor 1 but on " *
+            "site $rf for flavor $f",
+        )
+    end
+    for f = 1:cfg.n_flavor, r = 1:cfg.n_site
+        n1 = cfg.ele_num[r]
+        nf = cfg.ele_num[(f - 1) * cfg.n_site + r]
+        nf == n1 || error(
+            "flavor lock violated: site $r has occupation $n1 for flavor 1 but " *
+            "$nf for flavor $f",
+        )
+    end
+    return nothing
+end
+
+# =====================================================================
+# 速度層: 振幅
+# =====================================================================
+
+"""
+    PartonAmplitudeData
+
+全 (qp, f) ブロックの A⁻¹ と det A。フラット配列+手動ストライドの家風に従い、
+ストライド計算は `block_index` と `inv_block` の 2 関数だけに封じ込める。
+`det_a` は生の複素値(乗法更新+定期的な厳密再計算が錨。DESIGN §7)。
 """
 mutable struct PartonAmplitudeData
-    slater_elm::Vector{ComplexF64}      # Slater matrix elements [QPidx][ri+si*Nsite][rj+sj*Nsite]
-    inv_m::Vector{ComplexF64}           # Inverse matrix [QPidx][mi+si*Ne][mj+sj*Ne]
-    pf_m::Vector{ComplexF64}            # Pfaffian [QPidx]
+    inv_a::Vector{ComplexF64}
+    det_a::Vector{ComplexF64}
 
-    # Real versions (for real TBC)
-    slater_elm_real::Vector{Float64}
-    inv_m_real::Vector{Float64}
-    pf_m_real::Vector{Float64}
+    n_qp::Int
+    n_flavor::Int
+    n_elec::Int
 
-    function SlaterMatrixData(n_qp_full::Int, n_site::Int, n_elec::Int, all_complex::Bool)
-        # Validate inputs
-        n_qp_full = max(1, n_qp_full)
-        n_site = max(1, n_site)
-        n_elec = max(1, n_elec)
-
-        n_sitef = 2 * n_site
-        n_parton_tot = 2 * n_elec
-
-        if all_complex
-            new(
-                zeros(ComplexF64, n_qp_full * n_sitef * n_sitef),
-                zeros(ComplexF64, n_qp_full * (n_parton_tot * n_parton_tot + 1)),
-                zeros(ComplexF64, n_qp_full),
-                Float64[],  # Real versions not used
-                Float64[],
-                Float64[],
-            )
-        else
-            new(
-                zeros(ComplexF64, n_qp_full * n_sitef * n_sitef),
-                zeros(ComplexF64, n_qp_full * (n_parton_tot * n_parton_tot + 1)),
-                zeros(ComplexF64, n_qp_full),
-                zeros(Float64, n_qp_full * n_sitef * n_sitef),
-                zeros(Float64, n_qp_full * (n_parton_tot * n_parton_tot + 1)),
-                zeros(Float64, n_qp_full),
-            )
-        end
+    function PartonAmplitudeData(n_qp::Int, n_flavor::Int, n_elec::Int)
+        n_block = n_qp * n_flavor
+        new(
+            zeros(ComplexF64, n_block * n_elec * n_elec),
+            zeros(ComplexF64, n_block),
+            n_qp,
+            n_flavor,
+            n_elec,
+        )
     end
 end
 
-"""
-    SamplingWorkspace
+"(qp, f) → ブロック番号(1-based)。ストライドを書いてよい場所その 1。"
+@inline block_index(amp::PartonAmplitudeData, qp::Int, f::Int) =
+    (qp - 1) * amp.n_flavor + f
 
-Pre-allocated workspace arrays for VMC sampling to avoid repeated allocations.
-This significantly reduces memory allocation overhead in hot loops.
+"(qp, f) の A⁻¹ を Ne×Ne 行列ビューとして返す。ストライドを書いてよい場所その 2。"
+@inline function inv_block(amp::PartonAmplitudeData, qp::Int, f::Int)
+    ne = amp.n_elec
+    b = block_index(amp, qp, f)
+    off = (b - 1) * ne * ne
+    return reshape(view(amp.inv_a, (off + 1):(off + ne * ne)), ne, ne)
+end
+
+"""
+    PartonSamplingWorkspace
+
+ホットループでの確保をゼロにするための作業領域。`ratio_blocks` は契約 2 が
+書き、直後の契約 3 が読む((qp, f) ブロックごとの R)。
 """
 mutable struct PartonSamplingWorkspace
-    # For calculate_m_all_real!
-    inv_m_real_temp::Array{Float64,3}
-    pf_m_real_temp::Vector{Float64}
+    a_scratch::Matrix{ComplexF64}
+    ratio_blocks::Vector{ComplexF64}
+    u_buf::Vector{ComplexF64}
+    v_buf::Vector{ComplexF64}
+    col_buf::Vector{ComplexF64}
 
-    # For calculate_m_all! (complex version)
-    inv_m_temp::Array{ComplexF64,3}
-    pf_m_temp::Vector{ComplexF64}
-
-    # For vmc_make_sample_real! / vmc_make_sample!
-    proj_cnt_new::Vector{Int}
-    pf_m_new_real::Vector{Float64}
-    pf_m_new::Vector{ComplexF64}
-
-    # Cached arrays (computed once)
-    loc_spn::Vector{Int}
-
-    # Workspace for PfaPack (Pfaffian calculations)
-    # Use ThreadedPfaPackWorkspace for parallel execution (one workspace per thread)
-    pfapack_workspace::ThreadedPfaPackWorkspace
-
-    # Cached VMCMainCal local accumulator. Kept as Any because VMCThreadAccumulator
-    # is defined later in threading.jl.
-    main_cal_accumulator::Any
-
-    function SamplingWorkspace(n_parton_tot::Int, n_qp_full::Int, n_proj::Int, n_site::Int)
+    function PartonSamplingWorkspace(n_elec::Int, n_block::Int)
         new(
-            zeros(Float64, n_parton_tot, n_parton_tot, n_qp_full),
-            zeros(Float64, n_qp_full),
-            zeros(ComplexF64, n_parton_tot, n_parton_tot, n_qp_full),
-            zeros(ComplexF64, n_qp_full),
-            zeros(Int, n_proj),
-            zeros(Float64, n_qp_full),
-            zeros(ComplexF64, n_qp_full),
-            zeros(Int, n_site),  # loc_spn will be initialized later
-            ThreadedPfaPackWorkspace(n_parton_tot),  # Thread-local workspaces for parallel Pfaffian calculations
-            nothing,
+            zeros(ComplexF64, n_elec, n_elec),
+            zeros(ComplexF64, n_block),
+            zeros(ComplexF64, n_elec),
+            zeros(ComplexF64, n_elec),
+            zeros(ComplexF64, n_elec),
         )
     end
 end
 
-"""
-    VMCOptimizationState
+# =====================================================================
+# 外箱と委譲
+# =====================================================================
 
-State data for VMC optimization.
 """
-mutable struct VMCOptimizationState
-    energy::EnergyData
-    slater_matrix::SlaterMatrixData
-    electron_config::ElectronConfiguration
-    sr_opt::SROptData
-    opt_data::Vector{OptDataPoint}
-    workspace::SamplingWorkspace
-    phys_quantities::Union{PhysicalQuantities,Nothing}  # For VMCPhysCal mode
+    PartonOptimizationState
 
-    function VMCOptimizationState(
-        n_site::Int,
-        n_elec::Int,
-        n_proj::Int,
-        n_para::Int,
-        n_qp_full::Int,
-        n_vmc_sample::Int,
-        all_complex::Bool,
-        use_fsz::Bool,
-    )
-        n_parton_tot = 2 * n_elec
-        new(
-            EnergyData(),
-            SlaterMatrixData(n_qp_full, n_site, n_elec, all_complex),
-            ElectronConfiguration(n_vmc_sample, n_site, n_elec, n_proj, use_fsz),
-            SROptData(1 + n_para, n_vmc_sample, all_complex),
-            OptDataPoint[],
-            SamplingWorkspace(n_parton_tot, n_qp_full, n_proj, n_site),
-            nothing,  # Initialize as nothing, will be set when needed
-        )
-    end
+既存機構への窓口(`state`)とパートン固有の 4 部品をまとめた外箱。
+`state` は EnergyData / SROptData だけを実使用し、スレーター行列や
+電子配置のフィールドは触らない(パートン側が自前で持つ)。
+"""
+mutable struct PartonOptimizationState
+    state::VMCOptimizationState
+    amp::PartonAmplitudeData
+    config::PartonConfiguration
+    workspace::PartonSamplingWorkspace
+    mfham::PartonMFHamiltonian
 end
+
+# 既存関数への委譲。新しい振る舞いは足さず、`state` へ橋渡しするだけ。
+weight_average_we!(ctx::ParallelContext, st::PartonOptimizationState,
+                   t::CTimer = CTIMER_DISABLED) = weight_average_we!(ctx, st.state, t)
+weight_average_sr_opt!(ctx::ParallelContext, st::PartonOptimizationState,
+                       t::CTimer = CTIMER_DISABLED) =
+    weight_average_sr_opt!(ctx, st.state, t)
+stochastic_opt!(d::ExpertModeData, st::PartonOptimizationState,
+                t::CTimer = CTIMER_DISABLED) = stochastic_opt!(d, st.state, t)
+output_data!(d::ExpertModeData, st::PartonOptimizationState, step::Int; kw...) =
+    output_data!(d, st.state, step; kw...)
+store_opt_data!(d::ExpertModeData, st::PartonOptimizationState, sample_idx::Int) =
+    store_opt_data!(d, st.state, sample_idx)
+reduce_counter!(ctx::ParallelContext, st::PartonOptimizationState) =
+    reduce_counter!(ctx, st.config.counter)
