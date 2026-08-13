@@ -162,10 +162,13 @@ count_opt_trans_parameters(data::ExpertModeData)::Int = length(data.opt_trans)
 
 function count_variational_parameters(data::ExpertModeData)::Int
     n_rbm = count_rbm_parameters(data)
+    # --- parton-mode (fork addition) ---
+    n_pmf = isempty(data.pmfpara_terms) ? 0 : maximum(t.idx for t in data.pmfpara_terms) + 1
     return projection_layout(data).n_proj +
            n_rbm +
            count_orbital_parameters(data) +
            count_opt_trans_parameters(data)
+           +n_pmf
 end
 
 function _set_rbm_terms_from_params!(terms, params::Dict{Int, ComplexF64})

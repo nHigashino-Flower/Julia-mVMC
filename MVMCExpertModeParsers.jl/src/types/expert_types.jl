@@ -714,6 +714,10 @@ end
 # --- parton-mode (fork addition) ---
 """
     PartonMFTransTerm
+
+pmftrans.def の 1 行(平均場ハミルトニアンの固定係数 t)。サイト・フレーバーは
+0-based のまま保持し、1-based への変換はランタイムのテンプレート build の
+一箇所だけで行う。片方向のみ列挙し h.c. は暗黙付与(DESIGN §2.2)。
 """
 struct PartonMFTransTerm
     site1::Int
@@ -726,6 +730,10 @@ end
 
 """
     PartonMFParaTerm
+
+pmfpara.def の 1 行(変分パラメータ α と idx 写像)。`value` は α の正準置き場で、
+SR のパラメータロケータが読み書きする先(DESIGN §1.2)。同一 idx の複数行は
+α を共有する。
 """
 mutable struct PartonMFParaTerm
     site1::Int
@@ -737,11 +745,17 @@ mutable struct PartonMFParaTerm
     is_complex::Bool
 end
 
-struct PhysHopTerm            # 物理ハミルトニアンの定義 = 不変(値は変分でない)
-    site1      :: Int
-    site2      :: Int
-    value      :: ComplexF64
-    is_complex :: Bool
+"""
+    PhysHopTerm
+
+physhop.def の 1 行(物理ハミルトニアンの合成粒子ホッピング t_ij b†_j b_i)。
+変分量ではないので不変。片方向のみ列挙し h.c. は E_loc が両方向評価で供給する。
+"""
+struct PhysHopTerm
+    site1::Int
+    site2::Int
+    value::ComplexF64
+    is_complex::Bool
 end
 # --------------------------------------
 
@@ -839,10 +853,11 @@ mutable struct ExpertModeData
     # orbital block begins, mirroring readdef.c (Slater[iNOrbitalAntiParallel + idx]).
     n_orbital_anti_parallel::Int
 
-    # Parton-mode (fork addition)
+    # --- parton-mode (fork addition) ---
     pmftrans_terms::Vector{PartonMFTransTerm}
     pmfpara_terms::Vector{PartonMFParaTerm}
-    pmfpara_idx_matrix::Union{Nothing,Matrix{Int}} # PartonMFParaIdx[ri, rj] = idx for site pair (ri, rj) (0-based indexing)
+    physhop_terms::Vector{PhysHopTerm}
+    pmfpara_opt_flags::Dict{Int,Int}  # 0-based idx -> OptFlag (pmfpara.def の末尾フラグ行)
 
     function ExpertModeData()
         new(
@@ -903,9 +918,11 @@ mutable struct ExpertModeData
             0,
             0,  # i_flg_orbital_general, i_flg_orbital_anti_parallel, i_flg_orbital_parallel (default: 0)
             0,  # n_orbital_anti_parallel (NArrayAP, default: 0)
+            # --- parton-mode (fork addition) ---
             PartonMFTransTerm[],
             PartonMFParaTerm[],
-            nothing, # pmfpara_idx_matrix
+            PhysHopTerm[],
+            Dict{Int,Int}(),
         )
     end
 end

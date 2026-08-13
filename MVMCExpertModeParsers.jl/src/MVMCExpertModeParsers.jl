@@ -50,6 +50,8 @@ include("parsers/green_parser.jl")
 include("parsers/qptrans_parser.jl")
 include("parsers/rbm_parser.jl")
 include("parsers/doublon_holon_parser.jl")
+include("parsers/pmftrans_parser.jl")  # Parton-mode (fork addition)
+include("parsers/pmfpara_parser.jl")  # Parton-mode (fork addition)
 
 # Export main parsing function
 export parse_expert_mode_files
@@ -766,6 +768,22 @@ function parse_file_by_type!(data::ExpertModeData, file_type::String, file_path:
             data.doublon_holon_4site_params = fill(0.0 + 0.0im, length(result.data.opt_flags))
         else
             error("Failed to parse DH4 file '$file_path': $(result.error_message)")
+        end
+    # Parton-mode (fork addition) ongoing...
+    elseif file_type == "PartonMFTrans"
+        result = parse_parton_mf_trans_def(file_path)
+        if result.success
+            data.pmftrans_terms = result.data
+        else
+            error("Failed to parse PartonMFTrans file '$file_path': $(result.error_message)")
+        end
+    elseif file_type == "PartonMFPara"
+        result = parse_parton_mf_para_def(file_path)
+        # PartonMFPara に関する情報で ExpertModeData に追加したい要素は　parse_parton_mf_para_def　がここで実装し、代入する。
+        if result.success
+            data.pmfpara_terms = result.data
+        else
+            error("Failed to parse PartonMFPara file '$file_path': $(result.error_message)")
         end
     end
 end
