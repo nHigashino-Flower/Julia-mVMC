@@ -61,6 +61,7 @@ end
 @testset "Parton Mode Tests" begin
     include("test_parton_locator.jl")
     include("test_parton_types.jl")
+    include("test_parton_gatekeeper.jl")
 end
 
 @testset "Unit Tests" begin

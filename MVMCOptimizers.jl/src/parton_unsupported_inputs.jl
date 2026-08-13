@@ -1,5 +1,6 @@
 """
 Input contract for the parton mean-field VMC mode (`PartonMode = 1`).
+--- parton-mode (fork addition) ---
 
 This file is the parton-mode counterpart of `unsupported_inputs.jl`. It is a
 fork addition: it is never called from the standard mVMC path, and the standard
@@ -20,23 +21,23 @@ differences from `unsupported_inputs.jl`:
    swallowed by `parse_expert_mode_files`, so a typo can silently leave a
    default in place. Anything this mode depends on is asserted loudly here.
 
+Checks that need the *coupling* between pmftrans and pmfpara (bidirectional
+completeness, onsite/hopping mixing within one idx group, the reality of onsite
+t, idx contiguity) live in `parton_build_mf_templates!` instead: that function
+already builds the joining dictionary, and duplicating it here would mean two
+implementations of the same rule. This file checks what can be decided per row.
+
 Particle numbers are not stored redundantly. `NElec` (partons per flavor) is
 the only stored field; `NParticle` and `NPartonPerFlavor` are parser-level
 aliases that write into it, and the derived names (`n_phys_particle`,
 `n_parton_total`, `n_parton_per_flavor`) are accessor functions in
-`parton_types.jl`. There is therefore nothing to resolve here — only to check.
+`parton_types.jl`.
 
 Call order from `parton_run_para_opt_from_namelist` / `parton_vmc_para_opt!`:
-
-    validate_parton_modpara(data.modpara)            # non-mutating
-    validate_parton_data(data)                       # non-mutating
-    validate_parton_parallel(ctx, data.modpara)      # non-mutating
-
-Milestone scope (M1): NFlavor = 2 via the flavor<->spin mapping, complex
-sz-conserved path, direct SR solver, parameter optimization only.
+the driver materialises `optimization_flags` *before* calling
+`validate_parton_inputs`, because one of the checks here is that the flag array
+covers the mean-field block (DESIGN §2.5).
 """
-
-# --- parton-mode (fork addition) ---
 
 const PARTON_MODE_OFF = 0
 const PARTON_MODE_MEAN_FIELD = 1
@@ -51,21 +52,26 @@ True when the input selects a parton mode. `PartonMode` is the *only* switch:
 is_parton_mode(modpara::ModParaParameters) = modpara.parton_mode != PARTON_MODE_OFF
 
 """
+    parton_n_idx(data::ExpertModeData) -> Int
+
+Number of distinct mean-field variational parameters (`max(idx) + 1`). Same
+formula the parameter locator uses, so the two cannot drift apart.
+"""
+parton_n_idx(data::ExpertModeData) =
+    isempty(data.pmfpara_terms) ? 0 : maximum(t.idx for t in data.pmfpara_terms) + 1
+
+"""
     validate_parton_modpara(modpara::ModParaParameters)
 
 Reject ModPara inputs the parton mean-field mode does not support, and assert
-the settings it silently depends on.
-
-Non-mutating. `NElec` is the single stored particle-number field; everything
-else (`n_phys_particle`, `n_parton_total`) is derived by accessor.
+the settings it silently depends on. Non-mutating.
 
 Rejected or required:
 
 - `PartonMode`: must be `1`. `0` means this entry point was reached by mistake;
   `>= 2` is reserved for future parton ansatze.
-- `NFlavor`: must be `> 2`. `0` usually
-  means the `NFlavor` line is missing or misspelled — unknown modpara keys are
-  only warnings.
+- `NFlavor`: must be `> 0`. `0` usually means the `NFlavor` line is missing or
+  misspelled — unknown modpara keys are only warnings.
 - `2Sz = 0`: the default is `-1`, which the reused machinery reads as
   Sz-non-conserving (FSZ). The parton mode fixes the per-flavor particle
   numbers, so this must be pinned explicitly.
@@ -73,8 +79,8 @@ Rejected or required:
   `NElec = (NLocSpin + NCond) / 2` is meaningless once flavors replace spin.
 - `ComplexType = 1`, `NSRCG = 0`, `NLanczosMode = 0`, `NVMCCalMode = 0`:
   the single variant implemented in M1.
-- `NExUpdatePath = 6` which corresponds to gauge constraints where each distinct flavor partons 
-    must hop with the same coordinate.
+- `NExUpdatePath = 6`: the gauge constraint that every flavor's partons hop
+  with the same coordinate (flavor lock).
 - `NSPGaussLeg = 1`, `NSPStot = 0`: spin projection assumes SU(2) and does not
   carry over to general flavors. Momentum projection (qptrans) is unaffected.
 - `NOrbitalIdx = 0`, `NNeuron = 0`: the pair-orbital (f_ij) and RBM parameter
@@ -88,7 +94,7 @@ function validate_parton_modpara(modpara::ModParaParameters)
             "PartonMode = 0. Use run_para_opt_from_namelist for standard mVMC.",
         )
     end
-    if modpara.partonv_vmc_calc_mode != PARTON_MODE_MEAN_FIELD
+    if modpara.parton_mode != PARTON_MODE_MEAN_FIELD
         error(
             "PartonMode = $(modpara.parton_mode) is not implemented: only " *
             "PartonMode = 1 (parton mean-field VMC) exists. Values >= 2 are " *
@@ -128,13 +134,15 @@ function validate_parton_modpara(modpara::ModParaParameters)
             "$(modpara.nflavor * modpara.nelec)).",
         )
     end
-    if nex_update_path != 6
+    if modpara.nex_update_path != 6
         error(
-            "NExUpdatePath = $(NExUpdatePath) does not protect parton gauge constraints."*
-            "PartonVMC must obey gauge constraint where each distinct flavor partons 
-            must hop with the same coordinate, corresponding with NExUpdatePath = 6."
+            "Parton mode requires NExUpdatePath = 6, got " *
+            "$(modpara.nex_update_path). Only that update path enforces the " *
+            "gauge constraint that every flavor's partons hop with the same " *
+            "coordinate, which is what makes the flavor lock (and hence the " *
+            "product-of-determinants ansatz) well defined.",
         )
-
+    end
 
     # --- quantities whose defaults would silently mislead ------------------
     if modpara.two_sz != 0
@@ -222,11 +230,34 @@ function validate_parton_modpara(modpara::ModParaParameters)
 end
 
 """
+    validate_parton_flavor_consistency(data::ExpertModeData)
+
+M1 restriction: the ansatz is a product of per-flavor determinants, so a term
+may not mix flavors. `PartonMFTransTerm` and `PartonMFParaTerm` keep the general
+(flavor1, flavor2) form for a future hybridising ansatz; this gate is what makes
+`parton_build_mf_templates!` free to fold the pair down to a single flavor.
+"""
+function validate_parton_flavor_consistency(data::ExpertModeData)
+    for (name, terms) in
+        (("pmftrans", data.pmftrans_terms), ("pmfpara", data.pmfpara_terms))
+        for (k, t) in enumerate(terms)
+            t.flavor1 == t.flavor2 || error(
+                "$name.def term $k: flavor mixing (flavor1 = $(t.flavor1), " *
+                "flavor2 = $(t.flavor2)) is not supported: the parton ansatz " *
+                "is a product of per-flavor determinants. Reserved for a " *
+                "future extension.",
+            )
+        end
+    end
+    return nothing
+end
+
+"""
     validate_parton_data(data::ExpertModeData)
 
 Validate parton-mode settings that need parsed data, not just ModPara.
 
-Non-mutating. In particular this asserts that the mean-field parameter file was
+Non-mutating. In particular this asserts that the mean-field input files were
 actually read: `parse_expert_mode_files` continues past per-file parse failures
 (matching the C implementation), so a malformed or missing pmfpara.def would
 otherwise surface much later as an empty Hamiltonian.
@@ -236,28 +267,50 @@ deliberately not restricted here — they multiply the determinant product and
 reuse the existing projection machinery unchanged.
 """
 function validate_parton_data(data::ExpertModeData)
+    n_site = data.modpara.nsite
+    n_flavor = data.modpara.nflavor
+
+    # --- required inputs ---------------------------------------------------
     if isempty(data.pmfpara_terms)
         error(
-            "No mean-field parameter terms were parsed: pmfpara.def is missing, empty, " *
-            "or failed to parse. Parse failures of individual .def files are " *
-            "not fatal (C-compatible behaviour), so check the parser warnings " *
-            "and the PartonMFPara entry in namelist.def.",
+            "No mean-field parameter terms were parsed: pmfpara.def is missing, " *
+            "empty, or failed to parse. Parse failures of individual .def files " *
+            "are not fatal (C-compatible behaviour), so check the parser " *
+            "warnings and the PartonMFPara entry in namelist.def.",
         )
     end
     if isempty(data.pmftrans_terms)
         error(
-            "No mean-field transfer and interaction terms were parsed: pmftrans.def is missing, empty, " *
-            "or failed to parse. Parse failures of individual .def files are " *
-            "not fatal (C-compatible behaviour), so check the parser warnings " *
-            "and the PartonMFTrans entry in namelist.def.",
+            "No mean-field transfer terms were parsed: pmftrans.def is missing, " *
+            "empty, or failed to parse. Check the parser warnings and the " *
+            "PartonMFTrans entry in namelist.def.",
         )
     end
+    if isempty(data.physhop_terms)
+        error(
+            "No physical hopping terms were parsed: physhop.def is missing, " *
+            "empty, or failed to parse. Check the parser warnings and the " *
+            "PhysHop entry in namelist.def. Without it the local energy has no " *
+            "off-diagonal part.",
+        )
+    end
+
+    # --- non-coexisting blocks --------------------------------------------
     if !isempty(data.orbital_terms)
         error(
             "Orbital terms are present ($(length(data.orbital_terms)) terms) " *
             "but the parton ansatz replaces the pair orbital entirely. " *
             "Remove Orbital/OrbitalAntiParallel/OrbitalParallel/OrbitalGeneral " *
             "from namelist.def.",
+        )
+    end
+    if !isempty(data.coulomb_intra_terms)
+        error(
+            "CoulombIntra is not meaningful in parton mode: the flavor lock " *
+            "makes every occupied site carry one parton per flavor, so the " *
+            "on-site repulsion is a constant. Express a chemical potential as " *
+            "a diagonal row of coulombinter.def instead (V n_i n_i = V n_i " *
+            "under the hard-core constraint).",
         )
     end
     if !isempty(data.doublon_holon_2site_indices) ||
@@ -275,57 +328,118 @@ function validate_parton_data(data::ExpertModeData)
         )
     end
 
-    n_site = data.modpara.nsite
+    # --- per-row range checks ---------------------------------------------
     for (k, t) in enumerate(data.pmfpara_terms)
-        for (label, site) in (("site1", t.site1), ("site2", t.site2))
-            if site < 0 || site >= n_site
-                error(
-                    "mfparam.def term $k: $label = $site is out of range " *
-                    "[0, $(n_site - 1)].",
-                )
-            end
-        end
-        for (label, flavor) in (("flavor1", t.flavor1), ("flavor2", t.flavor2))
-            if flavor < 0 || flavor >= data.modpara.nflavor
-                error(
-                    "mfparam.def term $k: $label = $flavor is out of range " *
-                    "[0, $(data.modpara.nflavor - 1)] for NFlavor = " *
-                    "$(data.modpara.nflavor).",
-                )
-            end
-        end
+        _check_site_range("pmfpara.def", k, t.site1, t.site2, n_site)
+        _check_flavor_range("pmfpara.def", k, t.flavor1, t.flavor2, n_flavor)
     end
-
     for (k, t) in enumerate(data.pmftrans_terms)
-        for (label, site) in (("site1", t.site1), ("site2", t.site2))
-            if site < 0 || site >= n_site
-                error(
-                    "mfparam.def term $k: $label = $site is out of range " *
-                    "[0, $(n_site - 1)].",
-                )
-            end
+        _check_site_range("pmftrans.def", k, t.site1, t.site2, n_site)
+        _check_flavor_range("pmftrans.def", k, t.flavor1, t.flavor2, n_flavor)
+    end
+
+    # --- pmftrans: one direction only (h.c. is implicit) -------------------
+    seen_mf = Set{NTuple{3,Int}}()
+    for (k, t) in enumerate(data.pmftrans_terms)
+        key = (t.site1, t.site2, t.flavor1)
+        key in seen_mf &&
+            error("pmftrans.def term $k: duplicate entry for $key.")
+        if t.site1 != t.site2 && (t.site2, t.site1, t.flavor1) in seen_mf
+            error(
+                "pmftrans.def term $k: both directions of the bond " *
+                "($(t.site1), $(t.site2)) are listed. List each bond once — " *
+                "the Hermitian conjugate is supplied implicitly.",
+            )
         end
+        push!(seen_mf, key)
+    end
+
+    # --- physhop: one direction only, no self loops ------------------------
+    seen_hop = Set{NTuple{2,Int}}()
+    for (k, t) in enumerate(data.physhop_terms)
+        _check_site_range("physhop.def", k, t.site1, t.site2, n_site)
+        t.site1 != t.site2 || error(
+            "physhop.def term $k: site1 == site2 is not allowed. A chemical " *
+            "potential belongs on the diagonal of coulombinter.def; a diagonal " *
+            "hop would be double counted by the implicit h.c. and the " *
+            "both-directions evaluation in the local energy.",
+        )
+        (t.site1, t.site2) in seen_hop &&
+            error("physhop.def term $k: duplicate bond ($(t.site1), $(t.site2)).")
+        (t.site2, t.site1) in seen_hop && error(
+            "physhop.def term $k: both directions of the bond " *
+            "($(t.site1), $(t.site2)) are listed. List each bond once — the " *
+            "Hermitian conjugate is supplied implicitly.",
+        )
+        push!(seen_hop, (t.site1, t.site2))
     end
 
     return nothing
 end
 
-function validate_parton_flavor_consistency(data::ExpertModeData)
-    for (name, terms) in (("pmftrans", data.pmftrans_terms),
-        ("pmfpara",  data.pmfpara_terms))
-        for (k, t) in enumerate(terms)
-            t.flavor1 == t.flavor2 || error(
-                                            "$name.def term $k: flavor-mixing (flavor1=$(t.flavor1), " *
-                                            "flavor2=$(t.flavor2)) is not supported: the parton ansatz " *
-                                            "is a product of per-flavor determinants. Reserved for a " *
-                                            "future extension."
-                                            )
-            # site/flavor の範囲チェックも両テーブル共通化してここで
-        end
+function _check_site_range(file::String, k::Int, site1::Int, site2::Int, n_site::Int)
+    for (label, site) in (("site1", site1), ("site2", site2))
+        0 <= site < n_site || error(
+            "$file term $k: $label = $site is out of range [0, $(n_site - 1)].",
+        )
     end
     return nothing
 end
 
+function _check_flavor_range(
+    file::String,
+    k::Int,
+    flavor1::Int,
+    flavor2::Int,
+    n_flavor::Int,
+)
+    for (label, flavor) in (("flavor1", flavor1), ("flavor2", flavor2))
+        0 <= flavor < n_flavor || error(
+            "$file term $k: $label = $flavor is out of range " *
+            "[0, $(n_flavor - 1)] for NFlavor = $n_flavor.",
+        )
+    end
+    return nothing
+end
+
+"""
+    validate_parton_opt_flags(data::ExpertModeData)
+
+Check the OptFlag array against the parameter count (DESIGN §2.5).
+
+`stochastic_opt!` treats an out-of-range flag index as "frozen" and says
+nothing, so an array that is too short means SR silently ignores the entire
+mean-field block — the worst kind of silent failure this mode can have. The
+driver materialises the array before the gate runs, so by this point the length
+must be exactly `2 * NPara`.
+"""
+function validate_parton_opt_flags(data::ExpertModeData)
+    n_proj = MVMCExpertModeParsers.projection_layout(data).n_proj
+    n_idx = parton_n_idx(data)
+    expected = 2 * (n_proj + n_idx)
+
+    if length(data.optimization_flags) != expected
+        error(
+            "optimization_flags has length $(length(data.optimization_flags)) " *
+            "but the parton mode needs exactly $expected " *
+            "(2 slots x (NProj = $n_proj + NPartonMFParaIdx = $n_idx)). " *
+            "stochastic_opt! reads an out-of-range flag as 'frozen' without " *
+            "warning, so a short array would make SR ignore the mean-field " *
+            "parameters silently. The driver must materialise the flags before " *
+            "this gate runs.",
+        )
+    end
+
+    mf_slots = (2 * n_proj + 1):expected
+    any(i -> data.optimization_flags[i], mf_slots) || error(
+        "Every mean-field slot in optimization_flags is frozen, so SR has " *
+        "nothing to optimize. At least one real or imaginary component of the " *
+        "mean-field parameters must have flag = 1. Gauge fixing is meant to " *
+        "freeze one representative amplitude, not the whole block.",
+    )
+
+    return nothing
+end
 
 """
     validate_parton_parallel(ctx::ParallelContext, modpara::ModParaParameters)
@@ -357,6 +471,7 @@ function validate_parton_inputs(data::ExpertModeData, ctx::ParallelContext)
     validate_parton_modpara(data.modpara)
     validate_parton_flavor_consistency(data)
     validate_parton_data(data)
+    validate_parton_opt_flags(data)
     validate_parton_parallel(ctx, data.modpara)
     return nothing
 end
