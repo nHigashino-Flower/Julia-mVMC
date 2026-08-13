@@ -279,3 +279,60 @@ function per_bond_mf_data(F::Int; n_site::Int = 4, n_elec::Int = 2)
     return data
 end
 
+
+
+"""
+    _write_min_parton_input(dir) -> (namelist_path, n_idx)
+
+ドライバ経路のテスト用に、最小のパートン入力一式を書く(4 サイト環・F=2・
+強弱 2 群 + オンサイト、value 列ありで乱数経路は通らない)。
+"""
+function _write_min_parton_input(dir::AbstractString)
+    data = dimerized_mf_data()
+    open(joinpath(dir, "pmftrans.def"), "w") do io
+        println(io, "===="); println(io, "NPartonMFTrans $(length(data.pmftrans_terms))")
+        println(io, "===="); println(io, "===="); println(io, "====")
+        for t in data.pmftrans_terms
+            println(io, "$(t.site1) $(t.flavor1) $(t.site2) $(t.flavor2) $(real(t.value)) $(imag(t.value))")
+        end
+    end
+    n_idx = maximum(t -> t.idx, data.pmfpara_terms) + 1
+    open(joinpath(dir, "pmfpara.def"), "w") do io
+        println(io, "===="); println(io, "NPartonMFParaIdx $n_idx")
+        println(io, "ComplexType 1"); println(io, "===="); println(io, "====")
+        for t in data.pmfpara_terms
+            println(io, "$(t.site1) $(t.flavor1) $(t.site2) $(t.flavor2) $(t.idx) $(real(t.value)) $(imag(t.value))")
+        end
+        for i = 0:(n_idx - 1); println(io, "$i 1"); end
+    end
+    open(joinpath(dir, "physhop.def"), "w") do io
+        println(io, "===="); println(io, "NPhysHop $(length(data.physhop_terms))")
+        println(io, "===="); println(io, "===="); println(io, "====")
+        for t in data.physhop_terms
+            println(io, "$(t.site1) $(t.site2) $(real(t.value)) $(imag(t.value))")
+        end
+    end
+    open(joinpath(dir, "coulombinter.def"), "w") do io
+        println(io, "===="); println(io, "NCoulombInter $(length(data.coulomb_inter_terms))")
+        println(io, "===="); println(io, "===="); println(io, "====")
+        for t in data.coulomb_inter_terms
+            println(io, "$(t.site1) $(t.site2) $(t.value)")
+        end
+    end
+    open(joinpath(dir, "modpara.def"), "w") do io
+        for l in ["CDataFileHead zvo", "CParaFileHead zqp", "NVMCCalMode 0",
+                  "Nsite $(data.modpara.nsite)", "NElec $(data.modpara.nelec)",
+                  "PartonMode 1", "NFlavor $(data.modpara.nflavor)",
+                  "NVMCWarmUp 20", "NVMCInterval 1", "NVMCSample 60",
+                  "NSROptItrStep 3", "NSROptItrSmp 2",
+                  "DSROptStepDt 0.02", "DSROptStaDel 0.02", "DSROptRedCut 1e-8",
+                  "ComplexType 1", "2Sz 0", "NExUpdatePath 6", "RndSeed 11272"]
+            println(io, l)
+        end
+    end
+    write(joinpath(dir, "namelist.def"),
+          "ModPara        modpara.def\nPartonMFTrans  pmftrans.def\n" *
+          "PartonMFPara   pmfpara.def\nPhysHop        physhop.def\n" *
+          "CoulombInter   coulombinter.def\n")
+    return joinpath(dir, "namelist.def"), n_idx
+end

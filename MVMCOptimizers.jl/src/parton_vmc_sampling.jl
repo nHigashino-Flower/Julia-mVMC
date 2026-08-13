@@ -236,6 +236,9 @@ function parton_make_sample!(pstate::PartonOptimizationState, data::ExpertModeDa
             st = parton_update_amplitude!(amp, mfham, data, ws, m, r_new)  # ② 高速更新
             n_accept_anchor += 1
             if st === :need_recompute || n_accept_anchor >= mp.parton_block_update_size
+                # counter[3] = ratio_floor ヒット回数、counter[4] = 厳密再計算の回数
+                st === :need_recompute && (cfg.counter[3] += 1)
+                cfg.counter[4] += 1
                 parton_recompute_amplitude_all!(amp, mfham, cfg, data, ws)
                 n_accept_anchor = 0
             end

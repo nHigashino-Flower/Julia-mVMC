@@ -73,6 +73,7 @@ end
     include("test_parton_force_gradient.jl")
     include("test_parton_gauge.jl")
     include("test_parton_initial_params.jl")
+    include("test_parton_output.jl")
 end
 
 @testset "Unit Tests" begin

@@ -418,7 +418,16 @@ Solves S*x = g where:
 # Returns
 - `info::Int`: 0 = success, non-zero = error
 """
-function stochastic_opt!(data::ExpertModeData, state::VMCOptimizationState, c_timer::CTimer = CTIMER_DISABLED)::Int
+function stochastic_opt!(data::ExpertModeData, state::VMCOptimizationState,
+                        c_timer::CTimer = CTIMER_DISABLED;
+                        # --- parton-mode (fork addition) ---
+                        # SRinfo の writer は SR-CG パスからしか呼ばれておらず、直接法では
+                        # 一切出力されない。パートンモードは門番で NSRCG = 0 を要求するので
+                        # このままでは SRinfo が得られない。既存 writer をそのまま呼ぶための
+                        # フックを足す。既定 false なので既存モードの出力は不変。
+                        write_srinfo::Bool = false,
+                        srinfo_dir::Union{String,Nothing} = nothing,
+                        srinfo_iter::Int = 0)::Int
     # Get parameters
     n_para = _parameter_count_breakdown(data).n_para
     sr_opt_size = state.sr_opt.sr_opt_size
@@ -578,6 +587,15 @@ function stochastic_opt!(data::ExpertModeData, state::VMCOptimizationState, c_ti
                 break
             end
         end
+    end
+
+    # --- parton-mode (fork addition) ---
+    # 既存の writer をそのまま呼ぶ(列形式を二重管理しない)。sDiagMax などは
+    # ソルバ内部のローカル値をそのまま渡す — 外から再計算すると実際に解いた値とズレる。
+    if info == 0 && write_srinfo
+        _write_cg_srinfo!(data, 2 * n_para, n_smat, opt_num, cut_num,
+                          s_diag_max, s_diag_min, smat_to_para_idx, g,
+                          srinfo_iter, srinfo_dir)
     end
 
     # Phase 6: Update parameters

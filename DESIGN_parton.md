@@ -318,7 +318,26 @@ MVMCOptimizers.jl/src/
 | 4 | `parton_main_cal!` / `parton_diag_energy` | サンプル毎: 契約1で錨→対角=占有数→合成ホップ=契約2 仮想呼び出し(両方向) |
 | 5 | `parton_calculate_o!` + `o_slot_re/im` | §1.4 の O。スロット (2p+1, 2p+2) に**独立値**を格納(既存の `val*im` 近道は正則性前提=流用禁止) |
 | 門番 | `validate_parton_inputs` ほか | §2 の執行+物理整合+flags 長検査(validation.jl は本番未接続のため頼らない) |
+| 出力 | `parton_write_*`(§3.3.1) | 既存 writer を再利用。**読むだけ**で新規の数値計算はしない。rank 0 のみ。step 0 が "w"、以降 "a" |
 | 配線 | `parton_vmc_para_opt!` / ドライバ | 委譲: weight_average / stochastic_opt! / output_data! / bcast_scalar / reduce_counter!(counter 直渡し)。`parton_sync_parameters!` は bcast + ゲージ射影(D_AmpMax は不適用)。射影は α にのみ作用し、射影因子には触れない |
+
+### 3.3.1 出力ファイル一覧(v3.4)
+
+すべて rank 0 のみ。`PartonMode = 0` では 1 つも生成されない(パートンの
+オーケストレータからしか呼ばれないため)。既存ファイルの列形式は変更していない。
+
+| ファイル | 内容 | 出所 |
+|---|---|---|
+| `zvo_SRinfo.dat` | Npara/Msize/optCut/diagCut/sDiagMax/sDiagMin/absRmax/imax | **直接法パス**から既存 writer をそのまま呼ぶ。ヘッダ・列は CG 版と 1 文字も違わない |
+| `zvo_parton_diag.dat` | step, min_gap, |α|, ..., 受理率, ノルム(射影前/後), 試行数, 受理数, 再計算数 | 既存カウンタと `PartonMFHamiltonian` の保持値を読むだけ |
+| `zvo_parton_time.dat` | step ごとの所要時間と累積時間(wall-clock) | `time()` 差分 |
+| `zqp_pmfham_opt.dat` | 最終 α の H_MF(flavor, i, j, Re, Im) | **SR ループ後に最終 α で組み直してから**ダンプ(唯一の正は α 側) |
+| `zqp_pmfband_opt.dat` | 上記 H_MF の全固有値 | 同上。HOMO-LUMO ギャップが `mfham.min_gap` と一致 |
+| `zvo_parton_runinfo.dat` | base_seed / PartonMode / n_idx / githash / wall_sec ほか | githash 取得失敗時は `"unknown"` で run は落ちない |
+| `zvo_conv.dat` | step, E, var, |E − E_tail| | `zvo_out.dat` の列を読み直したもの(再計算しない) |
+
+作図は本体から切り離す: `tools/plot_conv.jl` + `tools/Project.toml`(Plots はここだけ)。
+本体パッケージに作図依存は入れない。
 
 ## 4. サンプリング骨格の規約
 
@@ -412,6 +431,13 @@ stochastic_opt!(案 B 後は MF ブロックも解く)/ weight_average / paralle
    **idx = 0 が脱落していない**こと(既存 writer のヘッダ 4 行問題の回帰ガード)、
    (6c) 行を 1 本削った `InPmfPara.def` は警告止まりでなくエラーで停止すること。
    実装: `MVMCOptimizers.jl/test/test_parton_initial_params.jl`
+10. **出力ファイル**(v3.4 追加、恒久): (1) `PartonMode = 0` で新規ファイルが 1 つも
+   出ないこと、(2) SRinfo が直接法パスから出て既存 CG 版とヘッダ・列数が一致、
+   (3) 診断ログの行数・受理率が既存カウンタと整合、(4) 平均場ダンプが最終 α から
+   再構成した H と 1e-12 で一致し、バンドが対角化結果と 1e-10 で一致、
+   (5) run メタデータのベースシードが modpara と一致、(6) 収束テーブルが
+   `zvo_out.dat` と行単位で整合、(7) 作図スクリプトが本体依存に入っていないこと。
+   実装: `MVMCOptimizers.jl/test/test_parton_output.jl`
 
 ## 9. マイルストーン
 
@@ -441,6 +467,14 @@ stochastic_opt!(案 B 後は MF ブロックも解く)/ weight_average / paralle
 
 ## 11. 決定ログ(要約)
 
+- v3.4 (2026-08-13): **出力ファイル整備**(§3.3.1)。診断は既存状態を読むだけで、
+  収集のための新しい数値計算は足さない。平均場ダンプは SR ループ後に**最終 α で
+  組み直してから**書く(ループ内の最後の `parton_update_orbitals!` は最終更新前の α で
+  走っており、そのままでは α* と H が食い違う)。診断行の `min_gap` は「そのステップ
+  時点」の値なので、ループ後の `mfham.min_gap` とは時点が異なる — 比較するなら
+  バンドファイル側と突き合わせる。作図は `tools/` に隔離し本体に Plots を入れない。
+  **upstream への PR 候補**: 直接法ソルバに SRinfo 出力がないのは CG 版との非対称で、
+  `stochastic_opt!` に kwarg を足すだけで既存 writer を再利用できる
 - v3.3 (2026-08-13): **α の初期値経路**(§2.3.1)。modpara にキーを足さず、pmfpara.def の
   value 列の有無と namelist.def の InPmfPara の有無だけで切り替える。presence は列の有無で
   判定し、値がゼロかどうかでは分岐しない。乱数は専用 RNG ストリーム・ベースシード基準で

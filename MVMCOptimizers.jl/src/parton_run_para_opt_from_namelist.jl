@@ -76,13 +76,30 @@ function parton_run_para_opt_from_namelist(
     #    次回そのまま InPmfPara.def として渡せば厳密に再現・継続できる。
     is_output_rank(ctx) && parton_write_pmfpara(
         data, joinpath(output_dir, data.modpara.c_para_file_head * "_pmfpara_init.dat"))
-    return parton_vmc_para_opt!(
+
+    # 10. run メタデータ(出自の追跡用)。base_seed は乱数初期化の再現に要る値。
+    t_start = time()
+    is_output_rank(ctx) && parton_write_runinfo(
+        data, String(output_dir); namelist_path = namelist_str, base_seed = base_seed,
+        n_idx = parton_n_idx(data),
+        n_para = MVMCExpertModeParsers.count_variational_parameters(data),
+        n_rank = ctx.size0, t_start = t_start, t_end = t_start)
+
+    status = parton_vmc_para_opt!(
         pstate,
         data,
         ctx;
         rng = rng,
         output_dir = String(output_dir),
     )
+
+    # 壁時計を確定させて書き直す
+    is_output_rank(ctx) && parton_write_runinfo(
+        data, String(output_dir); namelist_path = namelist_str, base_seed = base_seed,
+        n_idx = parton_n_idx(data),
+        n_para = MVMCExpertModeParsers.count_variational_parameters(data),
+        n_rank = ctx.size0, t_start = t_start, t_end = time())
+    return status
 end
 
 """

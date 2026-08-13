@@ -87,6 +87,7 @@ include("parton_initial_params.jl")
 include("parton_calculate_m_all.jl")
 include("parton_vmc_sampling.jl")
 include("parton_vmc_main_cal.jl")
+include("parton_output.jl")
 include("parton_vmc_para_opt.jl")
 include("parton_run_para_opt_from_namelist.jl")
 

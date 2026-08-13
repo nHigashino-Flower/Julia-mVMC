@@ -208,13 +208,71 @@ function parton_fill_sr_opt_o!(
     ip::ComplexF64,
     n_proj::Int;
     conjugate::Bool = true,
+    project_gauge::Bool = false,
+    alpha::Vector{ComplexF64} = ComplexF64[],
 )
     fill!(sr_opt_o, 0)
     sr_opt_o[1] = ComplexF64(1)     # 既存規約: 先頭 2 スロットは (1, 0)
     sr_opt_o[2] = ComplexF64(0)
     parton_calculate_o!(sr_opt_o, amp, mfham, cfg, data, qp_weight, ip, n_proj)
     conjugate && _parton_conjugate_mf_slots!(sr_opt_o, n_proj, mfham.n_idx)
+    project_gauge && _parton_project_gauge_from_o!(sr_opt_o, mfham, alpha, n_proj)
     return sr_opt_o
+end
+
+"""
+    _parton_project_gauge_from_o!(sr_opt_o, mfham, alpha, n_proj)
+
+サンプルごとの O からゲージ方向の成分を除く(DESIGN §2.5)。
+
+厳密演算なら `Σ_slot v_slot O[slot] = 0`(ゲージ方向へ動かしても Ψ が変わらないので
+対数微分の射影がゼロ)だが、MC のノイズがこの恒等式を破る。破れたぶんは
+正則化 ε 付きの S⁻¹ で 1/ε 倍されて α をゲージ方向へ押し流す。
+
+ここで O 自体から成分を抜いておくと、S も力ベクトルも**構成的に**ゲージ方向を
+消す(`S v = 0`, `g·v = 0`)。参照実装(PartonFCI/vmc_chi)は力ベクトルだけを
+射影しているが、O を直に落とせば計量まで揃うので上流の `stochastic_opt!` に
+一切触らずに済む。
+
+スケール方向は `α → (1+ε)α` なので、実自由度スロット空間での方向ベクトルは
+その時点の α そのもの(Re スロットには Re α_k、Im スロットには Im α_k)。
+"""
+function _parton_project_gauge_from_o!(
+    sr_opt_o::AbstractVector{ComplexF64},
+    mfham::PartonMFHamiltonian,
+    alpha::Vector{ComplexF64},
+    n_proj::Int,
+)
+    for grp in mfham.gauge_scale_groups
+        num = zero(ComplexF64)
+        den = 0.0
+        for k in grp
+            p = n_proj + k
+            vr, vi = real(alpha[k]), imag(alpha[k])
+            num += vr * sr_opt_o[o_slot_re(p)] + vi * sr_opt_o[o_slot_im(p)]
+            den += vr * vr + vi * vi
+        end
+        den > 1e-30 || continue
+        c = num / den
+        for k in grp
+            p = n_proj + k
+            sr_opt_o[o_slot_re(p)] -= c * real(alpha[k])
+            sr_opt_o[o_slot_im(p)] -= c * imag(alpha[k])
+        end
+    end
+    # シフト方向(H → H + μI)も同様に落とす
+    for grp in mfham.gauge_shift_groups
+        isempty(grp) && continue
+        num = zero(ComplexF64)
+        for k in grp
+            num += sr_opt_o[o_slot_re(n_proj + k)]
+        end
+        c = num / length(grp)
+        for k in grp
+            sr_opt_o[o_slot_re(n_proj + k)] -= c
+        end
+    end
+    return nothing
 end
 
 """
@@ -307,6 +365,10 @@ function parton_main_cal!(pstate::PartonOptimizationState, data::ExpertModeData)
     energy.sztot = 0
     energy.sztot2 = 0
 
+    # ゲージ方向を O から落とすか(PartonGaugeFix と同じスイッチで制御)
+    gauge_proj = mp.parton_gauge_fix != 0
+    α_now = gauge_proj ? parton_alpha_from_terms(data) : ComplexF64[]
+
     use_store = mp.nstore_o != 0
     n_skipped = 0
     # 実際に蓄積したサンプル数。ノード上のサンプルを飛ばすと s とずれるので、
@@ -332,7 +394,8 @@ function parton_main_cal!(pstate::PartonOptimizationState, data::ExpertModeData)
         energy.etot2 += w * conj(e) * e
 
         parton_fill_sr_opt_o!(
-            sr.sr_opt_o, amp, mfham, cfg, data, qp_weight, ip, n_proj)
+            sr.sr_opt_o, amp, mfham, cfg, data, qp_weight, ip, n_proj;
+            project_gauge = gauge_proj, alpha = α_now)
 
         if use_store
             calculate_oo_store!(

@@ -184,16 +184,21 @@ function parton_vmc_para_opt!(
     rng,
     output_dir::Union{String,Nothing} = nothing,
     c_timer::CTimer = CTIMER_DISABLED,
+    write_diagnostics::Bool = true,
 )::Int
     validate_parton_inputs(data, ctx)
 
     mp = data.modpara
+    out_rank = is_output_rank(ctx)
+    diag_dir = (write_diagnostics && out_rank) ? output_dir : nothing
+    t_run0 = time()
     n_elec = mp.nelec
     n_steps = mp.nsr_opt_itr_step
     n_smp = mp.nsr_opt_itr_smp
     mfham = pstate.mfham
 
     for step = 0:(n_steps - 1)
+        t_step0 = time()
         α = parton_alpha_from_terms(data)
         parton_update_orbitals!(mfham, α, n_elec)             # 契約 0
         parton_update_orbital_derivatives!(mfham, n_elec)     # 契約 0′
@@ -208,7 +213,9 @@ function parton_vmc_para_opt!(
         is_output_rank(ctx) &&
             output_data!(data, pstate.state, step; output_dir = output_dir)
 
-        info = stochastic_opt!(data, pstate.state, c_timer)
+        info = stochastic_opt!(data, pstate.state, c_timer;
+                               write_srinfo = diag_dir !== nothing,
+                               srinfo_dir = diag_dir, srinfo_iter = step)
         info = Int(bcast_scalar(ctx, info))
         if info != 0
             is_output_rank(ctx) &&
@@ -216,7 +223,18 @@ function parton_vmc_para_opt!(
             return info
         end
 
+        norm_pre = sqrt(sum(abs2, parton_alpha_from_terms(data)))
         parton_sync_parameters!(data, ctx, mfham)
+        if diag_dir !== nothing
+            norm_post = sqrt(sum(abs2, parton_alpha_from_terms(data)))
+            parton_write_diag(data, pstate, step, diag_dir;
+                              n_recompute = pstate.config.counter[4],
+                              n_need_recompute = pstate.config.counter[3],
+                              alpha_norm_pre = norm_pre,
+                              alpha_norm_post = norm_post)
+            t_now = time()
+            parton_write_time(data, step, diag_dir, t_now - t_step0, t_now - t_run0)
+        end
 
         if step >= n_steps - n_smp
             store_opt_data!(data, pstate.state, step - (n_steps - n_smp))
@@ -226,6 +244,15 @@ function parton_vmc_para_opt!(
     # 最適化された α を永続化する(zqp_opt.dat)。これを呼ばないと SR の結果が
     # どこにも残らない。data_io.jl の登録点で pmfpara_terms も書かれる。
     is_output_rank(ctx) && output_opt_data!(data; output_dir = output_dir)
+
+    # SR 終了後に 1 回: 平均場ハミルトニアン/バンドと収束テーブル
+    if diag_dir !== nothing
+        # SR ループ内の最後の parton_update_orbitals! は「最終更新**前**」の α を使って
+        # いるので、ダンプ前に最終 α で組み直す。そうしないと α* と H が食い違う。
+        parton_update_orbitals!(mfham, parton_alpha_from_terms(data), n_elec)
+        parton_write_mfham(data, mfham, diag_dir)
+        parton_write_conv(data, diag_dir)
+    end
 
     return 0
 end
