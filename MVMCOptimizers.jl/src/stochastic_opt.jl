@@ -66,6 +66,7 @@ end
     _PARAM_RBM
     _PARAM_ORBITAL
     _PARAM_OPTTRANS
+    _PARAM_PMF   # --- parton-mode (fork addition) ---
 end
 
 struct _ParameterLocation
@@ -122,6 +123,16 @@ function _foreach_parameter_location(f, data::ExpertModeData, counts)
         para_idx = opt_trans_start + i - 1
         1 <= para_idx <= n_para &&
             f(para_idx, _ParameterLocation(_PARAM_OPTTRANS, 0, i))
+    end
+
+    # --- parton-mode (fork addition) ---
+    # 共有 idx は ORBITAL と同じく全行を訪問する(絶対 set は冪等)。
+    pmf_start = counts.n_proj + counts.n_rbm + counts.n_orbital_idx +
+                counts.n_opt_trans + 1
+    for term_idx in eachindex(data.pmfpara_terms)
+        para_idx = pmf_start + data.pmfpara_terms[term_idx].idx   # idx は 0-based
+        pmf_start <= para_idx <= n_para &&
+            f(para_idx, _ParameterLocation(_PARAM_PMF, 0, term_idx))
     end
     return nothing
 end
@@ -180,6 +191,21 @@ function _foreach_parameter_location_at(f, data::ExpertModeData, counts, para_id
         1 <= opt_idx <= length(data.opt_trans) &&
             f(_ParameterLocation(_PARAM_OPTTRANS, 0, opt_idx))
     end
+
+    # --- parton-mode (fork addition) ---
+    # MF ブロックは全パラメータ並びの末尾。パートンモードでは RBM / orbital /
+    # opttrans が 0 なので実際の並びは [射影 | MF] になる。上の elseif 連鎖とは
+    # 添字域が重ならないので独立した if にしている。共有 idx は全行訪問。
+    pmf_start = counts.n_proj + counts.n_rbm + counts.n_orbital_idx +
+                counts.n_opt_trans + 1
+    if pmf_start <= para_idx <= counts.n_para
+        pmf_idx = para_idx - pmf_start          # 0-based
+        for term_idx in eachindex(data.pmfpara_terms)
+            data.pmfpara_terms[term_idx].idx == pmf_idx &&
+                f(_ParameterLocation(_PARAM_PMF, 0, term_idx))
+        end
+    end
+
     return nothing
 end
 
@@ -198,6 +224,8 @@ function _parameter_location_value(data::ExpertModeData, loc::_ParameterLocation
         return ComplexF64(data.orbital_terms[loc.item_idx].value)
     elseif loc.kind == _PARAM_OPTTRANS
         return ComplexF64(data.opt_trans[loc.item_idx])
+    elseif loc.kind == _PARAM_PMF   # --- parton-mode (fork addition) ---
+        return ComplexF64(data.pmfpara_terms[loc.item_idx].value)
     end
 end
 
@@ -220,6 +248,8 @@ function _set_parameter_location_value!(
         data.orbital_terms[loc.item_idx].value = value
     elseif loc.kind == _PARAM_OPTTRANS
         data.opt_trans[loc.item_idx] = value
+    elseif loc.kind == _PARAM_PMF   # --- parton-mode (fork addition) ---
+        data.pmfpara_terms[loc.item_idx].value = value
     end
     return nothing
 end

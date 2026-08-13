@@ -167,8 +167,8 @@ function count_variational_parameters(data::ExpertModeData)::Int
     return projection_layout(data).n_proj +
            n_rbm +
            count_orbital_parameters(data) +
-           count_opt_trans_parameters(data)
-           +n_pmf
+           count_opt_trans_parameters(data) +
+           n_pmf   # --- parton-mode (fork addition) ---
 end
 
 function _set_rbm_terms_from_params!(terms, params::Dict{Int, ComplexF64})

@@ -57,6 +57,11 @@ end
     include("test_slater_update.jl")
 end
 
+# --- parton-mode (fork addition) ---
+@testset "Parton Mode Tests" begin
+    include("test_parton_locator.jl")
+end
+
 @testset "Unit Tests" begin
     include("../test_unit/helpers/mock_state.jl")
     include("../test_unit/helpers/mock_data.jl")

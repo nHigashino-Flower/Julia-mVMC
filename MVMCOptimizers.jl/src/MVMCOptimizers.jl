@@ -77,6 +77,10 @@ include("vmc_phys_cal.jl")
 include("run_para_opt_from_namelist.jl")
 include("run_phys_cal_from_namelist.jl")
 
+# --- parton-mode (fork addition) ---
+# パートンモードの新規実装。標準経路(PartonMode = 0)からは一切呼ばれない。
+# include はこの順(types が先頭必須)。
+
 # Export main functions
 export ParallelContext, serial_context, build_parallel_context, is_output_rank
 export bcast!, bcast_scalar, allreduce_sum!, reduce_sum_to_root!, barrier,
