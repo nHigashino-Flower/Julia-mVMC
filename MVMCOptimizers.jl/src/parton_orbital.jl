@@ -329,7 +329,12 @@ end
 「転置積を使い dot は禁止」の規則(DESIGN §7)は振幅の双線形縮約(契約 2/3/5 の
 最内ループ)の話。この 2 種の縮約を「統一」しないこと。
 """
-function parton_update_orbital_derivatives!(mfham::PartonMFHamiltonian, n_elec::Int)
+function parton_update_orbital_derivatives!(mfham::PartonMFHamiltonian, n_elec::Int;
+                                            gap_tol::Float64 = 1e-8)
+    # gap_tol(v3.11 応急処置、参照 chi-VMC `vmc_chi_grad.jl` と同じ式・同じ既定値):
+    # |ε_n − ε_u| < gap_tol の摂動項は 0 に落とす。フェルミ準位の level crossing
+    # 近傍で ∂Φ ∝ 1/gap が発散して SR を壊す(REPORT §14)のを Inf/NaN の手前で
+    # 止める。根治(gap トラスト領域など)は別途 — これは参照実証済みの下限ガード。
     n_site = size(mfham.h_mf[1], 1)
     n_un = n_site - n_elec
     # W は dh_uo_scratch(n_site × Ne)の先頭 n_un 行を間借りする。専用バッファを
@@ -384,9 +389,11 @@ function parton_update_orbital_derivatives!(mfham::PartonMFHamiltonian, n_elec::
                     end
                 end
 
-                # 分母 D[u, n] = ε_n − ε_{Ne+u} をインプレースで割る(バッファ不要)
+                # 分母 D[u, n] = ε_n − ε_{Ne+u} をインプレースで割る(バッファ不要)。
+                # |D| < gap_tol は 0(参照互換の clamp。上の docstring 参照)
                 @inbounds for n = 1:n_elec, u = 1:n_un
-                    W[u, n] /= ev[n] - ev[n_elec + u]
+                    d = ev[n] - ev[n_elec + u]
+                    W[u, n] = abs(d) < gap_tol ? zero(ComplexF64) : W[u, n] / d
                 end
                 mul!(dPhi, Uu, W)                 # ∂Φ = U_unocc (W ./ D)
             end

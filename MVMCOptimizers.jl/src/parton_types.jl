@@ -196,7 +196,15 @@ mutable struct PartonConfiguration
     n_elec::Int
     n_flavor::Int
 
-    function PartonConfiguration(n_site::Int, n_elec::Int, n_flavor::Int, n_sample::Int)
+    # 物理密度 Jastrow のカウンタ(v3.11 M2 後半)。cnt_p = Σ_{i<j∈group p} n^b_i n^b_j。
+    # n_proj = 0(Jastrow なし)なら全部長さ 0 で、従来経路に一切影響しない。
+    # burn / サンプル保存にも含める(上流の sample_ele_proj_cnt と同じ分担)。
+    proj_cnt::Vector{Int}
+    burn_proj_cnt::Vector{Int}
+    stored_proj_cnt::Vector{Int}
+
+    function PartonConfiguration(n_site::Int, n_elec::Int, n_flavor::Int, n_sample::Int;
+                                 n_proj::Int = 0)
         n_tot = n_parton_total(n_elec, n_flavor)
         n_sf = n_site_flavor(n_site, n_flavor)
         new(
@@ -210,6 +218,9 @@ mutable struct PartonConfiguration
             n_site,
             n_elec,
             n_flavor,
+            zeros(Int, n_proj),
+            zeros(Int, n_proj),
+            zeros(Int, n_sample * n_proj),
         )
     end
 end

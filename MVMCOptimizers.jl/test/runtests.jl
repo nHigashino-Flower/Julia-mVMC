@@ -70,6 +70,8 @@ end
     include("test_parton_qp_momentum.jl")
     include("test_parton_detpow.jl")
     include("test_parton_threading.jl")
+    include("test_parton_jastrow.jl")
+    include("test_parton_srguard.jl")
     include("test_parton_contract45.jl")
     include("test_parton_optflag.jl")
     include("test_parton_ed_convergence.jl")

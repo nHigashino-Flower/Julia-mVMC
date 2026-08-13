@@ -122,7 +122,17 @@ function parton_materialize_flags!(data::ExpertModeData)
     n_proj = MVMCExpertModeParsers.projection_layout(data).n_proj
     n_idx = parton_n_idx(data)
 
+    # 射影ブロック(v3.11): jastrowidx.def の opt フラグはパース時に
+    # data.optimization_flags の先頭 2n_proj に書かれている(set_projection_opt_flags!)
+    # ので、上書き前に Re 側だけ引き継ぐ。Im は**強制凍結** — Jastrow の v は実数で
+    # O も実数、という共役シムの前提(DESIGN §7)を配線で保証する。
+    old = data.optimization_flags
     flags = fill(true, 2 * (n_proj + n_idx))
+    for p = 1:n_proj
+        re = 2 * (p - 1) + 1
+        flags[re] = re <= length(old) ? old[re] : true
+        flags[re + 1] = false
+    end
 
     for (idx, flag) in data.pmfpara_opt_flags
         0 <= idx < n_idx || continue
@@ -235,6 +245,9 @@ function parton_vmc_para_opt!(
             output_data!(data, pstate.state, step; output_dir = output_dir)
         ctimer_stop!(c_timer, 813)
 
+        # NaN/Inf ゲート用のスナップショット(v3.11 応急処置)。pack はロケータ
+        # 汎用なので射影(Jastrow)+ MF の全パラメータを 1 本で押さえる。
+        para_before = pack_parameters(data)
         ctimer_start!(c_timer, 811)
         info = stochastic_opt!(data, pstate.state, c_timer;
                                write_srinfo = diag_dir !== nothing,
@@ -251,6 +264,17 @@ function parton_vmc_para_opt!(
         ctimer_start!(c_timer, 812)
         parton_sync_parameters!(data, ctx, mfham)
         ctimer_stop!(c_timer, 812)
+
+        # NaN/Inf ゲート(v3.11 応急処置、参照 chi-VMC の「本 iter スキップ」と同義):
+        # gap 崩壊域では S の対角が 1/gap² で発散し(REPORT §14)、SR 解に NaN/Inf が
+        # 混入しうる。混入した iter は更新を捨てて直前の(同期済み)パラメータへ戻し、
+        # MC だけ進めて次の step へ。判定は sync 後(全 rank が同じ値)なので
+        # 全 rank が同じ決定をし、collective の不整合は起きない。
+        if any(!isfinite, pack_parameters(data))
+            unpack_parameters!(data, para_before)
+            is_output_rank(ctx) &&
+                @warn "Parton SR: non-finite parameter update rejected" step
+        end
         ctimer_start!(c_timer, 813)
         if diag_dir !== nothing
             norm_post = sqrt(sum(abs2, parton_alpha_from_terms(data)))

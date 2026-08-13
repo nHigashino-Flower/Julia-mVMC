@@ -200,13 +200,14 @@ function write_parton_def_files(dir::AbstractString, nx::Int, ny::Int, F::Int,
                                 nsr_smp::Int = 100,
                                 dt::Float64 = 0.005,
                                 sta_del::Float64 = 0.01,
-                                red_cut::Float64 = 1e-8,
+                                red_cut::Float64 = 1e-6,   # v3.11: 参照 chi-VMC の「必須」値。gap 崩壊域で 1e-8 との差が出る(REPORT §14)
                                 block_update::Int = 16,
                                 seed::Int = 11272,
                                 idx_mode::Symbol = :orbit,
                                 opt_flags::Union{Nothing,Dict{Int,Int}} = nothing,
                                 qp_momentum::Union{Nothing,Tuple{Int,Int}} = nothing,
-                                qp_xext::Union{Nothing,Tuple{Int,Int}} = nothing)
+                                qp_xext::Union{Nothing,Tuple{Int,Int}} = nothing,
+                                jastrow_full_trans::Bool = false)
     mkpath(dir)
     fx = parton_fixture(nx, ny, F, ex, ey; u_mf = u_mf, idx_mode = idx_mode)
     cb = physical_coulomb(nx, ny, u_phys)
@@ -258,6 +259,48 @@ function write_parton_def_files(dir::AbstractString, nx::Int, ny::Int, F::Int,
                "PartonMFTrans  pmftrans.def",
                "PartonMFPara   pmfpara.def",
                "PhysHop        physhop.def"]
+
+    # transJastrow(v3.11 M2 後半)。無順序ペア {i, j} を**全基本セル並進**の軌道で
+    # 類別した jastrowidx.def を書く。参照実装 `symmetrize_jastrow_idx` の
+    # trans_maps = 全並進の場合と同じ同値類(P_J が全並進と可換 = 運動量射影の外側に
+    # かけても |ψ⟩ が運動量固有状態のままでいられる条件)。初期値 v = 0(明示の
+    # InJastrow は書かない — v = 0 は Jastrow なしと同じ状態から SR が降下を始める)。
+    if jastrow_full_trans
+        maps, _ = cb_translations(nx, ny)
+        class_of = Dict{Tuple{Int,Int},Int}()
+        pair_class = Dict{Tuple{Int,Int},Int}()
+        for i = 0:(fx.nsite - 1), j = 0:(fx.nsite - 1)
+            i == j && continue
+            key0 = minmax(i, j)
+            haskey(pair_class, key0) && continue
+            # 軌道の正準代表 = 並進像の (min, max) の最小
+            rep = key0
+            for m in maps
+                key = minmax(m[i + 1], m[j + 1])
+                key < rep && (rep = key)
+            end
+            cls = get!(class_of, rep, length(class_of))
+            for m in maps
+                pair_class[minmax(m[i + 1], m[j + 1])] = cls
+            end
+        end
+        n_jast = length(class_of)
+        open(joinpath(dir, "jastrowidx.def"), "w") do io
+            println(io, "===============================")
+            println(io, "NJastrowIdx $n_jast")
+            println(io, "ComplexType 0")
+            println(io, "===============================")
+            println(io, "===============================")
+            for i = 0:(fx.nsite - 1), j = 0:(fx.nsite - 1)
+                i == j && continue
+                @printf(io, "%d %d %d\n", i, j, pair_class[minmax(i, j)])
+            end
+            for k = 0:(n_jast - 1)
+                println(io, "$k 1")
+            end
+        end
+        push!(entries, "Jastrow        jastrowidx.def")
+    end
 
     # 運動量射影(M2)。`qp_momentum = (nkx, nky)` で k = 2π(nkx/nx, nky/ny) を指定する。
     # 重み exp(2πi(Kx·ucx + Ky·ucy)) と写像は参照実装 build_TranslationalOperatorparams

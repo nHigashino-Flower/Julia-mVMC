@@ -86,7 +86,7 @@ function parton_local_energy(
         if is_occupied(cfg, rj) && !is_occupied(cfg, ri)
             m = site_particle(cfg, rj)
             ratio, _ = parton_amplitude_ratio!(ws, amp, mfham, data, qp_weight, m, ri)
-            log_pr = parton_log_proj_ratio(cfg, m, rj, ri)
+            log_pr = parton_log_proj_ratio(cfg, data, m, rj, ri)
             e += t * exp(log_pr) * ratio
         end
 
@@ -94,7 +94,7 @@ function parton_local_energy(
         if is_occupied(cfg, ri) && !is_occupied(cfg, rj)
             m = site_particle(cfg, ri)
             ratio, _ = parton_amplitude_ratio!(ws, amp, mfham, data, qp_weight, m, rj)
-            log_pr = parton_log_proj_ratio(cfg, m, ri, rj)
+            log_pr = parton_log_proj_ratio(cfg, data, m, ri, rj)
             e += conj(t) * exp(log_pr) * ratio
         end
     end
@@ -240,6 +240,13 @@ function parton_fill_sr_opt_o!(
     fill!(sr_opt_o, 0)
     sr_opt_o[1] = ComplexF64(1)     # 既存規約: 先頭 2 スロットは (1, 0)
     sr_opt_o[2] = ComplexF64(0)
+    # 射影ブロック(v3.11 Jastrow): O_p = ∂lnΨ/∂v_p = cnt_p。**実数**で、
+    # 虚スロットは fill! の 0 のまま — 共役シム(DESIGN §7)の前提
+    # 「MF 以外のスロットの O は実数」はこの 2 行が守る。上流の
+    # set_projection_diff! と同じ規約(vmc_main_cal.jl:3205)。
+    @inbounds for p = 1:n_proj
+        sr_opt_o[o_slot_re(p)] = ComplexF64(cfg.proj_cnt[p])
+    end
     parton_calculate_o!(sr_opt_o, amp, mfham, cfg, data, qp_weight, ip, n_proj)
     conjugate && _parton_conjugate_mf_slots!(sr_opt_o, n_proj, mfham.n_idx)
     project_gauge && _parton_project_gauge_from_o!(sr_opt_o, mfham, alpha, n_proj)
@@ -332,9 +339,10 @@ MF ブロックのスロットを複素共役にしてから上流のアキュ�
 全スロットの O が**実数**だからである。MF×他ブロックの交差項は片側だけ共役されるので、
 相手が複素なら実部が変わってしまう(実測: 相手が `(v, i·v)` の正則型だと交差ブロックだけ
 ΔS ≈ 0.17 ずれる。例外も非対称も出ず、静かに間違った計量になる)。
-M1 は門番が射影因子を拒否して n_proj = 0 を保証しているのでこの条件は自明に成り立つ。
-M2 で物理密度 Jastrow を足すときは「虚スロットに 0 を書く(O は実数)」という
-既存 `set_projection_diff!` と同じ規約を守ること。DESIGN §7 に固定条件として記載。
+v3.11(M2 後半)で物理密度 Jastrow が入った。O_p = cnt_p は**実数**で、虚スロットには
+厳密に 0 を書く(上流 `set_projection_diff!` と同じ規約)ため前提はそのまま成り立つ。
+恒久検証は §8-16-4(虚スロット厳密 0 + S が共役の有無で不変を Jastrow 込みで確認)。
+門番は Gutzwiller / DH / 複素 v を拒否してこの前提を配線で守る。
 
 もう 1 つの前提として、SR-CG 経路(`operate_by_s!`)は全スロットが MF なら偶然
 共役に不変だが、これは偶然にすぎない。門番の `NSRCG = 0` がこのシムの妥当性を
@@ -413,11 +421,13 @@ function _parton_thread_ctx!(
     if ctx isa PartonMainCalThreadContext &&
        length(ctx.cfgs) == nt &&
        size(ctx.o_all) == (len_o, n_sample) &&
-       length(ctx.amps[1].inv_a) == length(amp.inv_a)
+       length(ctx.amps[1].inv_a) == length(amp.inv_a) &&
+       parton_n_proj(ctx.cfgs[1]) == parton_n_proj(pstate.config)
         return ctx
     end
     ctx = PartonMainCalThreadContext(
-        [PartonConfiguration(mp.nsite, mp.nelec, mp.nflavor, 1) for _ = 1:nt],
+        [PartonConfiguration(mp.nsite, mp.nelec, mp.nflavor, 1;
+                             n_proj = parton_n_proj(pstate.config)) for _ = 1:nt],
         [PartonAmplitudeData(amp.n_qp, amp.n_flavor, amp.n_elec;
                              n_stored = amp.n_stored) for _ = 1:nt],
         [PartonSamplingWorkspace(amp.n_elec, amp.n_qp * amp.n_stored) for _ = 1:nt],

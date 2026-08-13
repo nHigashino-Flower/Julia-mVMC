@@ -64,7 +64,8 @@ function parton_build_optimization_state(
     return PartonOptimizationState(
         state,
         PartonAmplitudeData(n_qp, mp.nflavor, mp.nelec; n_stored = n_stored),
-        PartonConfiguration(mp.nsite, mp.nelec, mp.nflavor, mp.nvmc_sample),
+        PartonConfiguration(mp.nsite, mp.nelec, mp.nflavor, mp.nvmc_sample;
+                            n_proj = n_proj),
         PartonSamplingWorkspace(mp.nelec, n_qp * n_stored),
         mfham,
         parton_build_phys_hamiltonian(data),
@@ -129,6 +130,8 @@ end
 function parton_store_sample!(cfg::PartonConfiguration, s::Int)
     n = cfg.n_flavor * cfg.n_elec
     copyto!(cfg.stored_ele_idx, (s - 1) * n + 1, cfg.ele_idx, 1, n)
+    np = parton_n_proj(cfg)
+    np > 0 && copyto!(cfg.stored_proj_cnt, (s - 1) * np + 1, cfg.proj_cnt, 1, np)
     return nothing
 end
 
@@ -142,6 +145,8 @@ function parton_restore_sample!(cfg::PartonConfiguration, s::Int)
     n = cfg.n_flavor * cfg.n_elec
     copyto!(cfg.ele_idx, 1, cfg.stored_ele_idx, (s - 1) * n + 1, n)
     _rebuild_cfg_from_idx!(cfg)
+    np = parton_n_proj(cfg)
+    np > 0 && copyto!(cfg.proj_cnt, 1, cfg.stored_proj_cnt, (s - 1) * np + 1, np)
     return nothing
 end
 
@@ -157,18 +162,22 @@ function parton_restore_sample_from!(
     n = src.n_flavor * src.n_elec
     copyto!(dst.ele_idx, 1, src.stored_ele_idx, (s - 1) * n + 1, n)
     _rebuild_cfg_from_idx!(dst)
+    np = parton_n_proj(dst)
+    np > 0 && copyto!(dst.proj_cnt, 1, src.stored_proj_cnt, (s - 1) * np + 1, np)
     return nothing
 end
 
-"burn-in 用の退避と復元。ele_idx だけ持ち、残りは復元時に組み直す。"
+"burn-in 用の退避と復元。ele_idx と proj_cnt を持ち、残りは復元時に組み直す。"
 function parton_copy_to_burn_sample!(cfg::PartonConfiguration)
     copyto!(cfg.burn_ele_idx, cfg.ele_idx)
+    parton_n_proj(cfg) > 0 && copyto!(cfg.burn_proj_cnt, cfg.proj_cnt)
     return nothing
 end
 
 function parton_copy_from_burn_sample!(cfg::PartonConfiguration)
     copyto!(cfg.ele_idx, cfg.burn_ele_idx)
     _rebuild_cfg_from_idx!(cfg)
+    parton_n_proj(cfg) > 0 && copyto!(cfg.proj_cnt, cfg.burn_proj_cnt)
     return nothing
 end
 
@@ -185,18 +194,114 @@ function _rebuild_cfg_from_idx!(cfg::PartonConfiguration)
 end
 
 """
-    parton_log_proj_ratio(cfg, m, r_old, r_new) -> Float64
+物理密度 Jastrow(v3.11 M2 後半、DESIGN §1.1 / §2)
 
-射影因子の対数比のフック。M1 の初点火では射影が無いので恒等 0。
-固縛の下で既存の Gutzwiller は自明化する(全占有サイトが常にダブロン)ので、
-物理密度 n^b ベースの Jastrow を新設するのは M2 の仕事(DESIGN §9)。
+    P_J(x) = exp( Σ_{i<j} v_{ij} · n^b_i · n^b_j ),   n^b_i ∈ {0, 1}
+
+- **物理密度 n^b で定義する**。パートン和 Σ_f n^(f) = F·n^b で定義すると同じ v が
+  F² 倍の意味になり、F を変えると入力の意味が変わるため。上流(既存 mVMC)は
+  変数 x_i = n_i − 1 を使うが、これも同じ理由でそのまま使えない — 差は一体項+定数
+  で係数の辻褄合わせは不要(DESIGN §2 に明記。黙って係数は入れない)
+- 構造の規約は上流 `make_proj_cnt!` に合わせる: **Σ_{i<j}(1/2 なし・自己項なし)、
+  exp の符号は +、v は `real(jastrow_terms[].value)`**、添字は
+  `jastrow_idx[ri+1, rj+1]`(0-based 値、対称)
+- **P_J は配置のみに依存し、qp に依存しない**(DESIGN §1.4)。したがって
+  比・E_loc の式は既存の `exp(log_pr)` フックのまま変わらない
+- Jastrow のカウンタ cnt_p は契約 5(O_p = cnt_p、**実数**)とサンプル保存が
+  読む。サンプリング中の比は下の純粋関数で O(Ne) で取れるのでカウンタを読まない
 """
-@inline parton_log_proj_ratio(
-    ::PartonConfiguration,
-    ::Int,
-    ::Int,
-    ::Int,
-)::Float64 = 0.0
+
+"proj_cnt の長さ(= layout.n_proj)。0 なら Jastrow なし。"
+@inline parton_n_proj(cfg::PartonConfiguration) = length(cfg.proj_cnt)
+
+"ペア (ri, rj)(1-based サイト)の Jastrow パラメータ v。未定義ペアは門番が拒否済み。"
+@inline function _parton_jastrow_v(data::ExpertModeData, ri::Int, rj::Int)
+    idx = data.jastrow_idx[ri, rj]              # 0-based の idx 値
+    return real(data.jastrow_terms[idx + 1].value)
+end
+
+"""
+    parton_make_proj_cnt!(cfg, data)
+
+配置から Jastrow カウンタを全数構築する(錨・サンプル復元と同じ役どころ)。
+占有サイト(固縛によりフレーバー 1 が代表)のペア走査で O(Ne²)。
+"""
+function parton_make_proj_cnt!(cfg::PartonConfiguration, data::ExpertModeData)
+    n_proj = parton_n_proj(cfg)
+    n_proj == 0 && return nothing
+    layout = MVMCExpertModeParsers.projection_layout(data)
+    fill!(cfg.proj_cnt, 0)
+    jidx = data.jastrow_idx
+    @inbounds for a = 1:cfg.n_elec
+        ri = particle_site(cfg, 1, a)
+        for b = (a + 1):cfg.n_elec
+            rj = particle_site(cfg, 1, b)
+            p = layout.jastrow_offset + jidx[ri, rj] + 1
+            cfg.proj_cnt[p] += 1                # n^b_i · n^b_j = 1(両方占有)
+        end
+    end
+    return nothing
+end
+
+"""
+    parton_log_proj_ratio(cfg, data, m, r_old, r_new) -> Float64
+
+固縛移動 r_old → r_new の Δln P_J。**純粋関数**(状態を変えない。契約 2 と同じ規律)。
+
+    Δ = Σ_{j ∈ 占有, j ≠ r_old} [ v(r_new, j) − v(r_old, j) ]
+
+自己項の扱い: 移動する粒子自身は両側から除く — j = r_old を除外し(移動前の自分)、
+j = r_new は占有集合に居ないので自動的に入らない(移動後の自分)。ペア
+(r_old, r_new) の寄与は移動前後とも片方が空で 0。§8-16-2 が全数計算と突き合わせる。
+
+Jastrow なし(n_proj = 0)なら厳密に 0.0 を返す(M1 からの恒等フックと同値)。
+"""
+function parton_log_proj_ratio(
+    cfg::PartonConfiguration,
+    data::ExpertModeData,
+    m::Int,
+    r_old::Int,
+    r_new::Int,
+)::Float64
+    parton_n_proj(cfg) == 0 && return 0.0
+    z = 0.0
+    @inbounds for m2 = 1:cfg.n_elec
+        j = particle_site(cfg, 1, m2)
+        j == r_old && continue
+        z += _parton_jastrow_v(data, r_new, j) - _parton_jastrow_v(data, r_old, j)
+    end
+    return z
+end
+
+"""
+    parton_update_proj_cnt!(cfg, data, r_old, r_new)
+
+受理後のカウンタ差分更新。**配置コミット(`parton_update_ele_config!`)の後**に
+呼ぶこと: 占有集合は移動後のもので、
+
+    Δcnt: j ∈ 占有(移動後), j ≠ r_new について
+          cnt[p(r_new, j)] += 1,  cnt[p(r_old, j)] -= 1
+
+j = r_old は移動後の占有集合に居ないので自動的に除外される(自己項の対)。
+"""
+function parton_update_proj_cnt!(
+    cfg::PartonConfiguration,
+    data::ExpertModeData,
+    r_old::Int,
+    r_new::Int,
+)
+    parton_n_proj(cfg) == 0 && return nothing
+    layout = MVMCExpertModeParsers.projection_layout(data)
+    jidx = data.jastrow_idx
+    off = layout.jastrow_offset
+    @inbounds for m2 = 1:cfg.n_elec
+        j = particle_site(cfg, 1, m2)
+        j == r_new && continue
+        cfg.proj_cnt[off + jidx[r_new, j] + 1] += 1
+        cfg.proj_cnt[off + jidx[r_old, j] + 1] -= 1
+    end
+    return nothing
+end
 
 # =====================================================================
 # 骨格
@@ -248,12 +353,13 @@ function parton_make_sample!(pstate::PartonOptimizationState, data::ExpertModeDa
     # --- 開始配置: burn 再利用 or 初期生成 --------------------------------
     n_out = parton_n_out(cfg, mp)
     if cfg.burn_flag
-        parton_copy_from_burn_sample!(cfg)
+        parton_copy_from_burn_sample!(cfg)   # proj_cnt も burn から戻る
         ctimer_start!(c_timer, 804)
         parton_recompute_amplitude_all!(amp, mfham, cfg, data, ws)   # 最初の錨
         ctimer_stop!(c_timer, 804)
     else
         parton_make_initial_sample!(cfg, amp, mfham, data, ws; rng = rng)  # 錨も打つ
+        parton_make_proj_cnt!(cfg, data)     # Jastrow カウンタの錨(全数構築)
     end
     n_in = parton_n_in(mp)
 
@@ -264,15 +370,26 @@ function parton_make_sample!(pstate::PartonOptimizationState, data::ExpertModeDa
             m, r_old, r_new, ok = parton_make_candidate_hopping(rng, cfg, n_site)
             ok || continue         # 占有先 / 同一サイト → 棄却(試行には数える)
 
-            log_pr = parton_log_proj_ratio(cfg, m, r_old, r_new)
+            log_pr = parton_log_proj_ratio(cfg, data, m, r_old, r_new)
             ratio, _ =
                 (ctimer_start!(c_timer, 805);
                  _pr = parton_amplitude_ratio!(ws, amp, mfham, data, qp_weight, m, r_new);
                  ctimer_stop!(c_timer, 805); _pr)
-            rng_real2(rng) < exp(2 * log_pr) * abs2(ratio) || continue
+            # 受理判定。Jastrow なし(log_pr = 0)は従来の式そのまま = ビット互換。
+            # Jastrow ありは上流(vmc_sampling.jl の w = exp(2(x+Δlog ip)))と同じく
+            # log をまとめて 1 回 exp し、オーバーフロー(!isfinite)は棄却に落とす。
+            # 乱数の消費はどちらの分岐でも 1 回。
+            if log_pr == 0.0
+                rng_real2(rng) < abs2(ratio) || continue
+            else
+                w = exp(2 * (log_pr + log(abs(ratio))))
+                isfinite(w) || (w = -1.0)
+                rng_real2(rng) < w || continue
+            end
 
             cfg.counter[2] += 1                                  # 受理数
             parton_update_ele_config!(cfg, m, r_old, r_new)      # ① 配置を先に確定
+            parton_update_proj_cnt!(cfg, data, r_old, r_new)     # ①′ カウンタ差分
             ctimer_start!(c_timer, 806)
             st = parton_update_amplitude!(amp, mfham, data, ws, m, r_new)  # ② 高速更新
             ctimer_stop!(c_timer, 806)

@@ -327,21 +327,58 @@ function validate_parton_data(data::ExpertModeData)
     # M1 は射影因子なし。二つの理由でここで止める。
     # 1. parton_main_cal! は射影ブロックの O を計算しない(MF ブロックだけ埋める)ので、
     #    射影パラメータがあると O がゼロのまま SR に渡り、黙って最適化されない。
-    # 2. 蓄積境界の共役シム(DESIGN §7)は「MF 以外のスロットの O が実数」を前提に
-    #    S 行列の不変性を得ている。射影ブロックが複素だと交差項の実部が変わる。
-    # 固縛の下では既存 Gutzwiller は自明化する(全占有サイトが常にダブロン)ので、
-    # 物理密度 n^b ベースの Jastrow を新設するのは M2 の仕事(DESIGN §9)。
-    n_proj = MVMCExpertModeParsers.projection_layout(data).n_proj
-    if n_proj != 0
+    # 射影因子(v3.11 M2 後半): 物理密度 Jastrow のみ受け入れる。
+    # 蓄積境界の共役シム(DESIGN §7)は「MF 以外のスロットの O が実数」を前提に
+    # S 行列の不変性を得ている — Jastrow は O = cnt(実数)なので前提を満たす。
+    layout = MVMCExpertModeParsers.projection_layout(data)
+    if layout.n_gutzwiller != 0
         error(
-            "Projection factors are not supported in parton mode yet, but the " *
-            "input declares NProj = $n_proj. The local-energy path does not " *
-            "compute their logarithmic derivatives, so SR would silently leave " *
-            "them at their initial values, and the mean-field slot conjugation " *
-            "(DESIGN section 7) assumes every non-mean-field O is real. Remove " *
-            "the Gutzwiller / Jastrow entries from namelist.def; a physical-" *
-            "density Jastrow is planned for M2.",
+            "Gutzwiller factors are meaningless in parton mode: under flavor " *
+            "locking every occupied site is always a full multiplet, so the " *
+            "doublon count is the constant NElec and the factor cancels from " *
+            "every ratio. Remove the Gutzwiller entry from namelist.def " *
+            "(a density-density Jastrow does not trivialise and is supported).",
         )
+    end
+    if layout.n_dh2 != 0 || layout.n_dh4 != 0
+        error(
+            "Doublon-holon factors are not supported in parton mode " *
+            "(NDoublonHolon2site = $(layout.n_dh2), 4site = $(layout.n_dh4)). " *
+            "They are defined through spin-resolved doublons, which flavor " *
+            "locking freezes. Only the density-density Jastrow is supported.",
+        )
+    end
+    if layout.n_jastrow > 0
+        # v は実数(DESIGN §7: 射影 O は実数、Im スロットは 0)。
+        for (k, t) in enumerate(data.jastrow_terms)
+            abs(imag(t.value)) <= 1e-12 || error(
+                "jastrow parameter $k has a complex value $(t.value). Parton " *
+                "mode requires real Jastrow parameters: the accumulation-" *
+                "boundary conjugation (DESIGN section 7) assumes every non-" *
+                "mean-field O is real, which holds only for real v.",
+            )
+        end
+        # 全ての非対角ペアに idx が張られていること(未指定 = -1 が残っていると
+        # v = 0 ではなく添字事故として静かに壊れる)
+        jidx = data.jastrow_idx
+        size(jidx) == (n_site, n_site) || error(
+            "jastrowidx.def: index matrix has size $(size(jidx)), expected " *
+            "($n_site, $n_site).",
+        )
+        n_jast = layout.n_jastrow
+        for i = 1:n_site, j = 1:n_site
+            i == j && continue
+            0 <= jidx[i, j] < n_jast || error(
+                "jastrowidx.def: pair ($(i - 1), $(j - 1)) has no valid index " *
+                "(got $(jidx[i, j]), expected 0..$(n_jast - 1)). Every " *
+                "off-diagonal pair must be listed — an implicit v = 0 pair is " *
+                "expressed as an explicit idx with value 0.",
+            )
+            jidx[i, j] == jidx[j, i] || error(
+                "jastrowidx.def: index for pair ($(i - 1), $(j - 1)) is not " *
+                "symmetric ($(jidx[i, j]) vs $(jidx[j, i])).",
+            )
+        end
     end
     if !isempty(data.opt_trans) || data.n_qp_opt_trans > 1
         error(
