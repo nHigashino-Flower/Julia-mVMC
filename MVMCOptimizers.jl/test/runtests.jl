@@ -70,6 +70,7 @@ end
     include("test_parton_contract45.jl")
     include("test_parton_optflag.jl")
     include("test_parton_ed_convergence.jl")
+    include("test_parton_force_gradient.jl")
 end
 
 @testset "Unit Tests" begin

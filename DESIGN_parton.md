@@ -1,6 +1,6 @@
 # DESIGN: パートン平均場モード for Julia-mVMC
 
-- ステータス: **M1 完了**(契約 0〜5 実装・§8 のテスト 0〜6 全緑・既存回帰全緑)
+- ステータス: **M1 完了**(契約 0〜5 実装・§8 のテスト 0〜7 全緑・既存回帰全緑)
 - 改訂: v3.1 (2026-08-13) — M1 統合完了。実装で確定した事項を §10 消し込み・§11 に反映
 - ベース: tmisawa/Julia-mVMC v0.5.0(fork、ブランチ `parton-mode`)
 
@@ -140,6 +140,17 @@ per-QP 軌道は実体化しない(行置換+符号なので gather 時に写像
   `length == 2*(n_proj + n_idx)` と「MF 成分に flag=1 が最低 1 つ」を検査
 - ゲージ平坦方向: Φ は H→cH, H→H+μI で不変 → S に厳密ゼロモード ≥2 本 →
   代表ホッピング振幅 1 個(+一様オンサイト)をフラグ行で初期値凍結
+- **警告: 一様 MF は S が厳密に特異になり SR が解けない**(v3.1、実測で確認)。
+  変分グループが「一様ホッピング 1 個 + 一様オンサイト 1 個」だけの入力では、実自由度 4 個が
+  **すべて**ゲージ平坦になる(Re α_hop = 全体スケール、α_onsite = 一様シフト、
+  Im α_hop も並進対称なリングでは軌道を変えない)。O が全成分ゼロ → S も g も全ゼロ →
+  `DSROptRedCut` の閾値は `max(S_diag) × RedCut` なので冗長方向カットも働かず、
+  Cholesky が NaN を返して `stochastic_opt!` が info≠0 で落ちる。
+  - 対処: 物理的な変分方向を最低 1 本作る。ボンドを強弱 2 群に分ける(二量体化)か、
+    ボンドごとに独立な idx を与える。テストのフィクスチャは
+    `dimerized_mf_data` / `per_bond_mf_data` がこれに当たる
+  - 症状の見分け方: SR が初手から info=1(NaN)/ エネルギーがステップ間で振動して降下しない /
+    `min_gap` は健全なのに O が軒並み 1e-15。入力の変分自由度を疑うこと
 
 ## 3. アーキテクチャ
 
@@ -148,7 +159,13 @@ per-QP 軌道は実体化しない(行置換+符号なので gather 時に写像
 - **新規コードは新規ファイルへ。既存ファイル編集は登録点のみ**。全箇所
   `# --- parton-mode (fork addition) ---` マーカー(一字一句同一。grep 監査用)
 - 構造体フィールド追加は**必ず末尾**+コンストラクタ末尾。Dict/elseif も末尾+マーカー
-- 0-based→1-based 変換は**テンプレート build の一箇所のみ**
+- 0-based→1-based 変換は **`parton_build_*` の中だけ**(v3.1 で明確化)。
+  起動時 1 回のテンプレート build 段に閉じ込めるという趣旨で、入力ファミリごとに 1 関数:
+  - `parton_build_mf_templates!` — pmftrans / pmfpara(平均場)
+  - `parton_build_phys_hamiltonian` — physhop / coulombinter(物理ハミルトニアン)
+
+  ホットループ・アクセサ・E_loc・契約 2/3/5 に ±1 演算を書かない。新しい入力ファイルを
+  足すときも `parton_build_*` を 1 本増やしてそこで変換する
 - 登録点の全リスト(M1 実装で確定。編集された upstream ファイルはこの 7 つだけ):
   1. `utils/constants.jl` — MVMC_KEYWORDS 表(PartonMFTrans/PartonMFPara/PhysHop の行)
      + デフォルト定数(DEFAULT_PARTON_MODE / DEFAULT_NFLAVOR / DEFAULT_NBLOCK_UPDATE_SIZE)
@@ -245,6 +262,19 @@ stochastic_opt!(案 B 後は MF ブロックも解く)/ weight_average / paralle
   (第一引数を共役するため)。契約 0′ の `Uu' * dHUo` は**随伴が正しい**(ブラとの内積)
 - **O 格納**: パラメータ p(1-based, [射影|MF])→ (2p+1, 2p+2) に (∂Re, ∂Im) を**独立格納**。
   既存の `sr_opt_o[imag_idx] = val*im`(vmc_main_cal.jl L2547-48)は f_ij 正則性の近道=流用禁止
+- **MF スロットは蓄積境界で共役**(v3.1 で追加): `parton_calculate_o!` は §1.4 の O をそのまま
+  格納し、上流アキュムレータへ渡す直前に `_parton_conjugate_mf_slots!` が MF スロットだけ
+  複素共役にする。
+  - 理由: 実パラメータ θ の勾配は `∂E/∂θ = 2 Re[⟨E_loc O*⟩ − ⟨E_loc⟩⟨O*⟩]` で O に共役が要るが、
+    `calculate_oo!` / `calculate_oo_store!` は `HO[j] += w·e·srOptO[j]` と**共役なし**で蓄積し、
+    `build_s_matrix_and_g_vector!` はその実部をそのまま力にする。射影 O は実数、f_ij は正則
+    (2 スロットが val と val·im)なのでこの無共役規約と整合するが、**H が α* を含む MF ブロックは
+    非正則**なので整合しない(有限差分と比べると符号すら合わない)。
+  - S 行列は不変: 上流は実部しか使わず、`Re⟨O*⟩ = Re⟨O⟩`、`Re⟨O_i O_j*⟩ = Re⟨O_j O_i*⟩` なので
+    計量は共役の有無に依らない。効くのは力ベクトルだけ。
+  - 上流には手を入れない。適応は受け渡し点 1 箇所に閉じ込める(登録点を増やさないため)。
+  - 恒久検証は §8-7。`g / (−DSROptStepDt)` が有限差分の `∂E/∂θ` に一致すること、シムを外すと
+    一致が壊れること、S が共役の有無で変わらないことを全数展開で確認する
 - ギャップ検知は HOMO-LUMO のみ(占有内縮退は無害)。twist 境界で偶発縮退を割る
 - ホットループ内アロケーションゼロ。eigen/lu の小確保は頻度が低く許容
 - デバッグ恒等式: v[m]==R / gather vs 実体化 / 錨の冪等性
@@ -258,11 +288,17 @@ stochastic_opt!(案 B 後は MF ブロックも解く)/ weight_average / paralle
 4. **契約0′/5: 有限差分** — ln ip(θ±δ) の数値微分と両スロット(Re/Im 独立)の一致。複素 t 必須
 5. OptFlag: 凍結成分(オンサイト Im・ゲージ固定)が SR で動かないこと
 6. 結合: トイ系 SR → ED 基底エネルギー収束。**F=2(ボソン)と F=3(フェルミオン)両方**(符号定理の機械検証)
+7. **力ベクトル vs 勾配**(v3.1 追加、恒久): 全数展開(サンプリング誤差なし)で、上流の
+   `build_s_matrix_and_g_vector!` が組む力ベクトルが変分エネルギーの有限差分勾配と一致すること。
+   期待される関係は `g / (−DSROptStepDt) == ∂E/∂θ`(上流の g に入っている因子 2 が勾配式の
+   因子 2 に対応する)。あわせて §7 の共役シムを外すと一致が壊れること(シムが飾りでないこと)、
+   および S 行列が共役の有無で変わらないことを確認する。
+   実装: `MVMCOptimizers.jl/test/test_parton_force_gradient.jl`
 
 ## 9. マイルストーン
 
 - **M1**(完了): 一般 F 構造での ParaOpt 初点火(射影なし・n_qp=1・複素 1 変種・直接 SR)。
-  Done: §8 の 0〜6 全緑(F=2/F=3 の ED 一致含む)。
+  Done: §8 の 0〜7 全緑(F=2/F=3 の ED 一致含む)。
   テストは `MVMCOptimizers.jl/test/test_parton_*.jl` と
   `MVMCExpertModeParsers.jl/test/test_parton_*.jl`
 - **M2**: 運動量射影 ON + 相関因子。既存 Gutzwiller は固縛で自明化(全占有サイトが常にダブロン)
@@ -300,11 +336,17 @@ stochastic_opt!(案 B 後は MF ブロックも解く)/ weight_average / paralle
     値は trans.def と同じ Re/Im の 2 トークンに揃えた
   - **NBlockUpdateSize を新設**(Julia 移植に相当フィールドが無かった。既定 16)
   - **登録点に modpara_parser.jl を追加**(§3.1-7)。validation.jl は登録点ではない
-  - **SR 力ベクトルの共役**: 実パラメータの勾配は 2 Re[⟨E_loc O*⟩ − ⟨E_loc⟩⟨O*⟩] で O に共役が
-    要るが、既存 `calculate_oo!` 系は HO を共役なしで蓄積する。f_ij のような正則パラメータでは
-    2 スロットの詰め方と噛み合って正しくなるが、非正則な MF ブロックでは噛み合わず符号が狂う。
-    上流には手を入れず、アキュムレータへ渡す時点で MF スロットを共役にする
-    (`_parton_conjugate_mf_slots!`)。S 行列は実部しか使わないので不変。有限差分で検証済
+  - **SR 力ベクトルの共役**(規約は §7、恒久検証は §8-7): 実パラメータの勾配は
+    2 Re[⟨E_loc O*⟩ − ⟨E_loc⟩⟨O*⟩] で O に共役が要るが、既存 `calculate_oo!` 系は HO を共役なしで
+    蓄積する。f_ij のような正則パラメータでは 2 スロットの詰め方と噛み合って正しくなるが、
+    非正則な MF ブロックでは噛み合わず符号が狂う。上流には手を入れず、アキュムレータへ渡す
+    時点で MF スロットを共役にする(`_parton_conjugate_mf_slots!`)。S 行列は実部しか使わない
+    ので不変
+  - **規則「0→1based はテンプレート build の一箇所」を `parton_build_*` の中だけ、に書き換え**
+    (§3.1)。物理ハミルトニアンにも変換が要るため入力ファミリごとに 1 関数とする
+  - **一様 MF = 厳密特異 S の警告を §2.5 に追加**。実測で、一様ホッピング + 一様オンサイトだけの
+    入力は実自由度が全部ゲージ平坦になり SR が NaN で落ちる
+  - **§8 に 8-7(力ベクトル vs 有限差分勾配)を恒久テストとして追加**
   - **finalize_oo_store!** の呼び出しが必須(store 経路では OO はサンプルループ後にまとめて組む)
   - **物理ハミルトニアンのテンプレート build** を追加(`parton_build_phys_hamiltonian`)。
     physhop / coulombinter の 0→1based 変換はそこ 1 箇所に閉じる(平均場側の build と対)

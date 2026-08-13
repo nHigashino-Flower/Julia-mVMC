@@ -216,3 +216,66 @@ function toy_config(
     end
     return cfg
 end
+
+"""
+    per_bond_mf_data(F; n_site=4, n_elec=2)
+
+ボンドごとに独立な α を持つ MF(変分自由度を確保するため)+ 一様な物理ホップの環。
+`toy_mf_data` や `dimerized_mf_data` より自由度が多く、SR が実際に降下する。
+ボンド 1 の α をゲージ代表として OptFlag で凍結する前提。
+"""
+function per_bond_mf_data(F::Int; n_site::Int = 4, n_elec::Int = 2)
+    data = MVMCExpertModeParsers.ExpertModeData()
+    mp = data.modpara
+    mp.nsite = n_site
+    mp.nelec = n_elec
+    mp.nflavor = F
+    mp.parton_mode = 1
+    mp.two_sz = 0
+    mp.complex_flag = 1
+    mp.nex_update_path = 6
+
+    bonds0 = [(i, mod(i + 1, n_site)) for i = 0:(n_site - 1)]
+    for f = 0:(F - 1)
+        for (b, (i, j)) in enumerate(bonds0)
+            push!(
+                data.pmftrans_terms,
+                MVMCExpertModeParsers.PartonMFTransTerm(i, f, j, f, ComplexF64(-1, 0), false),
+            )
+            # ボンド 1 はゲージ代表として 1 に固定。残りは非対称な初期値
+            α = b == 1 ? ComplexF64(1, 0) : ComplexF64(0.85 + 0.07b, 0.13b)
+            push!(
+                data.pmfpara_terms,
+                MVMCExpertModeParsers.PartonMFParaTerm(i, f, j, f, b - 1, α, true),
+            )
+        end
+    end
+    for (i, j) in bonds0
+        push!(
+            data.physhop_terms,
+            MVMCExpertModeParsers.PhysHopTerm(i, j, ComplexF64(-1, 0), false),
+        )
+    end
+
+    mp.nsp_gauss_leg = 1
+    mp.nsp_stot = 0
+    mp.nmp_trans = 1
+    data.para_qp_trans = ComplexF64[1]
+    data.qp_trans = [collect(1:n_site)]
+    data.qp_trans_sgn = [ones(Int, n_site)]
+    MVMCExpertModeParsers.init_qp_weight!(data)
+
+    mp.nvmc_warmup = 200
+    mp.nvmc_interval = 1
+    mp.nvmc_sample = 2000
+    mp.nblock_update_size = 8
+    mp.nstore_o = 1
+    mp.dsr_opt_step_dt = 0.05
+    mp.dsr_opt_sta_del = 0.02
+    mp.dsr_opt_red_cut = 1e-8
+    mp.nsr_opt_itr_step = 120
+    mp.nsr_opt_itr_smp = 1
+    data.pmfpara_opt_flags = Dict(0 => 0)   # ゲージ代表を凍結
+    return data
+end
+

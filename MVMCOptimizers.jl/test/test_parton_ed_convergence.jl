@@ -68,62 +68,6 @@ function ed_hamiltonian(n_site::Int, n_part::Int, bonds, t::ComplexF64, V::Float
     return configs, Hermitian(H)
 end
 
-"per-bond に独立な α を持つ MF(変分自由度を確保するため)+ 一様な物理ホップ。"
-function _ed_toy_data(F::Int; n_site::Int = 4, n_elec::Int = 2)
-    data = MVMCExpertModeParsers.ExpertModeData()
-    mp = data.modpara
-    mp.nsite = n_site
-    mp.nelec = n_elec
-    mp.nflavor = F
-    mp.parton_mode = 1
-    mp.two_sz = 0
-    mp.complex_flag = 1
-    mp.nex_update_path = 6
-
-    bonds0 = [(i, mod(i + 1, n_site)) for i = 0:(n_site - 1)]
-    for f = 0:(F - 1)
-        for (b, (i, j)) in enumerate(bonds0)
-            push!(
-                data.pmftrans_terms,
-                MVMCExpertModeParsers.PartonMFTransTerm(i, f, j, f, ComplexF64(-1, 0), false),
-            )
-            # ボンド 1 はゲージ代表として 1 に固定。残りは非対称な初期値
-            α = b == 1 ? ComplexF64(1, 0) : ComplexF64(0.85 + 0.07b, 0.13b)
-            push!(
-                data.pmfpara_terms,
-                MVMCExpertModeParsers.PartonMFParaTerm(i, f, j, f, b - 1, α, true),
-            )
-        end
-    end
-    for (i, j) in bonds0
-        push!(
-            data.physhop_terms,
-            MVMCExpertModeParsers.PhysHopTerm(i, j, ComplexF64(-1, 0), false),
-        )
-    end
-
-    mp.nsp_gauss_leg = 1
-    mp.nsp_stot = 0
-    mp.nmp_trans = 1
-    data.para_qp_trans = ComplexF64[1]
-    data.qp_trans = [collect(1:n_site)]
-    data.qp_trans_sgn = [ones(Int, n_site)]
-    MVMCExpertModeParsers.init_qp_weight!(data)
-
-    mp.nvmc_warmup = 200
-    mp.nvmc_interval = 1
-    mp.nvmc_sample = 2000
-    mp.nblock_update_size = 8
-    mp.nstore_o = 1
-    mp.dsr_opt_step_dt = 0.05
-    mp.dsr_opt_sta_del = 0.02
-    mp.dsr_opt_red_cut = 1e-8
-    mp.nsr_opt_itr_step = 120
-    mp.nsr_opt_itr_smp = 1
-    data.pmfpara_opt_flags = Dict(0 => 0)   # ゲージ代表を凍結
-    return data
-end
-
 const _ED_N_SITE = 4
 const _ED_N_ELEC = 2
 const _ED_BONDS = [(i, mod1(i + 1, _ED_N_SITE)) for i = 1:_ED_N_SITE]
@@ -149,7 +93,7 @@ end
         ed_hamiltonian(_ED_N_SITE, _ED_N_ELEC, _ED_BONDS, _ED_T, 0.0; statistics = :fermion)
 
     for F in (2, 3, 4, 5)
-        data = _ed_toy_data(F)
+        data = per_bond_mf_data(F)
         MVMCOptimizers.parton_materialize_flags!(data)
         pstate = MVMCOptimizers.parton_build_optimization_state(data)
         mfham = pstate.mfham
@@ -198,7 +142,7 @@ end
     e_fermion = eigmin(Hf)
 
     function run_sr(F, seed)
-        data = _ed_toy_data(F)
+        data = per_bond_mf_data(F)
         MVMCOptimizers.parton_materialize_flags!(data)
         pstate = MVMCOptimizers.parton_build_optimization_state(data)
         rng = MVMCOptimizers.SFMT19937RNG()
