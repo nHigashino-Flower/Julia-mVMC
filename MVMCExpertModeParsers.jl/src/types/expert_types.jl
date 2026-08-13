@@ -746,7 +746,14 @@ mutable struct PartonMFParaTerm
     idx::Int
     value::ComplexF64
     is_complex::Bool
+    # value 列が入力されていたか。列の有無で判定し、値がゼロかどうかでは分岐しない
+    # (意図的に α = 0 で始めたい結合を黙って乱数で埋めないため。DESIGN §2.3)。
+    # 既定 true = 既存の呼び出し(値つきで構築)の意味を変えない。
+    has_value::Bool
 end
+
+PartonMFParaTerm(site1, flavor1, site2, flavor2, idx, value, is_complex) =
+    PartonMFParaTerm(site1, flavor1, site2, flavor2, idx, value, is_complex, true)
 
 """
     PhysHopTerm

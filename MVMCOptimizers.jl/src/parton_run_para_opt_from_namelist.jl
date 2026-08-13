@@ -29,11 +29,21 @@ function parton_run_para_opt_from_namelist(
     # 1. 入力のパース
     data = MVMCExpertModeParsers.parse_expert_mode_files(namelist_str)
 
-    # 2. OptFlag の実体化(門番より前)
+    # 2. MPI コンテキスト(初期化のベースシード解決に要る)
+    ctx = build_parallel_context(data.modpara.nsplit_size)
+
+    # 3. α の初期値を確定する(DESIGN §2.3 の順序)。
+    #    pmfpara.def の presence 判定 → 未入力 idx を乱数で生成 → InPmfPara.def で上書き。
+    #    ベースシードはランクごとのオフセットを加える前の値なので、全ランクが
+    #    構成的に同一の α を得る(bcast 不要)。サンプリング用 RNG は消費しない。
+    base_seed = resolve_rnd_seed(ctx, data.modpara.rnd_seed, seed) - ctx.group1
+    parton_init_alpha!(data, base_seed)
+    parton_read_in_pmfpara!(data, namelist_str)
+
+    # 4. OptFlag の実体化(門番より前)
     parton_materialize_flags!(data)
 
-    # 3. MPI コンテキスト → 門番
-    ctx = build_parallel_context(data.modpara.nsplit_size)
+    # 5. 門番
     validate_parton_inputs(data, ctx)
 
     mp = data.modpara
@@ -47,16 +57,25 @@ function parton_run_para_opt_from_namelist(
         ),
     )
 
-    # 4. 乱数(既存の C 準拠の seed 解決をそのまま借りる)
+    # 6. サンプリング用の乱数(既存の C 準拠の seed 解決をそのまま借りる)。
+    #    初期化用ストリームとは別物なので、乱数初期化の有無でサンプリング系列は変わらない。
     rng = SFMT19937RNG()
     Random.seed!(rng, resolve_rnd_seed(ctx, mp.rnd_seed, seed))
 
-    # 5. 量子数射影。qptransidx.def が無ければ恒等 QP を実体化する
+    # 7. 量子数射影。qptransidx.def が無ければ恒等 QP を実体化する
     parton_ensure_qp!(data)
 
-    # 6. 状態を確保して SR を回す
+    # 8. 状態を確保する。テンプレート build がここでゲージ射影の引き戻し先
+    #    (gauge_target_norm)を確定するので、α の初期値がすべて決まった後でなければ
+    #    ならない(乱数前の値を引き戻し先にしてしまう)。
     pstate = parton_build_optimization_state(data)
     mkpath(output_dir)
+
+    # 9. 確定した初期 α をダンプする。ランタイム乱数を入れると「どの初期値で回したか」が
+    #    ファイルに残らなくなるので、再現性の担保として In*.def 互換形式で残す。
+    #    次回そのまま InPmfPara.def として渡せば厳密に再現・継続できる。
+    is_output_rank(ctx) && parton_write_pmfpara_init(
+        data, joinpath(output_dir, data.modpara.c_para_file_head * "_pmfpara_init.dat"))
     return parton_vmc_para_opt!(
         pstate,
         data,

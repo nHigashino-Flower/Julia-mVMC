@@ -106,7 +106,19 @@ function parse_parton_mf_para_content(
             continue
         end
 
-        length(tokens) < 7 && continue
+        # データ行はトークン数で「値の有無」を判定する(値がゼロかどうかでは分岐しない):
+        #   5 列 `site1 flavor1 site2 flavor2 idx`          → 未入力 → 乱数で初期化
+        #   7 列 `site1 flavor1 site2 flavor2 idx Re Im`    → 入力あり → その値を採用
+        # 2 列は上で処理済みの末尾フラグ行。それ以外の列数は曖昧なのでエラーにする。
+        if !(length(tokens) in (5, 7))
+            push!(
+                context.errors,
+                "Line $line_num: PartonMFPara row has $(length(tokens)) columns; " *
+                "expected 5 (site1 flavor1 site2 flavor2 idx, value omitted) or " *
+                "7 (… idx Re Im), or 2 for a trailing OptFlag row",
+            )
+            continue
+        end
         try
             term = parse_parton_mf_para_term(tokens, context, is_complex_flag)
             term !== nothing && push!(terms, term)
@@ -140,7 +152,14 @@ end
 """
     parse_parton_mf_para_term(tokens, context, is_complex_flag) -> Union{PartonMFParaTerm, Nothing}
 
-1 行分: `site1 flavor1 site2 flavor2 idx Re Im`(0-based のまま格納)。
+1 行分。列数で値の有無が決まる(DESIGN §2.3):
+
+- 5 列 `site1 flavor1 site2 flavor2 idx`       → 未入力。`has_value = false` で
+  `value = 0` を置くが、この 0 は「未定」の意味で、後段の乱数初期化が埋める
+- 7 列 `site1 flavor1 site2 flavor2 idx Re Im` → 入力あり。`has_value = true`。
+  **0 を書いた場合も 0 を採用する**(乱数で埋めない)
+
+サイト・フレーバー・idx は 0-based のまま格納する。
 """
 function parse_parton_mf_para_term(
     tokens::Vector{<:AbstractString},
@@ -152,8 +171,9 @@ function parse_parton_mf_para_term(
     site2 = tryparse(Int, String(tokens[3]))
     flavor2 = tryparse(Int, String(tokens[4]))
     idx = tryparse(Int, String(tokens[5]))
-    re = tryparse(Float64, String(tokens[6]))
-    imv = tryparse(Float64, String(tokens[7]))
+    has_value = length(tokens) >= 7
+    re = has_value ? tryparse(Float64, String(tokens[6])) : 0.0
+    imv = has_value ? tryparse(Float64, String(tokens[7])) : 0.0
 
     if any(isnothing, (site1, flavor1, site2, flavor2, idx, re, imv))
         push!(
@@ -179,5 +199,6 @@ function parse_parton_mf_para_term(
         idx,
         ComplexF64(re, imv),
         is_complex_flag,
+        has_value,
     )
 end

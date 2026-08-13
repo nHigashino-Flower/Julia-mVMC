@@ -45,6 +45,7 @@ const MVMC_KEYWORDS = Dict{String,String}(
     "PartonMFTrans" => "pmftrans.def",
     "PartonMFPara" => "pmfpara.def",
     "PhysHop" => "physhop.def",
+    "InPmfPara" => "InPmfPara.def",
     # Input parameter files (ReadInputParameters)
     "InGutzwiller" => "ingutzwiller.def",
     "InJastrow" => "injastrow.def",
