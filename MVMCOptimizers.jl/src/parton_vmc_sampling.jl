@@ -63,6 +63,7 @@ function parton_build_optimization_state(
         PartonConfiguration(mp.nsite, mp.nelec, mp.nflavor, mp.nvmc_sample),
         PartonSamplingWorkspace(mp.nelec, n_qp * mp.nflavor),
         mfham,
+        parton_build_phys_hamiltonian(data),
     )
 end
 

@@ -102,6 +102,45 @@ mutable struct PartonMFHamiltonian
 end
 
 # =====================================================================
+# 意味層: 物理ハミルトニアン(局所エネルギー用)
+# =====================================================================
+
+"""
+    PartonPhysHopEntry
+
+physhop.def の 1 行を 1-based に直したもの。片方向のみ保持し、h.c. は
+局所エネルギーが t 側・t* 側の両方向を評価することで供給する。
+"""
+struct PartonPhysHopEntry
+    site1::Int
+    site2::Int
+    value::ComplexF64
+end
+
+"""
+    PartonPhysDiagEntry
+
+coulombinter.def の 1 行を 1-based に直したもの(V n_i n_j)。対角行
+(site1 == site2)は硬芯により V n_i を意味し、化学ポテンシャルを表す。
+"""
+struct PartonPhysDiagEntry
+    site1::Int
+    site2::Int
+    value::Float64
+end
+
+"""
+    PartonPhysHamiltonian
+
+局所エネルギーが読む物理ハミルトニアンのテンプレート。平均場側の
+テンプレートと同じく起動時に 1 回だけ組み、0-based からの変換もそこで済ませる。
+"""
+struct PartonPhysHamiltonian
+    hops::Vector{PartonPhysHopEntry}
+    diags::Vector{PartonPhysDiagEntry}
+end
+
+# =====================================================================
 # 速度層: 配置
 # =====================================================================
 
@@ -164,6 +203,9 @@ end
 フレーバー 1 を代表として読む。
 """
 @inline is_occupied(cfg::PartonConfiguration, r::Int) = cfg.ele_num[r] != 0
+
+"サイト r に居る粒子の番号(空きなら -1)。固縛によりフレーバー 1 が代表。"
+@inline site_particle(cfg::PartonConfiguration, r::Int) = cfg.ele_cfg[r]
 
 """
     place_particle!(cfg, f, m, r)
@@ -305,6 +347,7 @@ mutable struct PartonOptimizationState
     config::PartonConfiguration
     workspace::PartonSamplingWorkspace
     mfham::PartonMFHamiltonian
+    physham::PartonPhysHamiltonian
 end
 
 # 既存関数への委譲。新しい振る舞いは足さず、`state` へ橋渡しするだけ。
