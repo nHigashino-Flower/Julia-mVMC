@@ -34,7 +34,12 @@ using MVMCOptimizers
 end
 
 @testset "SR: 凍結した idx は完全に不動、可動な idx は動く" begin
+    # ゲージ射影はスケール群を丸ごと実数倍する(群の一部だけ倍率を変えると
+    # ゲージ変換にならない)ので、凍結した idx も再正規化の対象になる。
+    # ここは「SR 自身が凍結成分を動かさない」ことの検査なので射影は切る。
+    # 射影 ON のときの振る舞いは §8-8 が受け持つ。
     data = dimerized_mf_data()
+    data.modpara.parton_gauge_fix = 0
     data.pmfpara_opt_flags = Dict(0 => 0, 1 => 1, 2 => 1)
     MVMCOptimizers.parton_materialize_flags!(data)
 

@@ -21,12 +21,80 @@ D_AmpMax を適用しない)。パートンモードでは相関因子も OptTra
 
 serial 実行では何もしない(既存の作法と同じく `ctx.is_mpi` で分岐)。
 """
-function parton_sync_parameters!(data::ExpertModeData, ctx::ParallelContext)
+function parton_sync_parameters!(
+    data::ExpertModeData,
+    ctx::ParallelContext,
+    mfham::Union{PartonMFHamiltonian,Nothing} = nothing,
+)
     if ctx.is_mpi
         para = pack_parameters(data)
         bcast!(ctx, para; root = 0, which = :comm0)
         unpack_parameters!(data, para)
     end
+    # ゲージ射影は bcast の**後**。α から決定論的に決まるので追加通信は要らず、
+    # 全ランクが同じ結果になる。
+    if mfham !== nothing && data.modpara.parton_gauge_fix != 0
+        parton_project_gauge!(data, mfham)
+    end
+    return nothing
+end
+
+"""
+    parton_project_gauge!(data, mfham; scale_floor=1e-12)
+
+α をゲージスライスへ引き戻す(DESIGN §2.5)。
+
+α には Ψ を変えない連続自由度がある。厳密演算なら S の固有値も力ベクトルの成分も
+ゼロなので SR はそちらへ動かないが、実際には **MC ノイズが力に偽の成分を与え、
+正則化 ε 付きの S⁻¹ がそれを 1/ε 倍する**ため α が際限なく漂流する。毎ステップの
+同期時に掃き出す。
+
+位置づけは既存 mVMC の `D_AmpMax`(スレーター振幅の全体スケールを上限へ再スケール)と
+同じ「更新後にゲージスライスへ引き戻す」機構。OptFlag による成分凍結はゲージ目的では
+使わない — 最適解が α_rep = 0 のときスライスに到達できないという失敗モードがある。
+
+- スケール群: ノルムを初期値へ戻す(実数正倍なので Φ は不変)
+- シフト群: 一様成分を引く(H → H + μI は Φ を変えない)
+- 射影は α にのみ作用する。射影因子(Gutzwiller / Jastrow)には触れない
+- 書き戻しはパラメータロケータ経由(α の正準置き場は `pmfpara_terms[].value`)
+"""
+function parton_project_gauge!(
+    data::ExpertModeData,
+    mfham::PartonMFHamiltonian;
+    scale_floor::Float64 = 1e-12,
+)
+    n_proj = MVMCExpertModeParsers.projection_layout(data).n_proj
+    para = pack_parameters(data)
+    off = n_proj                      # MF ブロックは射影ブロックの後ろ
+
+    changed = false
+    for (gi, grp) in enumerate(mfham.gauge_scale_groups)
+        target = mfham.gauge_target_norm[gi]
+        target > scale_floor || continue
+        nrm = sqrt(sum(k -> abs2(para[off + k]), grp))
+        if nrm <= scale_floor
+            @warn "Gauge scale group has collapsed; skipping the projection" group = gi norm = nrm
+            continue
+        end
+        c = target / nrm
+        isapprox(c, 1.0; rtol = 1e-15) && continue
+        for k in grp
+            para[off + k] *= c        # c は正の実数 → Φ は不変
+        end
+        changed = true
+    end
+
+    for grp in mfham.gauge_shift_groups
+        isempty(grp) && continue
+        m = sum(k -> para[off + k], grp) / length(grp)
+        abs(m) <= scale_floor && continue
+        for k in grp
+            para[off + k] -= m
+        end
+        changed = true
+    end
+
+    changed && unpack_parameters!(data, para)
     return nothing
 end
 
@@ -38,10 +106,14 @@ OptFlag 配列を実体化する(DESIGN §2.5)。門番より前に呼ぶこと:
 短いまま走ると SR が平均場ブロックを丸ごと無視する。門番はこの関数の結果を
 検査する側であって、作る側ではない。
 
+**OptFlag の用途はエルミート性とユーザーの明示的固定に限る**(v3.2)。ゲージ平坦
+方向を潰すのは `parton_project_gauge!` の仕事で、OptFlag による成分凍結は使わない
+— 最適解が α_rep = 0 のときスライスに到達できないという失敗モードがあるため。
+
 順序:
 1. `fill(true, 2 * (n_proj + n_idx))` で全可動に初期化
-2. pmfpara.def の末尾フラグ行を適用(実部・虚部の両スロットへ)
-3. オンサイト群の虚部を強制凍結
+2. pmfpara.def の末尾フラグ行を適用(ユーザーの明示的固定。実部・虚部の両スロットへ)
+3. オンサイト群の虚部を強制凍結(エルミート性。t が実数なので Im は非物理)
 
 オンサイト群の判定は `parton_onsite_idx_set` に切り出してあり、契約 0 の
 テンプレート build と同じ結合規則を使う(判定の二重実装を避けるため)。
@@ -144,7 +216,7 @@ function parton_vmc_para_opt!(
             return info
         end
 
-        parton_sync_parameters!(data, ctx)
+        parton_sync_parameters!(data, ctx, mfham)
 
         if step >= n_steps - n_smp
             store_opt_data!(data, pstate.state, step - (n_steps - n_smp))

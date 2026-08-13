@@ -84,6 +84,15 @@ mutable struct PartonMFHamiltonian
     dh_uo_scratch::Matrix{ComplexF64}
     min_gap::Float64
 
+    # ゲージ平坦方向(起動時に契約 0 の build が解決する。DESIGN §2.5)
+    # - gauge_scale_groups[g]: 同時に実数正倍できる idx 集合。独立なスケール群の数は
+    #   idx のフレーバー共有パターンで決まるので、フレーバー数を仮定しないこと
+    # - gauge_shift_groups[g]: 一様オンサイトシフト(H → H + μI)を成す idx 集合
+    # - gauge_target_norm[g]: 各スケール群の初期ノルム(射影の引き戻し先)
+    gauge_scale_groups::Vector{Vector{Int}}
+    gauge_shift_groups::Vector{Vector{Int}}
+    gauge_target_norm::Vector{Float64}
+
     function PartonMFHamiltonian(n_site::Int, n_elec::Int, n_flavor::Int, n_idx::Int)
         n_dof = 2 * n_idx
         new(
@@ -97,6 +106,9 @@ mutable struct PartonMFHamiltonian
             [[zeros(ComplexF64, n_site, n_elec) for _ = 1:n_dof] for _ = 1:n_flavor],
             zeros(ComplexF64, n_site, n_elec),
             Inf,
+            Vector{Int}[],
+            Vector{Int}[],
+            Float64[],
         )
     end
 end

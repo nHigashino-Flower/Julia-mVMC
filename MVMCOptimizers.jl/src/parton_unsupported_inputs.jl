@@ -453,6 +453,14 @@ function validate_parton_opt_flags(data::ExpertModeData)
         )
     end
 
+    if data.modpara.parton_gauge_fix == 0
+        @warn """PartonGaugeFix = 0: ゲージ射影を切っています。α のスケール方向と
+                 一様オンサイトシフトは Ψ を変えないので S が厳密に特異になりえます。
+                 MC ノイズが力ベクトルに与える偽の成分を正則化 ε 付きの S⁻¹ が
+                 1/ε 倍するため、α が漂流するか SR が NaN で落ちることがあります
+                 (DESIGN §2.5)。"""
+    end
+
     mf_slots = (2 * n_proj + 1):expected
     any(i -> data.optimization_flags[i], mf_slots) || error(
         "Every mean-field slot in optimization_flags is frozen, so SR has " *

@@ -127,6 +127,89 @@ function parton_build_mf_templates!(mfham::PartonMFHamiltonian, data::ExpertMode
         mfham.template[k] = template[k]
         mfham.is_onsite_group[k] = group_kind[k] === :onsite
     end
+
+    parton_resolve_gauge_groups!(mfham, data)
+    return mfham
+end
+
+"""
+    parton_resolve_gauge_groups!(mfham, data)
+
+α のゲージ平坦方向を解決して `mfham` に保持する(起動時 1 回、テンプレート構築の直後)。
+
+DESIGN §2.5 の平坦方向は 2 種類:
+
+**スケール**: `α → c·α` で `c` は**正の実数**。`H^(f) → c H^(f)` は固有値だけを
+`c` 倍し(`c > 0` なので順序も保つ)固有ベクトルを変えないので Φ が不変。
+位相 `e^{iθ}` は不変ではない — H が h.c. を含むため `α → e^{iθ}α` は
+`H → e^{iθ}T + e^{-iθ}T†` となり別のハミルトニアンになる。よって 1 群あたり実 1 次元。
+
+Φ^(f) は H^(f) にしか依存しないので、素朴にはフレーバーごとに独立な `c_f` がある。
+ただし 1 つの idx が複数フレーバーに跨って項を持つと、その idx を通じて `c_f` が
+連動する。したがって独立なスケール群は「フレーバーを節点、共有 idx を辺とするグラフの
+連結成分」で決まる。共有なしなら F 個、全共有なら 1 個。**個数を仮定しないこと**。
+
+**シフト**: `H^(f) → H^(f) + μ I`。オンサイト idx が全サイトを等係数で覆っているときだけ
+現れる。再正規化(スケール射影)では潰れないので別扱い。
+"""
+function parton_resolve_gauge_groups!(mfham::PartonMFHamiltonian, data::ExpertModeData)
+    n_idx = mfham.n_idx
+    n_flavor = data.modpara.nflavor
+
+    # --- スケール群: フレーバーを Union-Find で束ねる ---
+    parent = collect(1:n_flavor)
+    find(x) = parent[x] == x ? x : (parent[x] = find(parent[x]))
+    union!(a, b) = (ra = find(a); rb = find(b); ra != rb && (parent[ra] = rb))
+
+    flavors_of_idx = [Set{Int}() for _ = 1:n_idx]
+    for k = 1:n_idx, e in mfham.template[k]
+        push!(flavors_of_idx[k], e.flavor)
+    end
+    for k = 1:n_idx
+        fs = collect(flavors_of_idx[k])
+        for i = 2:length(fs)
+            union!(fs[1], fs[i])
+        end
+    end
+
+    root_to_group = Dict{Int,Vector{Int}}()
+    for k = 1:n_idx
+        isempty(flavors_of_idx[k]) && continue
+        r = find(first(flavors_of_idx[k]))
+        push!(get!(root_to_group, r, Int[]), k)
+    end
+    scale_groups = [sort(g) for g in values(root_to_group)]
+    sort!(scale_groups; by = first)
+
+    # --- シフト群: 各フレーバーで、オンサイト idx が全サイトを等係数で覆うか ---
+    n_site = size(mfham.h_mf[1], 1)
+    shift_groups = Vector{Int}[]
+    for f = 1:n_flavor
+        onsite_idx = [k for k = 1:n_idx if mfham.is_onsite_group[k] &&
+                      any(e -> e.flavor == f, mfham.template[k])]
+        isempty(onsite_idx) && continue
+        covered = Int[]
+        coeffs = Float64[]
+        for k in onsite_idx, e in mfham.template[k]
+            e.flavor == f || continue
+            push!(covered, e.site1)
+            push!(coeffs, real(e.coeff))
+        end
+        # 全サイトをちょうど 1 回ずつ、等しい係数で覆っているときだけシフト方向になる
+        sort(covered) == collect(1:n_site) || continue
+        all(c -> isapprox(c, coeffs[1]; rtol = 1e-12), coeffs) || continue
+        abs(coeffs[1]) > 1e-12 || continue
+        push!(shift_groups, sort(onsite_idx))
+    end
+    unique!(shift_groups)
+
+    # --- 引き戻し先のノルムは初期 α に固定(再現性のため) ---
+    α0 = parton_alpha_from_terms(data)
+    target = [sqrt(sum(abs2, view(α0, g))) for g in scale_groups]
+
+    mfham.gauge_scale_groups = scale_groups
+    mfham.gauge_shift_groups = shift_groups
+    mfham.gauge_target_norm = target
     return mfham
 end
 
