@@ -9,6 +9,7 @@ DESIGN_parton.md §3.3 の出力一覧に対応する。共通規約は rank 0 �
 using Test
 using LinearAlgebra
 using Random
+using Logging
 using MVMCExpertModeParsers
 using MVMCOptimizers
 
@@ -297,4 +298,113 @@ end
     d.modpara.nsr_opt_itr_step = 1
     MVMCOptimizers.output_opt_data!(d; output_dir = out3)
     @test !("zvo_CalcTimer.dat" in readdir(out3))
+end
+
+@testset "§8-10-12 time/runinfo の並列メタデータとサンプリング量(v3.10)" begin
+    mktempdir() do dir
+        nl, _ = _write_min_parton_input(dir)
+        out = mktempdir()
+        @test MVMCOptimizers.parton_run_para_opt_from_namelist(nl; output_dir = out) == 0
+
+        # --- (2) runinfo: n_julia_thread / blas_num_threads が実設定と一致 ------
+        kv = Dict{String,String}()
+        for l in eachline(joinpath(out, "zvo_parton_runinfo.dat"))
+            s = strip(l)
+            (isempty(s) || startswith(s, "#")) && continue
+            t = split(s, limit = 2)
+            length(t) == 2 && (kv[t[1]] = strip(t[2]))
+        end
+        @test parse(Int, kv["n_julia_thread"]) == Threads.nthreads()
+        @test parse(Int, kv["blas_num_threads"]) == LinearAlgebra.BLAS.get_num_threads()
+        @test parse(Int, kv["n_mpi_rank"]) == 1
+        @test parse(Int, kv["nsplit_size"]) == 1
+        # --- (1) nvmc_sample_total = NVMCSample × n_rank(1 ランク) -------------
+        @test parse(Int, kv["nvmc_sample_total"]) ==
+              parse(Int, kv["nvmc_sample_per_rank"]) * parse(Int, kv["n_mpi_rank"])
+
+        # 複数ランクの式は writer を n_rank 指定で直接呼んで確かめる
+        # (テストプロセスは serial なので式の検証だけ行う)
+        data = MVMCExpertModeParsers.parse_expert_mode_files(nl)
+        out3 = mktempdir()
+        MVMCOptimizers.parton_write_runinfo(data, out3; n_rank = 3)
+        kv3 = Dict{String,String}()
+        for l in eachline(joinpath(out3, "zvo_parton_runinfo.dat"))
+            s = strip(l)
+            (isempty(s) || startswith(s, "#")) && continue
+            t = split(s, limit = 2)
+            length(t) == 2 && (kv3[t[1]] = strip(t[2]))
+        end
+        @test parse(Int, kv3["nvmc_sample_total"]) ==
+              data.modpara.nvmc_sample * 3
+
+        # --- (4) time: SRinfo と同系統の書式(# ヘッダ・空白区切り・数値行) -----
+        tpath = joinpath(out, "zvo_parton_time.dat")
+        lines = readlines(tpath)
+        headers = filter(l -> startswith(l, "#"), lines)
+        rows = filter(l -> !startswith(l, "#") && !isempty(strip(l)), lines)
+        # メタデータ 3 行 + 列名 1 行
+        @test any(l -> occursin("n_mpi_rank", l), headers)
+        @test any(l -> occursin("n_julia_thread", l), headers)
+        @test any(l -> occursin("nvmc_sample_total", l), headers)
+        @test any(l -> occursin("step_sec", l) && occursin("n_update_total", l), headers)
+        @test !any(l -> occursin("=====", l), lines)   # .def 族の規約を混ぜない
+        mp = data.modpara
+        n_in = mp.nvmc_interval * mp.nsite
+        @test length(rows) == mp.nsr_opt_itr_step      # 毎ステップ 1 行
+        for (i, r) in enumerate(rows)
+            c = split(r)
+            @test length(c) == 7
+            step = parse(Int, c[1])
+            @test step == i - 1
+            n_out = parse(Int, c[4])
+            # (4b) 初回だけ WarmUp+Sample、以降は Sample+1(burn 再開)
+            expect_out = step == 0 ? mp.nvmc_warmup + mp.nvmc_sample :
+                                     mp.nvmc_sample + 1
+            @test n_out == expect_out
+            # (4c) 統計量と仕事量の式が全ステップで成立
+            @test parse(Int, c[5]) == n_in
+            @test parse(Int, c[6]) == mp.nvmc_sample * 1
+            @test parse(Int, c[7]) == n_out * n_in * 1
+            @test parse(Float64, c[2]) >= 0 && parse(Float64, c[3]) > 0
+        end
+
+        # 同じ出力先で回し直しても前 run の行が残らない(step 0 で "w")
+        @test MVMCOptimizers.parton_run_para_opt_from_namelist(nl; output_dir = out) == 0
+        rows2 = filter(l -> !startswith(l, "#") && !isempty(strip(l)),
+                       readlines(tpath))
+        @test length(rows2) == mp.nsr_opt_itr_step
+    end
+end
+
+@testset "§8-10-13 実行環境の警告(OMP_NUM_THREADS / INNER_THREADS)" begin
+    mktempdir() do dir
+        nl, _ = _write_min_parton_input(dir)
+        if Threads.nthreads() == 1
+            # 条件 1: INNER_THREADS 有効なのに 1 スレッド
+            withenv("JULIA_MVMC_INNER_THREADS" => "1", "OMP_NUM_THREADS" => nothing) do
+                @test_logs (:warn, r"single thread") match_mode = :any begin
+                    MVMCOptimizers.parton_warn_threading_config()
+                end
+            end
+            # 条件 2: OMP_NUM_THREADS >= 2 なのに 1 スレッド(Julia は参照しない)
+            withenv("OMP_NUM_THREADS" => "8", "JULIA_MVMC_INNER_THREADS" => nothing) do
+                @test_logs (:warn, r"does not read") match_mode = :any begin
+                    MVMCOptimizers.parton_warn_threading_config()
+                end
+            end
+        else
+            # 複数スレッド起動時はどちらの警告も出ない
+            withenv("JULIA_MVMC_INNER_THREADS" => "1", "OMP_NUM_THREADS" => "8") do
+                @test_logs min_level = Logging.Warn begin
+                    MVMCOptimizers.parton_warn_threading_config()
+                end
+            end
+        end
+        # 未設定なら警告なし(スレッド数に依らず)
+        withenv("JULIA_MVMC_INNER_THREADS" => nothing, "OMP_NUM_THREADS" => nothing) do
+            @test_logs min_level = Logging.Warn begin
+                MVMCOptimizers.parton_warn_threading_config()
+            end
+        end
+    end
 end

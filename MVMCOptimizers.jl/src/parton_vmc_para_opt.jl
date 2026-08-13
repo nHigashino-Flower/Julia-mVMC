@@ -216,6 +216,9 @@ function parton_vmc_para_opt!(
         parton_update_orbital_derivatives!(mfham, n_elec)     # 契約 0′
         ctimer_stop!(c_timer, 802)
 
+        # n_out はサンプリングが burn_flag を立てる前に読む(time の記録用。
+        # 初回だけ WarmUp+Sample で長い理由がファイルから追える)
+        n_out_step = parton_n_out(pstate.config, mp)
         ctimer_start!(c_timer, 803)
         parton_make_sample!(pstate, data, rng; c_timer = c_timer)   # 骨格 + 契約 2, 3
         ctimer_stop!(c_timer, 803)
@@ -257,7 +260,8 @@ function parton_vmc_para_opt!(
                               alpha_norm_pre = norm_pre,
                               alpha_norm_post = norm_post)
             t_now = time()
-            parton_write_time(data, step, diag_dir, t_now - t_step0, t_now - t_run0)
+            parton_write_time(data, step, diag_dir, t_now - t_step0, t_now - t_run0;
+                              n_out = n_out_step, n_rank = ctx.size0)
         end
         ctimer_stop!(c_timer, 813)
 

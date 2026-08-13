@@ -77,22 +77,55 @@ end
 # =====================================================================
 
 """
-    parton_write_time(data, step, dir, elapsed_step, elapsed_total)
+    parton_write_time(data, step, dir, elapsed_step, elapsed_total;
+                      n_out, n_rank)
 
-`<head>_parton_time.dat` にステップ毎の壁時計。
+`<head>_parton_time.dat` にステップ毎の壁時計と**サンプリング量**(v3.10)。
 
-C 版 mVMC に対応する出力は `zvo_CalcTimer.dat`(区間別の累積)だけで、
-**ステップ毎の壁時計を持つファイルは存在しない**ため、パートン専用として定義する
-(既存の名前と衝突しないよう `_parton_time.dat` とした)。区間別の累積が要るときは
-既存の `MVMC_C_TIMER=1` で `zvo_CalcTimer.dat` を出せる。
+## C 版との対応(v3.10 調査)
+
+C 版の per-step 出力 `<head>_time_<idx>.dat`(`vmcclock.c` の `OutputTime`)は
+**受理率 3 種(hop/ex/lsf)+ 試行カウンタ + ctime 文字列**で、経過秒も
+サンプリング量も持たない。その役割(受理率・試行数)はパートンでは
+`zvo_parton_diag.dat` が per-step で担っており、hop/ex/lsf の 3 種更新は
+パートンに存在しない(固縛ホップ 1 種のみ)ため、列構成は踏襲しない。
+このファイルは「**時間と仕事量**」に専念する(役割分担は §3.3.1)。
+
+## 列(§4 の規約から導出。時間だけでは何を何回やった時間か分からないため)
+
+- `n_out`: そのステップの外側ループ数。**初回は WarmUp+Sample、burn 再開後は
+  Sample+1** とステップごとに変わる(だから毎ステップ記録する)。値は
+  `parton_n_out`(式の家)から取ったものを受け取る
+- `n_in = NVMCInterval × NSite`: サンプル間の内側ステップ数
+- `n_sample_total = NVMCSample × n_rank`: **統計量**(誤差評価の母数。
+  `weight_average_we!` が comm0 で allreduce するため rank 合算が実効値)
+- `n_update_total = n_out × n_in × n_rank`: **仕事量**(1 更新あたりの時間の分母)
+
+書式は診断系(§3.3.1 系統 (b)、SRinfo と同じ流儀): `#` ヘッダ・空白区切り・
+`% .6e` / `%d`、step 0 で `"w"`(前 run の行を残さない)、rank 0 のみ。
+列名ヘッダの前に `# key value` で並列構成(n_mpi_rank / n_julia_thread /
+nvmc_sample_total)を置き、**このファイル単体でスケーリング解析ができる**ようにする。
 """
 function parton_write_time(data::ExpertModeData, step::Int, dir,
-                           elapsed_step::Float64, elapsed_total::Float64)
+                           elapsed_step::Float64, elapsed_total::Float64;
+                           n_out::Int, n_rank::Int)
     dir === nothing && return nothing
     path = _parton_out(data, "_parton_time.dat", dir)
+    mp = data.modpara
+    n_in = parton_n_in(mp)
+    n_sample_total = mp.nvmc_sample * n_rank
+    n_update_total = n_out * n_in * n_rank
     open(path, step == 0 ? "w" : "a") do f
-        step == 0 && println(f, "# step  sec_this_step  sec_total")
-        @printf(f, "%6d % .6e % .6e\n", step, elapsed_step, elapsed_total)
+        if step == 0
+            @printf(f, "# n_mpi_rank %d\n", n_rank)
+            @printf(f, "# n_julia_thread %d\n", Threads.nthreads())
+            @printf(f, "# nvmc_sample_total %d\n", n_sample_total)
+            println(f, "# step  step_sec  cumulative_sec  n_out  n_in  " *
+                       "n_sample_total  n_update_total")
+        end
+        @printf(f, "%6d % .6e % .6e %8d %6d %10d %14d\n",
+                step, elapsed_step, elapsed_total,
+                n_out, n_in, n_sample_total, n_update_total)
     end
     return path
 end
@@ -229,7 +262,23 @@ function parton_write_runinfo(
         println(f, "namelist $(namelist_path)")
         @printf(f, "base_seed %d\n", base_seed)   # 乱数初期化の再現に必要な値
         @printf(f, "modpara_rnd_seed %d\n", mp.rnd_seed)
-        @printf(f, "n_rank %d\nn_thread %d\n", n_rank, Threads.nthreads())
+        # 並列構成(v3.10)。時間の数字は「何ランク・何スレッドで出たか」が
+        # 分からないと解釈できない。既存キー n_rank / n_thread はより明示的な
+        # 名前に置き換えた(情報の二重管理をしないため旧キーは残さない)。
+        @printf(f, "n_mpi_rank %d\n", n_rank)
+        @printf(f, "n_julia_thread %d\n", Threads.nthreads())
+        @printf(f, "blas_num_threads %d\n", LinearAlgebra.BLAS.get_num_threads())
+        # JULIA_MVMC_INNER_THREADS の解決値(env とスレッド数の両方を満たすか)
+        @printf(f, "inner_threads_enabled %d\n",
+                parton_sample_threading_enabled() ? 1 : 0)
+        @printf(f, "nsplit_size %d\n", mp.nsplit_size)
+        # 実効サンプル数 = NVMCSample × ランク数(weight_average_we! が comm0 で
+        # allreduce して合算後の Wc で正規化するため)。統計誤差の母数はこちら。
+        # 注意: NSplitSize > 1 を将来解禁すると comm1 グループ内でサンプルが
+        # 分割されるため、この式は「comm0 の全 rank 合算」のままでよいかを
+        # 再確認すること(現状は門番が NSplitSize = 1 を保証)。
+        @printf(f, "nvmc_sample_per_rank %d\n", mp.nvmc_sample)
+        @printf(f, "nvmc_sample_total %d\n", mp.nvmc_sample * n_rank)
         @printf(f, "PartonMode %d\nNFlavor %d\nNElec %d\nNSite %d\n",
                 mp.parton_mode, mp.nflavor, mp.nelec, mp.nsite)
         @printf(f, "n_idx %d\nn_para %d\n", n_idx, n_para)

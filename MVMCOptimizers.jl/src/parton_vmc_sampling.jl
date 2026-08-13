@@ -203,6 +203,23 @@ end
 # =====================================================================
 
 """
+    parton_n_out(cfg, mp) -> Int
+    parton_n_in(mp) -> Int
+
+サンプリング量の式(DESIGN §4 の C 踏襲規約)。**式の家はここ 1 箇所**:
+`parton_make_sample!` 本体と `zvo_parton_time.dat` の記録(§3.3.1)の両方が
+これを呼ぶ。呼び出しは `parton_make_sample!` が burn_flag を立てる**前**で
+あること(サンプリング後に呼ぶと次ステップの値になる)。
+
+- `n_out`: 初回 SR ステップは `NVMCWarmUp + NVMCSample`、burn 再開後は
+  `NVMCSample + 1`。ステップごとに値が変わるので time は毎ステップ記録する
+- `n_in`: `NVMCInterval × NSite`(サンプル間の内側ステップ数)
+"""
+@inline parton_n_out(cfg::PartonConfiguration, mp) =
+    cfg.burn_flag ? mp.nvmc_sample + 1 : mp.nvmc_warmup + mp.nvmc_sample
+@inline parton_n_in(mp) = mp.nvmc_interval * mp.nsite
+
+"""
     parton_make_sample!(pstate, data, rng)
 
 固縛 Metropolis サンプリング。契約 0(軌道の更新)は呼び出し前に済んでいること。
@@ -229,17 +246,16 @@ function parton_make_sample!(pstate::PartonOptimizationState, data::ExpertModeDa
     qp_weight = parton_qp_weight(data)
 
     # --- 開始配置: burn 再利用 or 初期生成 --------------------------------
+    n_out = parton_n_out(cfg, mp)
     if cfg.burn_flag
         parton_copy_from_burn_sample!(cfg)
-        n_out = mp.nvmc_sample + 1
         ctimer_start!(c_timer, 804)
         parton_recompute_amplitude_all!(amp, mfham, cfg, data, ws)   # 最初の錨
         ctimer_stop!(c_timer, 804)
     else
-        n_out = mp.nvmc_warmup + mp.nvmc_sample
         parton_make_initial_sample!(cfg, amp, mfham, data, ws; rng = rng)  # 錨も打つ
     end
-    n_in = mp.nvmc_interval * n_site
+    n_in = parton_n_in(mp)
 
     n_accept_anchor = 0
     for out_step = 1:n_out

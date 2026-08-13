@@ -13,6 +13,11 @@ Julia port of the [mVMC](https://github.com/issp-center-dev/mVMC) (many-variable
 | BackFlow | ❌ Not supported | Planned for a future release. |
 | MPI parallelization | 🧪 Partially verified / smoke-tested | `VMCParaOpt` supports direct SR (`NSRCG = 0`) with `NSplitSize >= 1` for `NQPFull = 1` and for sz-conserved standard-projection `NQPFull > 1` when `NQPOptTrans = 1` (`NSPGaussLeg > 1` and/or `NMPTrans > 1`), plus standard SR-CG (`NSRCG = 1`) with `NSplitSize = 1`; rank0 output/readback, comm0 reductions, `NSplitSize/NStore`, and standard-projection self-consistency paths are smoke-tested under `mpiexec -n 2/-n 4`. `VMCPhysCal` supports `NSplitSize > 1` for sz-conserved normal-Green runs (`NLanczosMode = 0`). `VMCPhysCal` split with Lanczos, FSZ/general-orbital PhysCal split, SR-CG with `NSplitSize > 1`, FSZ standard-projection `NQPFull > 1` (`NSPGaussLeg > 1` or `abs(NMPTrans) > 1`), OptTrans-derived QP sectors (`NQPOptTrans > 1` or active `OptTrans`) with `NSplitSize > 1`, `NSRCG >= 2`, `useDiagScale != 0`, and `RescaleSmat != 0` are still rejected. |
 
+<!-- --- parton-mode (fork addition) --- -->
+> **Parton mode (fork)**: 実行手順(スレッド数の決まり方・Slurm 例・実効サンプル数)は
+> [docs/parton_run.md](docs/parton_run.md)、設計は `DESIGN_parton.md` を参照。
+<!-- --- end parton-mode --- -->
+
 ## Installation
 
 Requires **Julia 1.11+**, `gfortran`, `g++`, `make`, BLAS/LAPACK.

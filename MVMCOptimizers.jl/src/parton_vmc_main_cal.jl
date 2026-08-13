@@ -368,6 +368,33 @@ end
 """
 @inline parton_sample_threading_enabled() = vmc_inner_threading_requested(true)
 
+"""
+    parton_warn_threading_config()
+
+起動時の実行環境チェック(§3.3.2、v3.10)。**Julia のスレッド数は
+`JULIA_NUM_THREADS` / `julia -t N` で決まり、`OMP_NUM_THREADS` では決まらない。**
+C 版のジョブスクリプトを流用すると `OMP_NUM_THREADS=8` と書いてあっても
+警告もエラーも出ずに 1 スレッドで走る事故が起きるので、ここで検出して知らせる。
+実際に何スレッドで走ったかは runinfo の `n_julia_thread` に残る。
+"""
+function parton_warn_threading_config()
+    n = Base.Threads.nthreads()
+    raw = strip(get(ENV, "JULIA_MVMC_INNER_THREADS", "0"))
+    if !isempty(raw) && raw != "0" && n == 1
+        @warn "JULIA_MVMC_INNER_THREADS is set but Julia is running with a " *
+              "single thread, so the measurement phase stays sequential. " *
+              "Start Julia with `JULIA_NUM_THREADS=N` or `julia -t N`."
+    end
+    omp = tryparse(Int, strip(get(ENV, "OMP_NUM_THREADS", "")))
+    if omp !== nothing && omp >= 2 && n == 1
+        @warn "OMP_NUM_THREADS=$omp is set but Julia does not read it — the " *
+              "run proceeds with a single Julia thread. Use " *
+              "`JULIA_NUM_THREADS` or `julia -t N` (and " *
+              "`JULIA_MVMC_INNER_THREADS=1` for the parton measurement phase)."
+    end
+    return nothing
+end
+
 "チャンク t(1-based)が受け持つサンプル範囲。連続・決定的。"
 @inline _parton_chunk(t::Int, nt::Int, n::Int) =
     (1 + div((t - 1) * n, nt)):div(t * n, nt)
@@ -435,34 +462,43 @@ function _parton_main_cal_samples_threaded!(
     end
 
     n_sample = mp.nvmc_sample
-    Base.Threads.@threads :static for t = 1:nt
-        cfg_t = ctx.cfgs[t]
-        amp_t = ctx.amps[t]
-        ws_t = ctx.wss[t]
-        timer_t = ctx.timers[t]
-        # E_loc が pstate 越しに amp/cfg/ws を読むので、スレッド分をまとめた
-        # 外箱を作る(state / mfham / physham は読み取り共有)
-        ps_t = PartonOptimizationState(
-            pstate.state, amp_t, cfg_t, ws_t, pstate.mfham, pstate.physham)
-        for s in _parton_chunk(t, nt, n_sample)
-            parton_restore_sample_from!(cfg_t, pstate.config, s)
-            parton_recompute_amplitude_all!(amp_t, pstate.mfham, cfg_t, data, ws_t)
-            ip = parton_calculate_ip(amp_t, qp_weight)
-            if abs(ip) < 1e-30
-                ctx.ok_all[s] = false
-                continue
+    # BLAS の二重並列を避ける(§3.3.2): Julia スレッドを立てる区間では
+    # OpenBLAS を 1 スレッドに落とし、抜けるときに必ず元へ戻す
+    # (グローバル状態を汚さない)。
+    blas_before = LinearAlgebra.BLAS.get_num_threads()
+    blas_before > 1 && LinearAlgebra.BLAS.set_num_threads(1)
+    try
+        Base.Threads.@threads :static for t = 1:nt
+            cfg_t = ctx.cfgs[t]
+            amp_t = ctx.amps[t]
+            ws_t = ctx.wss[t]
+            timer_t = ctx.timers[t]
+            # E_loc が pstate 越しに amp/cfg/ws を読むので、スレッド分をまとめた
+            # 外箱を作る(state / mfham / physham は読み取り共有)
+            ps_t = PartonOptimizationState(
+                pstate.state, amp_t, cfg_t, ws_t, pstate.mfham, pstate.physham)
+            for s in _parton_chunk(t, nt, n_sample)
+                parton_restore_sample_from!(cfg_t, pstate.config, s)
+                parton_recompute_amplitude_all!(amp_t, pstate.mfham, cfg_t, data, ws_t)
+                ip = parton_calculate_ip(amp_t, qp_weight)
+                if abs(ip) < 1e-30
+                    ctx.ok_all[s] = false
+                    continue
+                end
+                ctimer_start!(timer_t, 808)
+                ctx.e_all[s] = parton_local_energy(ps_t, data, ip)
+                ctimer_stop!(timer_t, 808)
+                ctimer_start!(timer_t, 809)
+                parton_fill_sr_opt_o!(
+                    view(ctx.o_all, :, s), amp_t, pstate.mfham, cfg_t, data,
+                    qp_weight, ip, n_proj;
+                    project_gauge = gauge_proj, alpha = α_now)
+                ctimer_stop!(timer_t, 809)
+                ctx.ok_all[s] = true
             end
-            ctimer_start!(timer_t, 808)
-            ctx.e_all[s] = parton_local_energy(ps_t, data, ip)
-            ctimer_stop!(timer_t, 808)
-            ctimer_start!(timer_t, 809)
-            parton_fill_sr_opt_o!(
-                view(ctx.o_all, :, s), amp_t, pstate.mfham, cfg_t, data,
-                qp_weight, ip, n_proj;
-                project_gauge = gauge_proj, alpha = α_now)
-            ctimer_stop!(timer_t, 809)
-            ctx.ok_all[s] = true
         end
+    finally
+        blas_before > 1 && LinearAlgebra.BLAS.set_num_threads(blas_before)
     end
     # スレッド別タイマは合算(808/809 は CPU 秒の総和になる点に注意)
     ctimer_merge_all!(c_timer, ctx.timers)

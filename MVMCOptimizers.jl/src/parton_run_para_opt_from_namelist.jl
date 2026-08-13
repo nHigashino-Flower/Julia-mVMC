@@ -46,6 +46,10 @@ function parton_run_para_opt_from_namelist(
     # 5. 門番
     validate_parton_inputs(data, ctx)
 
+    # 5b. 実行環境の注意(§3.3.2)。OMP_NUM_THREADS では Julia のスレッド数は
+    #     決まらない — C 版のジョブスクリプト流用事故をここで知らせる。
+    is_output_rank(ctx) && parton_warn_threading_config()
+
     mp = data.modpara
     nsteps !== nothing && (mp.nsr_opt_itr_step = Int(nsteps))
     nsmp !== nothing && (mp.nsr_opt_itr_smp = Int(nsmp))

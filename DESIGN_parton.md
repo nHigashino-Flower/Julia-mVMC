@@ -2,7 +2,7 @@
 
 - ステータス: **M2 前半完了**(運動量射影の配線・検証まで。§8 の 0〜15 と P 層 P0〜P2 全緑・
   既存回帰全緑。残り: 物理密度 Jastrow)
-- 改訂: v3.9 (2026-08-13) — 性能: 契約0′ rank-1 / det^F 高速路 / 測定フェーズのサンプル並列(§7 性能ポリシー)
+- 改訂: v3.10 (2026-08-13) — zvo_parton_time の形式確定・並列メタデータ・実行環境の警告(§3.3.1 / §3.3.2)
 - ベース: tmisawa/Julia-mVMC v0.5.0(fork、ブランチ `parton-mode`)
 
 ## 0. 目的と位置づけ
@@ -381,10 +381,10 @@ pmftrans の `NPartonMFTrans` とは別物であることを名前で示すた�
 |---|---|
 | `zvo_SRinfo.dat` | Npara/Msize/optCut/diagCut/sDiagMax/sDiagMin/absRmax/imax。**直接法パス**から既存 writer をそのまま呼ぶ(ヘッダ・列は CG 版と 1 文字も違わない) |
 | `zvo_parton_diag.dat` | step, min_gap, 受理率, α ノルム(ゲージ射影の前/後), 試行数, 受理数, 再計算数。既存カウンタと `PartonMFHamiltonian` の保持値を読むだけ |
-| `zvo_parton_time.dat` | step ごとの所要時間と累積時間(wall-clock) |
+| `zvo_parton_time.dat` | step, step_sec, cumulative_sec, **n_out, n_in, n_sample_total, n_update_total**(v3.10)。列名ヘッダの前に `# key value` で n_mpi_rank / n_julia_thread / nvmc_sample_total を併記(単体でスケーリング解析可)。**役割分担**: CalcTimer(§3.3.2)= 区間別の累積時間を最後に 1 回 / time = ステップ毎の経過時間と**サンプリング量**を逐次追記。区間別内訳は複製しない。n_out は初回 WarmUp+Sample・以降 Sample+1(式の家は `parton_n_out`)。C 版の `<head>_time_<idx>.dat` は受理率+試行カウンタ+ctime で列構成がパートンの実態と合わず(hop/ex/lsf は存在しない)、その役割は diag が担う |
 | `zqp_pmfband_opt.dat` | `flavor band_index eigenvalue occupied`(**flavor・band_index とも 0-based**)。`occupied` は下から `NElec` 個が 1。`# key value` 形式で NFlavor / NSite / NElec と各フレーバーの HOMO-LUMO ギャップを併記 |
 | `zqp_pmfvec_opt.dat` | 固有ベクトル。既定 OFF(`with_vectors = true` のときだけ) |
-| `zvo_parton_runinfo.dat` | `# key value` 形式。base_seed / PartonMode / n_idx / githash / wall_sec ほか。githash 取得失敗時は `"unknown"` で run は落ちない |
+| `zvo_parton_runinfo.dat` | `key value` 形式(`#` はコメント行)。base_seed / PartonMode / n_idx / githash / wall_sec に加え(v3.10)並列構成: n_mpi_rank / n_julia_thread / blas_num_threads / inner_threads_enabled / nsplit_size / nvmc_sample_per_rank / **nvmc_sample_total**(= NVMCSample × n_rank。comm0 allreduce の実効統計量。NSplitSize>1 解禁時は式の再確認が要る旨をコード内コメントに記載)。githash 取得失敗時は `"unknown"` で run は落ちない |
 | `zvo_conv.dat` | step, E, var, \|E − E_tail\|。`zvo_out.dat` の列を読み直したもの(再計算しない) |
 | `zvo_CalcTimer.dat` | §3.3.2 |
 
@@ -403,6 +403,16 @@ SR ループ後に**最終 α で組み直してから**書く(ループ内の�
 
 **パートンモードでは既定で有効。** 既存モードは `MVMC_C_TIMER=1` の opt-in のままで
 既定を変えていない。パートンでも `MVMC_C_TIMER=0` を明示すれば切れる。
+
+**環境変数の注意(v3.10)**: Julia のスレッド数は `JULIA_NUM_THREADS` /
+`julia -t N` で決まり、**`OMP_NUM_THREADS` では決まらない**。C 版のジョブ
+スクリプト流用で `OMP_NUM_THREADS=8` でも黙って 1 スレッドになる事故を、
+ドライバ起動時の `parton_warn_threading_config()` が検出して `@warn` する
+(検出条件: INNER_THREADS 有効 && nthreads==1、または OMP_NUM_THREADS>=2 &&
+nthreads==1)。実際の構成は runinfo の `n_julia_thread` で事後確認できる。
+Julia スレッド並列区間では BLAS を 1 スレッドに落とし、抜けるとき元へ戻す
+(二重並列の回避。設定値は runinfo の `blas_num_threads`)。
+実行手順の実例は `docs/parton_run.md`。
 
 **ID 帯は 800–813。** 使用中の ID はリポジトリ全体で 0–72 / 600–603 / 920–966。
 C 版 `OutputTimerParaOpt` は 0–99 を主要フェーズ・600 番台を lspinflip 下位に使う
@@ -664,6 +674,26 @@ stochastic_opt!(案 B 後は MF ブロックも解く)/ weight_average / paralle
 
 ## 11. 決定ログ(要約)
 
+- v3.10 (2026-08-13, 出力整合): **zvo_parton_time の形式確定 + 並列メタデータ +
+  実行環境の警告**(§3.3.1 / §3.3.2)。
+  (1) C 版の per-step 出力 `<head>_time_<idx>.dat`(`vmcclock.c` `OutputTime`)を
+  調査 — 実体は**受理率 3 種(hop/ex/lsf)+ 試行カウンタ + ctime 文字列**で、
+  経過秒もサンプリング量も持たない。hop/ex/lsf はパートンに存在せず
+  (固縛ホップ 1 種)、受理率・試行数は `zvo_parton_diag.dat` が既に担うため
+  **列構成は踏襲しない**(エスカレーションの上で決定)。time は「時間と仕事量」に
+  専念: `step step_sec cumulative_sec n_out n_in n_sample_total n_update_total`。
+  n_sample_total(統計量)と n_update_total(仕事量)は役割が違うので両方持つ。
+  n_out の式の家は `parton_n_out`(サンプリング本体と writer が共用、burn_flag を
+  立てる**前**に読む)。旧 DESIGN 注記「C 版にステップ毎出力は無い」は不正確
+  だったので訂正。
+  (2) runinfo に並列構成 7 キーを追加(既存 n_rank / n_thread は明示的な
+  n_mpi_rank / n_julia_thread に**置き換え** — 二重管理しない)。データ行は
+  既存どおり素の `key value`(指示の例示は `# key value` だったが、既存 runinfo の
+  規約と §8-10-5 のパーサが `#` をコメントとして読み飛ばすため、既存規約を優先)。
+  (3) 起動時警告: `OMP_NUM_THREADS` では Julia のスレッド数は決まらない —
+  C 版ジョブスクリプト流用の無警告 1 スレッド事故を起動時に `@warn`。
+  Julia スレッド並列区間で BLAS を 1 に落として復元。`docs/parton_run.md` に
+  Slurm 例(README から 1 行参照)
 - v3.9 (2026-08-13, 性能): **数式不変の最適化一式**(§7 性能ポリシー / §8-14 / §8-15)。
   まず CalcTimer で実測してから実装した(32 サイト・1500 サンプル・200 step:
   main_cal 73〜81% ≫ sampling 17〜26% ≫ 契約0′ 0.6〜1.2% — 想定表の
