@@ -267,3 +267,57 @@ end
     @test all(>=(0), diag(S_shim))            # 対角は非負(計量として妥当)
     @test maximum(abs, S_shim) > 1e-6         # 自明にゼロではない
 end
+
+@testset "§8-7 QP: n_qp > 1(運動量射影)でも力 = 勾配($(store ? "store" : "非 store")経路)" for
+        store in (false, true)
+    # v3.8 追記: 従来この検証は恒等 QP でしか走っておらず、契約 5 の
+    # 「∂Φ も QP 写像を通して gather する」経路(parton_calculate_o! の qmap[r])が
+    # 未検証だった。n_qp = 1 では写像が恒等なので、忘れていても検出されない。
+    # 6 サイト環の Z_6 全並進 + k=1 の複素重みで同じ恒等式を立てる。
+    #
+    # サイズの注意: 4 サイト・Ne=2 だと k=1 セクターが 1 次元しかなく
+    # (隣接軌道のみ。対角軌道は T² 固定で k=1 成分ゼロ)、Ψ = P_1|φ⟩ が
+    # α によらず同一状態 → 勾配も力も恒等的にゼロでテストが退化する。
+    # 6 サイト・Ne=2 は C(6,2)=15 = 6+6+3 軌道で k=1 セクターが 2 次元。
+    F = 2
+    n_site, n_elec = 6, 2
+    data = per_bond_mf_data(F; n_site = n_site, n_elec = n_elec)
+    shifts = [[mod1(j + R, n_site) for j = 1:n_site] for R = 0:(n_site - 1)]
+    sgns = [ones(Int, n_site) for _ = 0:(n_site - 1)]
+    weights = ComplexF64[cis(2π * 1 * R / n_site) for R = 0:(n_site - 1)]
+    set_shift_qp!(data, shifts, sgns, weights)
+
+    MVMCOptimizers.parton_materialize_flags!(data)
+    pstate = MVMCOptimizers.parton_build_optimization_state(data)
+    @test pstate.amp.n_qp == n_site            # QP が本当に効いていること
+    n_idx = pstate.mfham.n_idx
+    n_proj = MVMCExpertModeParsers.projection_layout(data).n_proj
+    configs = [[i, j] for i = 1:n_site for j = (i + 1):n_site]
+
+    α0 = MVMCOptimizers.parton_alpha_from_terms(data)
+    e0, _, _ = _enumerate_state(pstate, data, configs, α0;
+                                conjugate = true, store = store)
+    @test isfinite(real(e0))
+    @test abs(imag(e0)) < 1e-10
+
+    g, S = _force_vector(pstate, data, n_proj, n_idx)
+    dt = data.modpara.dsr_opt_step_dt
+
+    δ = 1e-6
+    max_rel = 0.0
+    for k = 1:n_idx, part = 1:2
+        αp = copy(α0)
+        αm = copy(α0)
+        d = part == 1 ? ComplexF64(δ) : ComplexF64(0, δ)
+        αp[k] += d
+        αm[k] -= d
+        fd = (_enumerate_energy(pstate, data, configs, αp) -
+              _enumerate_energy(pstate, data, configs, αm)) / (2δ)
+        si = 2 * (k - 1) + part
+        from_force = g[si] / (-dt)
+        @test isapprox(from_force, fd; rtol = 1e-4, atol = 1e-8)
+        max_rel = max(max_rel, abs(from_force - fd) / max(abs(fd), 1e-8))
+    end
+    @test max_rel < 1e-3
+    @test maximum(abs, g) > 1e-4
+end

@@ -153,3 +153,53 @@ end
     data.optimization_flags = [true, false]
     @test MVMCOptimizers.validate_parton_inputs(data, ctx) === nothing
 end
+
+@testset "門番: QP の本数が modpara と qptransidx.def で食い違う" begin
+    # NMPTrans は modpara.def、qp_trans / qp_trans_sgn / para_qp_trans は
+    # qptransidx.def と**別経路**で入る。n_qp は get_n_qp_full = NMPTrans から
+    # 決まり、gather は data.qp_trans[qp] を引くので、片方だけ書き忘れると
+    # 射影の項が黙って落ちる(REPORT §10)。門番は parton_ensure_qp!(恒等
+    # フォールバックと 0→1based 正規化)より前に走るので、値は 0-based のまま見る。
+    ctx = MVMCOptimizers.serial_context()
+
+    function _with_qp!(d, n_mp; n_map = n_mp, n_sgn = n_mp, n_w = n_mp)
+        L = d.modpara.nsite
+        d.modpara.nmp_trans = n_mp
+        d.qp_trans = [[mod(j + R, L) for j = 0:(L - 1)] for R = 0:(n_map - 1)]
+        d.qp_trans_sgn = [ones(Int, L) for _ = 1:n_sgn]
+        d.para_qp_trans = ComplexF64[cis(2π * R / L) for R = 0:(n_w - 1)]
+        return d
+    end
+
+    # 整合していれば通る(全並進 4 本)
+    @test MVMCOptimizers.validate_parton_inputs(_with_qp!(_parton_ok_data(), 4), ctx) ===
+          nothing
+    # qptransidx.def なし(NMPTrans 既定 0 / 明示 1)も通る。ensure が恒等 1 本を張る
+    @test MVMCOptimizers.validate_parton_inputs(_parton_ok_data(), ctx) === nothing
+    data = _parton_ok_data()
+    data.modpara.nmp_trans = 1
+    @test MVMCOptimizers.validate_parton_inputs(data, ctx) === nothing
+
+    violations = Dict(
+        "写像の本数 < NMPTrans" => d -> _with_qp!(d, 4; n_map = 2),
+        "写像の本数 > NMPTrans" => d -> _with_qp!(d, 2; n_map = 4),
+        "重み配列が短い(重み 0 の項が黙って落ちる)" => d -> _with_qp!(d, 4; n_w = 2),
+        "重み配列が長い" => d -> _with_qp!(d, 4; n_w = 6),
+        "符号配列が短い" => d -> _with_qp!(d, 4; n_sgn = 2),
+        "写像はあるが modpara に NMPTrans がない" => d -> _with_qp!(d, 0; n_map = 4, n_sgn = 4, n_w = 4),
+        "qptransidx.def が無いのに NMPTrans > 1" => d -> (d.modpara.nmp_trans = 4),
+        "写像の長さが Nsite と違う" => d -> begin
+            _with_qp!(d, 4)
+            d.qp_trans[2] = [0, 1, 2]
+        end,
+        "NMPTrans < 0 (APFlag は未対応)" => d -> begin
+            _with_qp!(d, 4)
+            d.modpara.nmp_trans = -4
+        end,
+    )
+    for (name, mutate!) in violations
+        data = _parton_ok_data()
+        mutate!(data)
+        @test_throws Exception MVMCOptimizers.validate_parton_inputs(data, ctx)
+    end
+end

@@ -493,6 +493,85 @@ function validate_parton_parallel(ctx::ParallelContext, modpara::ModParaParamete
 end
 
 """
+    validate_parton_qp(data::ExpertModeData)
+
+Check that the momentum-projection count agrees between `modpara.def` and
+`qptransidx.def`.
+
+`NMPTrans` arrives through `modpara.def` while `qp_trans`, `qp_trans_sgn` and
+`para_qp_trans` arrive through `qptransidx.def` -- two independent paths. The
+amplitude side sizes itself from `get_n_qp_full` (= NSPGaussLeg x NMPTrans x
+NQPOptTrans) whereas `gather_a_block!` indexes `data.qp_trans[qp]`, so writing
+only one of the two makes projection terms disappear:
+
+- too few mappings: `qp_trans[qp]` raises a BoundsError (still noticeable)
+- too many mappings: the trailing translations are silently ignored
+- a short `para_qp_trans`: `init_qp_weight!` leaves those entries at zero, so
+  the terms vanish as **weight-zero contributions** without any error
+
+`NMPTrans < 0` (C-mVMC's APFlag, i.e. anti-periodic boundaries) is rejected as
+well: `init_qp_weight!` takes `abs` and builds N weights while `get_n_qp_full`
+clamps with `max(1, .)` and collapses to a single QP, so the projection would
+silently degrade to the identity. Site-dependent signs can be carried by
+`qp_trans_sgn`, so the parton mode does not need that path.
+
+This runs *before* `parton_ensure_qp!` (identity fallback and the 0-to-1-based
+normalisation), so the values inspected here are exactly what the input files
+declared. Non-mutating.
+"""
+function validate_parton_qp(data::ExpertModeData)
+    mp = data.modpara
+    n_mp = mp.nmp_trans
+
+    if n_mp < 0
+        error(
+            "Parton mode does not support the anti-periodic quantum-projection " *
+            "flag (NMPTrans < 0), got NMPTrans = $n_mp. InitQPWeight uses " *
+            "abs(NMPTrans) while the QP count uses max(1, NMPTrans), so the " *
+            "projection would silently collapse to a single identity term. " *
+            "Use positive NMPTrans and carry the signs in the fourth column of " *
+            "qptransidx.def (QPTransSgn) instead.",
+        )
+    end
+
+    n_map = length(data.qp_trans)
+    if n_map == 0
+        n_mp <= 1 || error(
+            "modpara.def declares NMPTrans = $n_mp but no QPTrans mappings were " *
+            "parsed. Momentum projection needs qptransidx.def listed in " *
+            "namelist.def (keyword TransSym); without it the run would fall " *
+            "back to a single identity projection and silently drop the " *
+            "projection entirely.",
+        )
+        return nothing
+    end
+
+    n_mp == n_map || error(
+        "Quantum-projection count mismatch: modpara.def declares NMPTrans = " *
+        "$n_mp but qptransidx.def provides $n_map translation mappings. These " *
+        "come from two different files, and a mismatch silently drops or " *
+        "duplicates projection terms instead of failing.",
+    )
+    length(data.qp_trans_sgn) == n_map || error(
+        "qptransidx.def: $n_map translation mappings but " *
+        "$(length(data.qp_trans_sgn)) sign arrays.",
+    )
+    length(data.para_qp_trans) == n_map || error(
+        "qptransidx.def: $n_map translation mappings but " *
+        "$(length(data.para_qp_trans)) ParaQPTrans weights. Missing weights are " *
+        "left at zero by InitQPWeight, so those projection terms would vanish " *
+        "without any error.",
+    )
+    for (qp, m) in enumerate(data.qp_trans)
+        length(m) == mp.nsite || error(
+            "qptransidx.def: mapping $qp has $(length(m)) entries, expected " *
+            "Nsite = $(mp.nsite).",
+        )
+    end
+    return nothing
+end
+
+"""
     validate_parton_inputs(data::ExpertModeData, ctx::ParallelContext)
 
 Convenience aggregator: run every parton-mode validator. Non-mutating -- no
@@ -502,6 +581,7 @@ function validate_parton_inputs(data::ExpertModeData, ctx::ParallelContext)
     validate_parton_modpara(data.modpara)
     validate_parton_flavor_consistency(data)
     validate_parton_data(data)
+    validate_parton_qp(data)
     validate_parton_opt_flags(data)
     validate_parton_parallel(ctx, data.modpara)
     return nothing

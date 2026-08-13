@@ -150,3 +150,69 @@ function cb_undirected_bonds(nx::Int, ny::Int)
     end
     return out
 end
+
+"""
+    cb_translations(nx, ny) -> (maps, ucs)
+
+基本セル並進が誘導するサイト置換。`maps[k][j+1]` が並進後のサイト、
+`ucs[k] = (ucx, ucy)`(いずれも 0-based)。恒等 (0,0) が 1 本目に来る。
+
+変位は倍密グリッド上で `(dx, dy) = (2·ucx, 2·ucy)`。**偶数変位**なので (x, y) の
+偶奇が保たれ、副格子を混ぜない — 奇数変位は副格子を入れ替えるので `cb_hopping`
+の `bi`(始点の行の偶奇)が反転し、一般には対称性にならない。参照実装
+`CheckerBoard.jl` の `build_QNPTransSiteList`(`dx, dy = 2*ucx, 2*ucy`)と同じ
+取り方。これが cb 模型の 1 体項の対称性であることは P2-2 で機械検証する。
+"""
+function cb_translations(nx::Int, ny::Int)
+    lx, ly = 2 * nx, 2 * ny
+    nsite = 2 * nx * ny
+    maps = Vector{Int}[]
+    ucs = Tuple{Int,Int}[]
+    for ucy = 0:(ny - 1), ucx = 0:(nx - 1)
+        m = Vector{Int}(undef, nsite)
+        for j = 0:(nsite - 1)
+            x, y = cb_site_to_xy(j, nx)
+            m[j + 1] = cb_xy_to_site(mod(x + 2 * ucx, lx), mod(y + 2 * ucy, ly), nx)
+        end
+        push!(maps, m)
+        push!(ucs, (ucx, ucy))
+    end
+    return maps, ucs
+end
+
+"""
+    cb_qp_translations(nx, ny, kext) -> (maps, ucs)
+
+**参照実装 `make_QNPidx` 準拠**の QP 並進(パートン v2 の実際の QP 構成)。
+
+アンザッツが x 方向に `kext` セルの拡大周期を持つとき、破られている並進の剰余類
+`Z_kext` の代表 `(ucx, 0), ucx = 0 … kext-1` の **kext 本だけ**を採る。
+
+`cb_translations`(全並進 nx·ny 本)との違いは意図的:
+
+- y 方向の並進はアンザッツが破っていないので入れない。保たれている対称性まで
+  射影すると、変分空間を余計に狭めるだけでエネルギーは下がらない
+- x 方向も `T_x^kext` は保たれているので、剰余類の代表 kext 本で足りる
+
+参照実装で確認した対応(`make_QNPidx` をそのまま実行して照合):
+`Nux=Nuy=4, Nsite=32` のとき `K(puc)=2 → NQPTrans=2, uclist=[(0,0),(1,0)]`、
+`K=4 → NQPTrans=4, uclist=[(0,0),(1,0),(2,0),(3,0)]`。
+"""
+function cb_qp_translations(nx::Int, ny::Int, kext::Int)
+    nx % kext == 0 ||
+        error("nx = $nx must be divisible by the enlarged-cell factor kext = $kext")
+    lx, ly = 2 * nx, 2 * ny
+    nsite = 2 * nx * ny
+    maps = Vector{Int}[]
+    ucs = Tuple{Int,Int}[]
+    for ucx = 0:(kext - 1)
+        m = Vector{Int}(undef, nsite)
+        for j = 0:(nsite - 1)
+            x, y = cb_site_to_xy(j, nx)
+            m[j + 1] = cb_xy_to_site(mod(x + 2 * ucx, lx), y, nx)
+        end
+        push!(maps, m)
+        push!(ucs, (ucx, 0))
+    end
+    return maps, ucs
+end

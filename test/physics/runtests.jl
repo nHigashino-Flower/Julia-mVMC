@@ -17,13 +17,20 @@ const PHYSICS_DIR = @__DIR__
 
 include(joinpath(PHYSICS_DIR, "ed_reference.jl"))
 include(joinpath(PHYSICS_DIR, "checkerboard_model.jl"))
+include(joinpath(PHYSICS_DIR, "parton_fixture.jl"))
 
-if !isdir(ED_CASE_BOSON_NU12) || !isdir(ED_CASE_FERMION_NU13)
-    @warn """外部 ED データが見つからないので P 層をスキップします。
-             boson:   $ED_CASE_BOSON_NU12
-             fermion: $ED_CASE_FERMION_NU13"""
-else
-    @testset "Parton physics validation (P layer)" begin
+@testset "Parton physics validation (P layer)" begin
+    # P2 は外部 ED データに依存しない(格子の対称性と射影の代数だけを見る)ので、
+    # ED ダンプが無い環境でも走らせる。
+    @testset "P2 QP construction" begin
+        include(joinpath(PHYSICS_DIR, "test_p2_qp_translation.jl"))
+    end
+
+    if !isdir(ED_CASE_BOSON_NU12) || !isdir(ED_CASE_FERMION_NU13)
+        @warn """外部 ED データが見つからないので P0/P1 をスキップします。
+                 boson:   $ED_CASE_BOSON_NU12
+                 fermion: $ED_CASE_FERMION_NU13"""
+    else
         @testset "P0 ED reference" begin
             include(joinpath(PHYSICS_DIR, "test_p0_ed_reference.jl"))
         end

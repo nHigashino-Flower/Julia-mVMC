@@ -204,7 +204,9 @@ function write_parton_def_files(dir::AbstractString, nx::Int, ny::Int, F::Int,
                                 block_update::Int = 16,
                                 seed::Int = 11272,
                                 idx_mode::Symbol = :orbit,
-                                opt_flags::Union{Nothing,Dict{Int,Int}} = nothing)
+                                opt_flags::Union{Nothing,Dict{Int,Int}} = nothing,
+                                qp_momentum::Union{Nothing,Tuple{Int,Int}} = nothing,
+                                qp_xext::Union{Nothing,Tuple{Int,Int}} = nothing)
     mkpath(dir)
     fx = parton_fixture(nx, ny, F, ex, ey; u_mf = u_mf, idx_mode = idx_mode)
     cb = physical_coulomb(nx, ny, u_phys)
@@ -256,6 +258,42 @@ function write_parton_def_files(dir::AbstractString, nx::Int, ny::Int, F::Int,
                "PartonMFTrans  pmftrans.def",
                "PartonMFPara   pmfpara.def",
                "PhysHop        physhop.def"]
+
+    # 運動量射影(M2)。`qp_momentum = (nkx, nky)` で k = 2π(nkx/nx, nky/ny) を指定する。
+    # 重み exp(2πi(Kx·ucx + Ky·ucy)) と写像は参照実装 build_TranslationalOperatorparams
+    # と同じ列規約 — データ行は `Opidx jsite isite sgn` で **col2 が元サイト、
+    # col3 が並進後**。NMPTrans は modpara 側にも書く: 別経路なので片方だけだと
+    # 射影の項が黙って落ちる(門番 validate_parton_qp が捕まえる)。
+    n_mp_trans = 1
+    if qp_momentum !== nothing || qp_xext !== nothing
+        qp_momentum === nothing || qp_xext === nothing ||
+            error("qp_momentum(全並進)と qp_xext(参照実装準拠)は同時に指定できない")
+        # `qp_xext = (kext, nkx)` が実運用の構成 — 参照実装 make_QNPidx と同じく
+        # x 方向 kext 本だけを張る。`qp_momentum` は全並進 nx·ny 本で、射影の
+        # 数学的性質(凸結合・完全性)を検証するための構成。
+        maps, ucs = qp_xext === nothing ? cb_translations(nx, ny) :
+                    cb_qp_translations(nx, ny, qp_xext[1])
+        nkx, nky = qp_xext === nothing ? qp_momentum : (qp_xext[2], 0)
+        n_kx, n_ky = qp_xext === nothing ? (nx, ny) : (qp_xext[1], 1)
+        n_mp_trans = length(maps)
+        open(joinpath(dir, "qptransidx.def"), "w") do io
+            println(io, "===============================")
+            println(io, "NQPTrans $(length(maps))")
+            println(io, "===============================")
+            println(io, "== i_j_TransSym ==")
+            println(io, "===============================")
+            for (k, (ucx, ucy)) in enumerate(ucs)
+                w = cis(2π * (nkx * ucx / n_kx + nky * ucy / n_ky))
+                @printf(io, "%d % .18e % .18e\n", k - 1, real(w), imag(w))
+            end
+            for (k, m) in enumerate(maps)
+                for j = 0:(fx.nsite - 1)
+                    @printf(io, "%d %d %d 1\n", k - 1, j, m[j + 1])
+                end
+            end
+        end
+        push!(entries, "TransSym       qptransidx.def")
+    end
     if !isempty(cb)
         open(joinpath(dir, "coulombinter.def"), "w") do io
             println(io, "===============================")
@@ -280,6 +318,7 @@ function write_parton_def_files(dir::AbstractString, nx::Int, ny::Int, F::Int,
             "NSROptItrStep $nsr_step", "NSROptItrSmp $nsr_smp",
             "DSROptStepDt $dt", "DSROptStaDel $sta_del", "DSROptRedCut $red_cut",
             "ComplexType 1", "2Sz 0", "NExUpdatePath 6", "RndSeed $seed",
+            "NMPTrans $n_mp_trans",
         ]
             println(io, line)
         end
