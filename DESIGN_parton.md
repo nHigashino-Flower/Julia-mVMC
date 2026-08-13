@@ -152,11 +152,33 @@ InPmfPara.def              → ウォームスタート / リスタート
 - RNG は**専用ストリーム**。解決済みのベースシード(ランクごとのオフセットを加える前の値)
   で初期化するので全ランクが構成的に同一の α を得る(bcast 不要)。
   **サンプリング用 RNG を消費しない**(消費すると同一入力でもサンプリング系列が変わる)
-- 確定した初期 α は `<CParaFileHead>_pmfpara_init.dat` に In*.def 互換形式で書き出す。
-  次回そのまま `InPmfPara.def` として渡せば厳密に再現・継続できる。
-  既存の `zqp_opt.dat`(添字列もヘッダも無い位置依存形式)と `zqp_*_opt.dat`
-  (ヘッダ 4 行。リーダは 5 行読み飛ばすので先頭が落ちる)はどちらも In*.def と往復
-  できないが、標準経路の出力なので触らず専用の書き出しを新設した
+- **出力は 2 本、writer は 1 つ**(形式を二重管理しない):
+  - `<CParaFileHead>_pmfpara_opt.dat` — 既存 per-block 出力
+    (`zqp_gutzwiller_opt.dat` 等)に揃えた最適化後の α。`output_opt_data!` が書く
+  - `<CParaFileHead>_pmfpara_init.dat` — 初期値確定直後のダンプ。ランタイム乱数を
+    入れると「どの初期値で回したか」が残らなくなるので再現性の担保として出す
+
+  どちらも `InPmfPara.def` としてそのまま読み戻せる。書式:
+
+  ```
+  ===============================
+  NPmfParaIdx <n_idx>
+  ===============================
+  ===============================
+  ===============================
+  <idx 0-based> <Re %.18e> <Im %.18e>
+  ```
+
+  読み手は既存の汎用実装 `parse_input_parameter_file` をそのまま使う(新規パーサ不要)
+- **ヘッダは 5 行**にする。`parse_input_parameter_file` は `data_start = 6`
+  (5 行読み飛ばし)なのに、既存 3 ブロックの writer が出すヘッダは **4 行**しかない。
+  そのまま往復させると **idx = 0 の行が脱落**し、しかも件数不一致は `@warn` 止まりなので
+  警告 1 行で素通りする(3 個書いて `[1, 2]` が返ることを実測で確認)。パートン側は
+  5 行にして自分の往復を成立させ、**既存 3 ブロックの writer には触らない**
+  (C-parity の出力比較に影響しうるため)。既存側の不一致は §11 に upstream への
+  報告候補として記録
+- `zqp_opt.dat`(添字列もヘッダも無い位置依存形式)も In*.def とは往復できないが、
+  こちらも標準経路の出力なので触らない
 
 **確定順序**(ゲージ射影と順序依存がある):
 
@@ -260,8 +282,10 @@ pmfpara.def 読み込み(presence 判定)
   9. `parameter_sync.jl` — `_duplicate_checked_sections` に pmfpara_terms を追加
      (共有 idx を持つセクションの診断網羅性。この関数は手動検査用ヘルパ)
   10. `utils/constants.jl` の `MVMC_KEYWORDS` に `InPmfPara`(v3.3)。ただし
-      InPmfPara の適用は `read_input_parameters!` ではなくパートンドライバが行う
-      (§2.3.1 の確定順序のため)
+      InPmfPara の**適用**は `read_input_parameters!` ではなくパートンドライバが行う
+      (§2.3.1 の確定順序: 乱数初期化より後でなければならないため)
+  11. `data_io.jl` の `output_opt_data!` に per-block 出力
+      `<CParaFileHead>_pmfpara_opt.dat`(v3.3)。既存 3 ブロックの writer は触らない
 - `utils/validation.jl` は登録点では**ない**(本番経路に未接続)。入力検査は門番が一手に引き受ける
 
 ### 3.2 ファイル構成(include はこの順、types が先頭必須)
@@ -384,6 +408,9 @@ stochastic_opt!(案 B 後は MF ブロックも解く)/ weight_average / paralle
    全ランク構成的一致、明示ゼロの保護、全指定時に乱数経路を通らないこと、presence 混在の
    検出、列数の検証、ダンプ往復(書いて `InPmfPara.def` として読み戻すとビット一致)、
    オンサイト群の Im が厳密ゼロ、サンプリング RNG を消費しないこと。
+   加えて (6b) 最適化後の `zqp_pmfpara_opt.dat` を読み戻して α がビット一致し
+   **idx = 0 が脱落していない**こと(既存 writer のヘッダ 4 行問題の回帰ガード)、
+   (6c) 行を 1 本削った `InPmfPara.def` は警告止まりでなくエラーで停止すること。
    実装: `MVMCOptimizers.jl/test/test_parton_initial_params.jl`
 
 ## 9. マイルストーン
@@ -417,7 +444,11 @@ stochastic_opt!(案 B 後は MF ブロックも解く)/ weight_average / paralle
 - v3.3 (2026-08-13): **α の初期値経路**(§2.3.1)。modpara にキーを足さず、pmfpara.def の
   value 列の有無と namelist.def の InPmfPara の有無だけで切り替える。presence は列の有無で
   判定し、値がゼロかどうかでは分岐しない。乱数は専用 RNG ストリーム・ベースシード基準で
-  全ランク構成的一致。確定した初期 α は In*.def 互換形式でダンプして再現性を担保する
+  全ランク構成的一致。出力は `_pmfpara_opt.dat`(既存 per-block に揃えた最適化後)と
+  `_pmfpara_init.dat`(初期値ダンプ)の 2 本で writer は共有。
+  **upstream への報告候補**: 既存 per-block writer(`zqp_gutzwiller_opt.dat` 等)は
+  ヘッダ 4 行だが `parse_input_parameter_file` は 5 行読み飛ばすので、往復させると
+  idx = 0 が脱落し件数不一致も `@warn` 止まりで素通りする(実測で確認)
 - v3.2 (2026-08-13): **ゲージ平坦方向を同期時の射影で潰す方式に変更**(§2.5)。
   OptFlag による成分凍結は主線から降格し、用途をエルミート性とユーザーの明示的固定に限定。
   独立スケール群は idx のフレーバー共有パターン(連結成分)で決まり、個数は仮定しない。

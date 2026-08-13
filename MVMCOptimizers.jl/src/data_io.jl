@@ -192,6 +192,16 @@ function output_opt_data!(data::ExpertModeData; output_dir::Union{String,Nothing
         end
     end
 
+    # --- parton-mode (fork addition) ---
+    # per-block 出力。既存 3 ブロックと同じ体裁だが、こちらは InPmfPara.def として
+    # そのまま読み戻せるようヘッダを 5 行にしてある(既存 writer は 4 行で、
+    # parse_input_parameter_file が 5 行読み飛ばすため idx = 0 が脱落する)。
+    # writer は初期値ダンプと共有(parton_write_pmfpara)。
+    if !isempty(data.pmfpara_terms)
+        parton_write_pmfpara(
+            data, _output_path(para_file_head * "_pmfpara_opt.dat", output_dir))
+    end
+
     # Output individual parameter files (optional, for detailed analysis)
     # Gutzwiller
     if !isempty(data.gutzwiller_terms)

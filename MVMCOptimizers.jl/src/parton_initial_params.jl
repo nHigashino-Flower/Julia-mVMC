@@ -154,29 +154,42 @@ function parton_read_in_pmfpara!(data::ExpertModeData, namelist_path::AbstractSt
 end
 
 """
-    parton_write_pmfpara_init(data, path)
+    parton_write_pmfpara(data, path)
 
-確定した初期 α を In*.def 互換形式で書き出す(5 行ヘッダ + `idx Re Im`)。
+α を In*.def 互換形式で書き出す。**初期値のダンプ(§2.3.1)と最適化後の per-block
+出力(`zqp_pmfpara_opt.dat`)で共有する唯一の writer**で、形式を二重管理しない。
 
-ランタイム乱数を入れると「どの初期値で回したか」がファイルに残らなくなるので、
-再現性の担保としてこれを出す。次回そのまま `InPmfPara.def` として渡せば、その run を
-厳密に再現・継続できる。
+書式(既存 per-block writer と同じ体裁だが**ヘッダは 5 行**):
 
-既存の `zqp_opt.dat` は添字列もヘッダも持たない位置依存の形式で In*.def と往復
-できず、`zqp_*_opt.dat` はヘッダが 4 行しかない(リーダは 5 行読み飛ばすので先頭の
-パラメータが落ちる)。どちらも標準経路の出力なので触らず、往復する専用の書き出しを
-ここに新設した。
+    ===============================
+    NPmfParaIdx <n_idx>
+    ===============================
+    ===============================
+    ===============================
+    <idx 0-based> <Re %.18e> <Im %.18e>
+
+読み手は既存の汎用実装 `parse_input_parameter_file`(`idx Re Im` の 3 列を読む)を
+そのまま使う。新規パーサは書かない。
+
+**ヘッダ 5 行にする理由(実測済み)**: `parse_input_parameter_file` は
+`data_start = 6`(ヘッダ 5 行読み飛ばし)で実装されているのに、既存 3 ブロックの
+writer が出すヘッダは 4 行しかない。そのまま往復させると **idx = 0 の行が脱落**し、
+しかも件数不一致は `@warn` 止まりなので警告 1 行で素通りする(3 個書いて
+`[1, 2]` が返ることを実測で確認)。パートン側は 5 行にして自分の往復を成立させる。
+**既存 3 ブロックの writer には触らない** — C-parity の出力比較に影響しうるため。
+既存側の不一致は upstream への報告候補として DESIGN §11 に記録してある。
 """
-function parton_write_pmfpara_init(data::ExpertModeData, path::AbstractString)
+function parton_write_pmfpara(data::ExpertModeData, path::AbstractString)
     n_idx = parton_n_idx(data)
     α = parton_alpha_from_terms(data)
-    mkpath(dirname(abspath(String(path))))
+    dir = dirname(abspath(String(path)))
+    isempty(dir) || mkpath(dir)
     open(String(path), "w") do f
-        println(f, "=============================================")
-        println(f, "NPartonMFParaIdx $n_idx")
-        println(f, "ComplexType          1")
-        println(f, "=============================================")
-        println(f, "=============================================")
+        println(f, "===============================")
+        println(f, "NPmfParaIdx $n_idx")
+        println(f, "===============================")
+        println(f, "===============================")
+        println(f, "===============================")
         for k = 1:n_idx
             @printf(f, "%d % .18e % .18e \n", k - 1, real(α[k]), imag(α[k]))
         end

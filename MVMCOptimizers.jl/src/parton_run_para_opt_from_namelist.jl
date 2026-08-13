@@ -74,7 +74,7 @@ function parton_run_para_opt_from_namelist(
     # 9. 確定した初期 α をダンプする。ランタイム乱数を入れると「どの初期値で回したか」が
     #    ファイルに残らなくなるので、再現性の担保として In*.def 互換形式で残す。
     #    次回そのまま InPmfPara.def として渡せば厳密に再現・継続できる。
-    is_output_rank(ctx) && parton_write_pmfpara_init(
+    is_output_rank(ctx) && parton_write_pmfpara(
         data, joinpath(output_dir, data.modpara.c_para_file_head * "_pmfpara_init.dat"))
     return parton_vmc_para_opt!(
         pstate,

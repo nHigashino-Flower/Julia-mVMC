@@ -158,7 +158,7 @@ end
 
     mktempdir() do dir
         dump = joinpath(dir, "zqp_pmfpara_init.dat")
-        MVMCOptimizers.parton_write_pmfpara_init(data, dump)
+        MVMCOptimizers.parton_write_pmfpara(data, dump)
 
         # 別インスタンスに、未入力(乱数対象)のまま読み込ませて上書きする
         data2 = _data_from_pmfpara(text)
@@ -178,6 +178,55 @@ end
               "====\nNPartonMFParaIdx 1\nComplexType 1\n====\n====\n0 1.0 0.0\n")
         @test_throws Exception MVMCOptimizers.parton_read_in_pmfpara!(
             data4, joinpath(dir, "namelist.def"))
+    end
+end
+
+@testset "§8-9-6b 最適化後の往復: zqp_pmfpara_opt.dat が idx=0 を落とさない" begin
+    # 既存 per-block writer はヘッダ 4 行で、parse_input_parameter_file が 5 行
+    # 読み飛ばすため idx=0 が脱落する(実測済み)。パートン側は 5 行にして往復を
+    # 成立させている。その回帰ガード。
+    data = dimerized_mf_data()
+    MVMCOptimizers.parton_materialize_flags!(data)
+    data.modpara.nsr_opt_itr_step = 3
+    pstate = MVMCOptimizers.parton_build_optimization_state(data)
+    rng = MVMCOptimizers.SFMT19937RNG()
+    Random.seed!(rng, 31337)
+    out = mktempdir()
+    @test MVMCOptimizers.parton_vmc_para_opt!(
+        pstate, data, MVMCOptimizers.serial_context();
+        rng = rng, output_dir = out) == 0
+
+    opt_file = joinpath(out, "zqp_pmfpara_opt.dat")
+    @test isfile(opt_file)
+    n_idx = MVMCOptimizers.parton_n_idx(data)
+    params = MVMCExpertModeParsers.parse_input_parameter_file(opt_file)
+    @test length(params) == n_idx                       # 1 本も落ちていない
+    @test haskey(params, 0)                             # idx=0 が脱落していない
+    @test sort(collect(keys(params))) == collect(0:(n_idx - 1))
+
+    # 読み戻して α がビット一致すること
+    α_ref = MVMCOptimizers.parton_alpha_from_terms(data)
+    data2 = dimerized_mf_data()
+    dir2 = mktempdir()
+    cp(opt_file, joinpath(dir2, "InPmfPara.def"))
+    write(joinpath(dir2, "namelist.def"), "InPmfPara  InPmfPara.def\n")
+    @test MVMCOptimizers.parton_read_in_pmfpara!(data2, joinpath(dir2, "namelist.def"))
+    @test MVMCOptimizers.parton_alpha_from_terms(data2) == α_ref
+end
+
+@testset "§8-9-6c 件数不一致は警告止まりでなくエラー" begin
+    data = dimerized_mf_data()
+    n_idx = MVMCOptimizers.parton_n_idx(data)
+    mktempdir() do dir
+        full = joinpath(dir, "full.dat")
+        MVMCOptimizers.parton_write_pmfpara(data, full)
+        lines = readlines(full)
+        # データ行を 1 本削る(ヘッダ 5 行は残す)
+        write(joinpath(dir, "InPmfPara.def"), join(lines[1:(end - 1)], "\n") * "\n")
+        write(joinpath(dir, "namelist.def"), "InPmfPara  InPmfPara.def\n")
+        data2 = dimerized_mf_data()
+        @test_throws Exception MVMCOptimizers.parton_read_in_pmfpara!(
+            data2, joinpath(dir, "namelist.def"))
     end
 end
 
