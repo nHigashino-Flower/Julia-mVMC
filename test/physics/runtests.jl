@@ -16,6 +16,7 @@ using Test
 const PHYSICS_DIR = @__DIR__
 
 include(joinpath(PHYSICS_DIR, "ed_reference.jl"))
+include(joinpath(PHYSICS_DIR, "checkerboard_model.jl"))
 
 if !isdir(ED_CASE_BOSON_NU12) || !isdir(ED_CASE_FERMION_NU13)
     @warn """外部 ED データが見つからないので P 層をスキップします。
@@ -25,6 +26,9 @@ else
     @testset "Parton physics validation (P layer)" begin
         @testset "P0 ED reference" begin
             include(joinpath(PHYSICS_DIR, "test_p0_ed_reference.jl"))
+        end
+        @testset "P1 model conventions" begin
+            include(joinpath(PHYSICS_DIR, "test_p1_onebody.jl"))
         end
     end
 end
