@@ -64,6 +64,7 @@ end
     include("test_parton_types.jl")
     include("test_parton_gatekeeper.jl")
     include("test_parton_orbital.jl")
+    include("test_parton_contract1.jl")
 end
 
 @testset "Unit Tests" begin
