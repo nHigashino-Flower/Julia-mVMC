@@ -263,6 +263,19 @@ function parton_main_cal!(pstate::PartonOptimizationState, data::ExpertModeData)
         end
     end
 
+    # store 経路では calculate_oo_store! は O の保存と HO の蓄積しか行わない。
+    # <O†O> は最後にまとめて store から組む(既存 vmc_main_cal! と同じ段取り)。
+    # これを落とすと直接ソルバが全ゼロの S を受け取り、SR が NaN を返す。
+    if use_store
+        finalize_oo_store!(
+            sr.sr_opt_oo,
+            sr.sr_opt_o_store,
+            sr.sr_opt_size,
+            mp.nvmc_sample,
+            nsrcg = false,          # 門番が NSRCG = 0 を保証している
+        )
+    end
+
     n_skipped > 0 && @warn "Skipped samples sitting on a node of the wave function" n_skipped
     return nothing
 end

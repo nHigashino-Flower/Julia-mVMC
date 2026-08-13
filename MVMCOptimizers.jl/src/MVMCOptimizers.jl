@@ -86,6 +86,8 @@ include("parton_orbital.jl")
 include("parton_calculate_m_all.jl")
 include("parton_vmc_sampling.jl")
 include("parton_vmc_main_cal.jl")
+include("parton_vmc_para_opt.jl")
+include("parton_run_para_opt_from_namelist.jl")
 
 # Export main functions
 export ParallelContext, serial_context, build_parallel_context, is_output_rank
@@ -100,5 +102,8 @@ export run_para_opt_from_namelist
 export run_phys_cal_from_namelist
 export read_initial_def!
 export read_opt_para_file!
+
+# --- parton-mode (fork addition) ---
+export parton_run_para_opt_from_namelist, parton_vmc_para_opt!, validate_parton_inputs
 
 end # module MVMCOptimizers

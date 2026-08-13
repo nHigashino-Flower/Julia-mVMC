@@ -117,6 +117,92 @@ function build_toy_mfham(data::MVMCExpertModeParsers.ExpertModeData; n_idx::Int 
     return mfham
 end
 
+"""
+    dimerized_mf_data(; n_flavor=2, ...)
+
+SR を回すためのトイ入力。`toy_mf_data` は変分自由度が「一様ホッピング 1 個 +
+一様オンサイト 1 個」しかなく、そのどちらもゲージ平坦方向(Φ は H → cH と
+H → H + μI で不変)なので S 行列が全ゼロになって SR が解けない。こちらは
+ボンドを強弱 2 群に分けてあり、その比が物理的な変分自由度になる。
+
+- idx 0: 強ボンド (0,1), (2,3)。ゲージ代表としてフラグ行で凍結する想定
+- idx 1: 弱ボンド (1,2), (3,0)。複素位相つきの物理的な自由度
+- idx 2: 一様オンサイト。ゲージ平坦なので動かないのが正解
+
+物理ハミルトニアンは一様な最近接ホップ + 最近接クーロン。
+"""
+function dimerized_mf_data(;
+    n_flavor::Int = 2,
+    n_site::Int = 4,
+    n_elec::Int = 2,
+    t_strong::ComplexF64 = ComplexF64(-1.0, 0.0),
+    t_weak::ComplexF64 = ComplexF64(-1.0, 0.2),
+    α_weak::ComplexF64 = ComplexF64(0.7, 0.1),
+    t_phys::ComplexF64 = ComplexF64(-1.0, 0.0),
+    v_phys::Float64 = 0.5,
+)
+    data = MVMCExpertModeParsers.ExpertModeData()
+    mp = data.modpara
+    mp.nsite = n_site
+    mp.nelec = n_elec
+    mp.nflavor = n_flavor
+    mp.parton_mode = 1
+    mp.two_sz = 0
+    mp.complex_flag = 1
+    mp.nex_update_path = 6
+
+    bonds = [(i, mod(i + 1, n_site)) for i = 0:(n_site - 1)]
+    for f = 0:(n_flavor - 1)
+        for (b, (i, j)) in enumerate(bonds)
+            strong = isodd(b)
+            t = strong ? t_strong : t_weak
+            idx = strong ? 0 : 1
+            α = strong ? ComplexF64(1, 0) : α_weak
+            push!(
+                data.pmftrans_terms,
+                MVMCExpertModeParsers.PartonMFTransTerm(i, f, j, f, t, imag(t) != 0),
+            )
+            push!(
+                data.pmfpara_terms,
+                MVMCExpertModeParsers.PartonMFParaTerm(i, f, j, f, idx, α, true),
+            )
+        end
+        for i = 0:(n_site - 1)
+            push!(
+                data.pmftrans_terms,
+                MVMCExpertModeParsers.PartonMFTransTerm(
+                    i, f, i, f, ComplexF64(1, 0), false),
+            )
+            push!(
+                data.pmfpara_terms,
+                MVMCExpertModeParsers.PartonMFParaTerm(
+                    i, f, i, f, 2, ComplexF64(0, 0), true),
+            )
+        end
+    end
+
+    for (i, j) in bonds
+        push!(
+            data.physhop_terms,
+            MVMCExpertModeParsers.PhysHopTerm(i, j, t_phys, imag(t_phys) != 0),
+        )
+        push!(data.coulomb_inter_terms, MVMCExpertModeParsers.CoulombInterTerm(i, j, v_phys))
+    end
+
+    set_identity_qp!(data)
+    mp.nvmc_warmup = 50
+    mp.nvmc_interval = 1
+    mp.nvmc_sample = 300
+    mp.nblock_update_size = 8
+    mp.nsr_opt_itr_step = 3
+    mp.nsr_opt_itr_smp = 1
+    mp.nstore_o = 1
+    mp.dsr_opt_step_dt = 0.02
+    mp.dsr_opt_red_cut = 1e-8
+    mp.dsr_opt_sta_del = 0.02
+    return data
+end
+
 "サイト集合 `sites`(1-based)を全フレーバーへ固縛配置した cfg を返す。"
 function toy_config(
     data::MVMCExpertModeParsers.ExpertModeData,

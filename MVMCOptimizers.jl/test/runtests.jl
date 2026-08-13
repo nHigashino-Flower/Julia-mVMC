@@ -68,6 +68,7 @@ end
     include("test_parton_contract23.jl")
     include("test_parton_qp.jl")
     include("test_parton_contract45.jl")
+    include("test_parton_optflag.jl")
 end
 
 @testset "Unit Tests" begin

@@ -88,8 +88,14 @@ function parton_make_initial_sample!(
     max_trial::Int = 100,
 )
     qp_weight = parton_qp_weight(data)
+    pool = collect(1:cfg.n_site)
     for _ = 1:max_trial
-        sites = randperm(rng, cfg.n_site)[1:cfg.n_elec]
+        # Fisher-Yates の前半だけ。乱数は既存の rng_mod(C の gen_rand32 準拠)
+        for m = 1:cfg.n_elec
+            j = m + rng_mod(rng, cfg.n_site - m + 1)
+            pool[m], pool[j] = pool[j], pool[m]
+        end
+        sites = pool[1:cfg.n_elec]
         fill!(cfg.ele_cfg, -1)
         fill!(cfg.ele_num, 0)
         for f = 1:cfg.n_flavor, m = 1:cfg.n_elec
@@ -223,7 +229,7 @@ function parton_make_sample!(pstate::PartonOptimizationState, data::ExpertModeDa
             log_pr = parton_log_proj_ratio(cfg, m, r_old, r_new)
             ratio, _ =
                 parton_amplitude_ratio!(ws, amp, mfham, data, qp_weight, m, r_new)
-            rand(rng) < exp(2 * log_pr) * abs2(ratio) || continue
+            rng_real2(rng) < exp(2 * log_pr) * abs2(ratio) || continue
 
             cfg.counter[2] += 1                                  # 受理数
             parton_update_ele_config!(cfg, m, r_old, r_new)      # ① 配置を先に確定
@@ -251,9 +257,9 @@ end
 補正は要らない。占有判定は固縛によりフレーバー 1 の代表で足りる。
 """
 function parton_make_candidate_hopping(rng, cfg::PartonConfiguration, n_site::Int)
-    m = rand(rng, 1:cfg.n_elec)
+    m = 1 + rng_mod(rng, cfg.n_elec)
     r_old = particle_site(cfg, 1, m)
-    r_new = rand(rng, 1:n_site)
+    r_new = 1 + rng_mod(rng, n_site)
     ok = (r_new != r_old) && !is_occupied(cfg, r_new)
     return m, r_old, r_new, ok
 end
