@@ -18,14 +18,14 @@ using MVMCExpertModeParsers
     NElec          2
     PartonMode     1
     NFlavor        3
-    NBlockUpdateSize 8
+    PartonBlockUpdateSize 8
     """
     result = MVMCExpertModeParsers.parse_modpara_content(content)
     @test result.success
     p = result.data
     @test p.parton_mode == 1
     @test p.nflavor == 3
-    @test p.nblock_update_size == 8
+    @test p.parton_block_update_size == 8
     @test p.nelec == 2
 end
 
@@ -33,7 +33,7 @@ end
     p = MVMCExpertModeParsers.ModParaParameters()
     @test p.parton_mode == 0
     @test p.nflavor == 0
-    @test p.nblock_update_size == 16
+    @test p.parton_block_update_size == 16
 end
 
 @testset "modpara: NParticle / NPartonPerFlavor は NElec の別名" begin

@@ -128,7 +128,7 @@ end
     mp.nvmc_warmup = 5
     mp.nvmc_interval = 1
     mp.nvmc_sample = 8
-    mp.nblock_update_size = 4
+    mp.parton_block_update_size = 4
 
     mfham = build_toy_mfham(data)
     pstate = MVMCOptimizers.parton_build_optimization_state(data; mfham = mfham)
@@ -165,7 +165,7 @@ end
     mp.nvmc_warmup = 4
     mp.nvmc_interval = 1
     mp.nvmc_sample = 5
-    mp.nblock_update_size = 3
+    mp.parton_block_update_size = 3
 
     mfham = build_toy_mfham(data)
     pstate = MVMCOptimizers.parton_build_optimization_state(data; mfham = mfham)

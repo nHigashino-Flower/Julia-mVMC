@@ -242,7 +242,7 @@ end
     mp.nvmc_warmup = 5
     mp.nvmc_interval = 1
     mp.nvmc_sample = 12
-    mp.nblock_update_size = 4
+    mp.parton_block_update_size = 4
     mp.nstore_o = 1
     push!(data.physhop_terms, MVMCExpertModeParsers.PhysHopTerm(0, 1, ComplexF64(-1, 0.1), true))
     push!(data.physhop_terms, MVMCExpertModeParsers.PhysHopTerm(1, 2, ComplexF64(-1, 0.1), true))

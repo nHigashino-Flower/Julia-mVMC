@@ -189,7 +189,7 @@ end
 固縛 Metropolis サンプリング。契約 0(軌道の更新)は呼び出し前に済んでいること。
 
 C 踏襲: `n_in = NVMCInterval × Nsite`、初回の `n_out = WarmUp + Sample`、
-burn からの再開時は `Sample + 1`、`NBlockUpdateSize` 回の受理ごとに錨を打ち、
+burn からの再開時は `Sample + 1`、`PartonBlockUpdateSize` 回の受理ごとに錨を打ち、
 保存するのは末尾 Sample 個。
 
 このループで一番大事なのは受理時の①→②の順序(DESIGN §4)。受理が確定したら
@@ -235,7 +235,7 @@ function parton_make_sample!(pstate::PartonOptimizationState, data::ExpertModeDa
             parton_update_ele_config!(cfg, m, r_old, r_new)      # ① 配置を先に確定
             st = parton_update_amplitude!(amp, mfham, data, ws, m, r_new)  # ② 高速更新
             n_accept_anchor += 1
-            if st === :need_recompute || n_accept_anchor >= mp.nblock_update_size
+            if st === :need_recompute || n_accept_anchor >= mp.parton_block_update_size
                 parton_recompute_amplitude_all!(amp, mfham, cfg, data, ws)
                 n_accept_anchor = 0
             end

@@ -151,7 +151,7 @@ const DEFAULT_NSPLIT_SIZE = 1  # Default value for NSplitSize (from C SetDefault
 # --- parton-mode (fork addition) ---
 const DEFAULT_PARTON_MODE = 0
 const DEFAULT_NFLAVOR = 0
-const DEFAULT_NBLOCK_UPDATE_SIZE = 16
+const DEFAULT_PARTON_BLOCK_UPDATE_SIZE = 16
 
 # Error messages
 const ERROR_FILE_NOT_FOUND = "File not found"

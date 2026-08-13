@@ -262,9 +262,12 @@ actually read: `parse_expert_mode_files` continues past per-file parse failures
 (matching the C implementation), so a malformed or missing pmfpara.def would
 otherwise surface much later as an empty Hamiltonian.
 
-Gutzwiller, Jastrow and momentum projection (qptransidx.def) are supported and
-deliberately not restricted here — they multiply the determinant product and
-reuse the existing projection machinery unchanged.
+Momentum projection (qptransidx.def) is supported and deliberately not
+restricted — it multiplies the determinant product and reuses the existing
+quantum-projection machinery unchanged. Gutzwiller and Jastrow are rejected in
+M1: the parton local-energy path does not compute their logarithmic
+derivatives, so SR would silently leave them frozen (see the NProj check
+below).
 """
 function validate_parton_data(data::ExpertModeData)
     n_site = data.modpara.nsite
@@ -318,6 +321,26 @@ function validate_parton_data(data::ExpertModeData)
         error(
             "Doublon-holon projection is not supported in parton mode yet. " *
             "Remove the DH2/DH4 entries from namelist.def.",
+        )
+    end
+
+    # M1 は射影因子なし。二つの理由でここで止める。
+    # 1. parton_main_cal! は射影ブロックの O を計算しない(MF ブロックだけ埋める)ので、
+    #    射影パラメータがあると O がゼロのまま SR に渡り、黙って最適化されない。
+    # 2. 蓄積境界の共役シム(DESIGN §7)は「MF 以外のスロットの O が実数」を前提に
+    #    S 行列の不変性を得ている。射影ブロックが複素だと交差項の実部が変わる。
+    # 固縛の下では既存 Gutzwiller は自明化する(全占有サイトが常にダブロン)ので、
+    # 物理密度 n^b ベースの Jastrow を新設するのは M2 の仕事(DESIGN §9)。
+    n_proj = MVMCExpertModeParsers.projection_layout(data).n_proj
+    if n_proj != 0
+        error(
+            "Projection factors are not supported in parton mode yet, but the " *
+            "input declares NProj = $n_proj. The local-energy path does not " *
+            "compute their logarithmic derivatives, so SR would silently leave " *
+            "them at their initial values, and the mean-field slot conjugation " *
+            "(DESIGN section 7) assumes every non-mean-field O is real. Remove " *
+            "the Gutzwiller / Jastrow entries from namelist.def; a physical-" *
+            "density Jastrow is planned for M2.",
         )
     end
     if !isempty(data.opt_trans) || data.n_qp_opt_trans > 1

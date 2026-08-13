@@ -195,13 +195,13 @@ function parse_modpara_parameter!(
     elseif name == "NExUpdatePath"
         params.nex_update_path = safe_parse_int(value, DEFAULT_NEX_UPDATE_PATH)
 
-        # --- parton-mode (fork addition) ---
+    # --- parton-mode (fork addition) ---
     elseif name == "PartonMode"
         params.parton_mode = safe_parse_int(value, DEFAULT_PARTON_MODE)
     elseif name == "NFlavor" || name == "Nflavor"
         params.nflavor = safe_parse_int(value, DEFAULT_NFLAVOR)
-    elseif name == "NBlockUpdateSize"
-        params.nblock_update_size = safe_parse_int(value, DEFAULT_NBLOCK_UPDATE_SIZE)
+    elseif name == "PartonBlockUpdateSize"
+        params.parton_block_update_size = safe_parse_int(value, DEFAULT_PARTON_BLOCK_UPDATE_SIZE)
     elseif name == "NParticle" || name == "NPartonPerFlavor"
         # NElec の別名。同一フィールドへ書き、食い違いはパースエラー(DESIGN §2.1)。
         # NElec 側の分岐は upstream のまま触らないので、別名が後に来た場合のみ検出できる。

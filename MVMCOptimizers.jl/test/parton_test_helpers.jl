@@ -193,7 +193,7 @@ function dimerized_mf_data(;
     mp.nvmc_warmup = 50
     mp.nvmc_interval = 1
     mp.nvmc_sample = 300
-    mp.nblock_update_size = 8
+    mp.parton_block_update_size = 8
     mp.nsr_opt_itr_step = 3
     mp.nsr_opt_itr_smp = 1
     mp.nstore_o = 1
@@ -268,7 +268,7 @@ function per_bond_mf_data(F::Int; n_site::Int = 4, n_elec::Int = 2)
     mp.nvmc_warmup = 200
     mp.nvmc_interval = 1
     mp.nvmc_sample = 2000
-    mp.nblock_update_size = 8
+    mp.parton_block_update_size = 8
     mp.nstore_o = 1
     mp.dsr_opt_step_dt = 0.05
     mp.dsr_opt_sta_del = 0.02

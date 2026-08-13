@@ -103,6 +103,13 @@ per-QP 軌道は実体化しない(行置換+符号なので gather 時に写像
 
 - `NParticle` / `NPartonPerFlavor` は NElec の**別名**(同一フィールドへ書き、食い違いはパースエラー)。
   派生量はアクセサ(`n_parton_total` 等)。冗長保持はしない
+- **注意: 別名は `NElec` より後に書くこと**(v3.1 で明記)。食い違い検出は別名側の分岐にしか
+  無く、上流の `NElec` 分岐は登録点ではないので無条件代入のまま残してある。したがって
+  `NParticle 3` → `NElec 2` の順だと **`NElec` が黙って勝つ**。逆順(`NElec` が先)なら
+  パースエラーになる。上流分岐を触らないという規律を優先した結果の非対称性
+- **`PartonBlockUpdateSize`**: 受理 N 回ごとに振幅を厳密再計算する錨の周期(既定 16)。
+  C-mVMC の `NBlockUpdateSize`(スレーター行列のブロック更新閾値)とは**意味が違う**ので、
+  同名を避けてフォーク固有の接頭辞を付けてある
 - 必須設定(門番が検査): `2Sz=0`(デフォルト −1=FSZ の罠)、`ComplexType=1`, `NVMCCalMode=0`,
   `NSRCG=0`, `NLanczosMode=0`, `NSPGaussLeg=1`, `NSPStot=0`, `NCond=-1`, `NLocSpin=0`,
   `NOrbitalIdx=0`, `NNeuron=0`, `NExUpdatePath=6`, `NSplitSize=1`(M1)
@@ -166,9 +173,9 @@ per-QP 軌道は実体化しない(行置換+符号なので gather 時に写像
 
   ホットループ・アクセサ・E_loc・契約 2/3/5 に ±1 演算を書かない。新しい入力ファイルを
   足すときも `parton_build_*` を 1 本増やしてそこで変換する
-- 登録点の全リスト(M1 実装で確定。編集された upstream ファイルはこの 7 つだけ):
+- 登録点の全リスト(M1 実装で確定。編集された upstream ファイルはこの 9 つだけ):
   1. `utils/constants.jl` — MVMC_KEYWORDS 表(PartonMFTrans/PartonMFPara/PhysHop の行)
-     + デフォルト定数(DEFAULT_PARTON_MODE / DEFAULT_NFLAVOR / DEFAULT_NBLOCK_UPDATE_SIZE)
+     + デフォルト定数(DEFAULT_PARTON_MODE / DEFAULT_NFLAVOR / DEFAULT_PARTON_BLOCK_UPDATE_SIZE)
   2. 入口ファイル — include 3 行 + `parse_file_by_type!` の elseif(同 3 種)
   3. `types/expert_types.jl` — ModParaParameters 末尾フィールド+kwargs+`new(...)` の 3 箇所 /
      Term 構造体群 / ExpertModeData 末尾フィールド+コンストラクタ既定値
@@ -180,8 +187,13 @@ per-QP 軌道は実体化しない(行置換+符号なので gather 時に写像
      標準モードでは pmfpara_terms が空なので全登録点で挙動不変
   6. `MVMCOptimizers.jl` 入口 — include 行 + export 行 + 借用 using リスト
   7. `parsers/modpara_parser.jl` — `parse_modpara_parameter!` の elseif
-     (PartonMode / NFlavor / NBlockUpdateSize / NElec 別名)。§2.1 のキーを読むのに必然で、
+     (PartonMode / NFlavor / PartonBlockUpdateSize / NElec 別名)。§2.1 のキーを読むのに必然で、
      v3 のリストから漏れていた分を v3.1 で追加
+  8. `data_io.jl` — `store_opt_data!` / `output_data!`(zvo_var)/ `output_opt_data!`(zqp_opt)
+     に pmfpara_terms のループを末尾追加。これが無いと最適化された α が永続化されない。
+     列・行は既存ブロックの後ろに付くだけなので標準入力での出力バイト列は不変
+  9. `parameter_sync.jl` — `_duplicate_checked_sections` に pmfpara_terms を追加
+     (共有 idx を持つセクションの診断網羅性。この関数は手動検査用ヘルパ)
 - `utils/validation.jl` は登録点では**ない**(本番経路に未接続)。入力検査は門番が一手に引き受ける
 
 ### 3.2 ファイル構成(include はこの順、types が先頭必須)
@@ -219,7 +231,7 @@ MVMCOptimizers.jl/src/
 ## 4. サンプリング骨格の規約
 
 - C 踏襲: `n_in = NVMCInterval×Nsite`、初回 `n_out = WarmUp+Sample`、burn 再開時 `Sample+1`、
-  `NBlockUpdateSize` 受理毎に錨、保存は末尾 Sample 個、サンプル毎再計算は測定側の分担
+  `PartonBlockUpdateSize` 受理毎に錨、保存は末尾 Sample 個、サンプル毎再計算は測定側の分担
 - 意図的差分: `burn_flag` は counter[11] 間借りでなく **PartonConfiguration の Bool**。
   交換更新は固縛下で恒等のため分岐ごと廃止
 - **受理時の順序不変条件**: ①配置コミット → ②振幅更新。② の `:need_recompute` 部分更新は
@@ -309,8 +321,8 @@ stochastic_opt!(案 B 後は MF ブロックも解く)/ weight_average / paralle
 ## 10. リスクと未決事項
 
 - [ ] 物理密度 Jastrow の設計(M2)。それまで parton_log_proj_ratio は恒等 0
-- [x] modpara フィールド実名の照合 — `nvmc_warmup` はそのまま存在。`nblock_update_size` は
-  Julia 移植に相当物が無かったので新設(modpara キー `NBlockUpdateSize`、既定 16)
+- [x] modpara フィールド実名の照合 — `nvmc_warmup` はそのまま存在。`parton_block_update_size` は
+  Julia 移植に相当物が無かったので新設(modpara キー `PartonBlockUpdateSize`、既定 16)
 - [x] parton_sync_parameters! の詳細 — `pack_parameters` → `bcast!` → `unpack_parameters!` の
   3 行。既存 `sync_modified_parameter!` は使わない(D_AmpMax リスケールが入るため)。
   store_opt_data! / 出力はロケータ経由で値を取るので MF も自動で記録される
@@ -334,7 +346,9 @@ stochastic_opt!(案 B 後は MF ブロックも解く)/ weight_average / paralle
   - **入力形式**: pmftrans.def = `site1 flavor1 site2 flavor2 Re Im`(6 列)、
     pmfpara.def = `site1 flavor1 site2 flavor2 idx Re Im`(7 列)+ 末尾フラグ行 `idx flag`。
     値は trans.def と同じ Re/Im の 2 トークンに揃えた
-  - **NBlockUpdateSize を新設**(Julia 移植に相当フィールドが無かった。既定 16)
+  - **PartonBlockUpdateSize を新設**(Julia 移植に相当フィールドが無かった。既定 16)。
+    C-mVMC には別の意味の `NBlockUpdateSize` が既にあるので、フォーク固有の接頭辞を付けて
+    名前衝突を避けた(上流が C 版を移植したとき elseif 連鎖で先に来た側が黙って勝つのを防ぐ)
   - **登録点に modpara_parser.jl を追加**(§3.1-7)。validation.jl は登録点ではない
   - **SR 力ベクトルの共役**(規約は §7、恒久検証は §8-7): 実パラメータの勾配は
     2 Re[⟨E_loc O*⟩ − ⟨E_loc⟩⟨O*⟩] で O に共役が要るが、既存 `calculate_oo!` 系は HO を共役なしで
@@ -347,6 +361,24 @@ stochastic_opt!(案 B 後は MF ブロックも解く)/ weight_average / paralle
   - **一様 MF = 厳密特異 S の警告を §2.5 に追加**。実測で、一様ホッピング + 一様オンサイトだけの
     入力は実自由度が全部ゲージ平坦になり SR が NaN で落ちる
   - **§8 に 8-7(力ベクトル vs 有限差分勾配)を恒久テストとして追加**
+  - コードレビュー(共役シム / 登録点 diff 全件)を受けた修正:
+    - **射影因子を M1 では門番で拒否**。`parton_main_cal!` は射影ブロックの O を計算しない
+      ので、あると SR が黙って凍結したまま最適化されない。加えて §7 の共役シムは
+      「MF 以外のスロットの O が実数」を前提に S の不変性を得ており、複素な射影ブロックが
+      共存すると交差項の実部が変わる。M2 で Jastrow を足すときは
+      「虚スロットに 0 を書く」既存規約を守ること
+    - **store 経路のサンプルスキップ対策**。ノード上のサンプルを飛ばすと store の書き込み
+      位置がずれ、前ステップの O が残ったスロットを `finalize_oo_store!` が読んで OO だけ
+      汚れる。実際に詰めた個数を数えて書き込み位置と `sample_size` の両方に使う
+    - **`output_opt_data!` をドライバから呼ぶ**+`data_io.jl` を登録点に追加。これが無いと
+      最適化された α がどこにも永続化されない(zqp_opt.dat / zvo_var.dat とも MF 列が空)
+    - **`parton_fill_sr_opt_o!`** に契約 5 と共役シムを束ねた。対で呼ぶ必要があるのに
+      片方を忘れても例外が出ないため
+    - `_duplicate_checked_sections` に pmfpara_terms を追加(診断の網羅性)
+  - 既知の非対応(M3 送り): `MVMC_KEYWORDS` 表は現状どこからも参照されないデッドデータ
+    (実際の namelist ディスパッチは `parse_file_by_type!` の文字列連鎖)。
+    パートン 3 ファイルは `_is_required_if_present_file_type` に未登録で、破損時のエラーは
+    門番まで遅延する
   - **finalize_oo_store!** の呼び出しが必須(store 経路では OO はサンプルループ後にまとめて組む)
   - **物理ハミルトニアンのテンプレート build** を追加(`parton_build_phys_hamiltonian`)。
     physhop / coulombinter の 0→1based 変換はそこ 1 箇所に閉じる(平均場側の build と対)

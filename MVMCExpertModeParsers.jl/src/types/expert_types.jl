@@ -138,7 +138,7 @@ mutable struct ModParaParameters
     # --- parton-mode (fork addition) ---
     parton_mode::Int          # PartonMode: 0=既存 mVMC / 1=パートン平均場 VMC
     nflavor::Int              # NFlavor: フレーバー数(PartonMode=1 で必須)
-    nblock_update_size::Int   # NBlockUpdateSize: 受理 N 回ごとに振幅を厳密再計算する錨
+    parton_block_update_size::Int   # PartonBlockUpdateSize: 受理 N 回ごとに振幅を厳密再計算する錨
 
     function ModParaParameters(;
         nsite::Int = 0,
@@ -188,7 +188,7 @@ mutable struct ModParaParameters
         # --- parton-mode (fork addition) ---
         parton_mode::Int = DEFAULT_PARTON_MODE,
         nflavor::Int = DEFAULT_NFLAVOR,
-        nblock_update_size::Int = DEFAULT_NBLOCK_UPDATE_SIZE,
+        parton_block_update_size::Int = DEFAULT_PARTON_BLOCK_UPDATE_SIZE,
     )
         new(
             nsite,
@@ -237,7 +237,7 @@ mutable struct ModParaParameters
             # --- parton-mode (fork addition) ---
             parton_mode,
             nflavor,
-            nblock_update_size,
+            parton_block_update_size,
         )
     end
 end

@@ -211,7 +211,7 @@ end
                 "NElec 2",
                 "PartonMode 1",
                 "NFlavor 2",
-                "NBlockUpdateSize 8",
+                "PartonBlockUpdateSize 8",
                 "NVMCWarmUp 50",
                 "NVMCInterval 1",
                 "NVMCSample 200",

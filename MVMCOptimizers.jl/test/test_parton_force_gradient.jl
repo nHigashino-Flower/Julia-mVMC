@@ -16,13 +16,17 @@ DESIGN_parton.md §7(MF スロットは蓄積境界で共役)と §8-7 に対応
 
 このテストは、そのシムが載った状態で
 
-    上流が組む力ベクトル g / (−DSROptStepDt)  ==  2 · dE/dθ(有限差分)
+    上流が組む力ベクトル g / (−DSROptStepDt)  ==  ∂E/∂θ(有限差分)
 
-が成り立つことを、サンプリング誤差を排した全数展開で確かめる。あわせて
-シムを外すと一致が壊れること(= このシムが飾りではないこと)も検査する。
+が成り立つことを、サンプリング誤差を排した全数展開で確かめる(上流の g には
+−dt·2·(…) の 2 が入っており、括弧の中身が ∂E/∂θ の半分になるのでこの形)。
+あわせてシムを外すと一致が壊れること(= このシムが飾りではないこと)と、
+S 行列が共役の有無で変わらないことも検査する。
 
-上流の `calculate_oo!` と `build_s_matrix_and_g_vector!` を実際に呼ぶので、
-上流側の規約が変わった場合もここで気づける。
+上流の `calculate_oo!` / `calculate_oo_store!` / `finalize_oo_store!` /
+`build_s_matrix_and_g_vector!` を実際に呼ぶので、上流側の規約が変わった場合も
+ここで気づける。store 経路(NStoreO ≠ 0、本番の既定)と非 store 経路の両方を
+通すこと: 添字の転置という一番の落とし穴は store 側にある。
 """
 
 using Test
@@ -31,14 +35,22 @@ using MVMCExpertModeParsers
 using MVMCOptimizers
 
 """
-    _enumerate_state(pstate, data, configs, α; conjugate)
+    _enumerate_state(pstate, data, configs, α; conjugate, store)
 
-全配置を走査して (E, Wc, sr_opt_oo, sr_opt_ho) を返す。サンプリングはせず、
-重みは厳密な |Ψ(x)|²。O は本番と同じ `parton_calculate_o!` で作り、
-`conjugate = true` のときだけ本番と同じ `_parton_conjugate_mf_slots!` を通す。
-蓄積は上流の `calculate_oo!` に委譲する。
+全配置を走査して蓄積済みの (E, sr_opt_oo, sr_opt_ho) を返す。サンプリングはせず、
+重みは厳密な |Ψ(x)|²。O は本番と同じ `parton_fill_sr_opt_o!` で作る
+(`conjugate = false` のときだけ蓄積境界の共役を外す)。蓄積は上流へ委譲し、
+`store = true` なら本番の既定と同じ `calculate_oo_store!` + `finalize_oo_store!`、
+`false` なら `calculate_oo!` を通る。
 """
-function _enumerate_state(pstate, data, configs, α::Vector{ComplexF64}; conjugate::Bool)
+function _enumerate_state(
+    pstate,
+    data,
+    configs,
+    α::Vector{ComplexF64};
+    conjugate::Bool,
+    store::Bool = false,
+)
     mp = data.modpara
     mfham = pstate.mfham
     MVMCOptimizers.parton_update_orbitals!(mfham, α, mp.nelec)
@@ -49,9 +61,11 @@ function _enumerate_state(pstate, data, configs, α::Vector{ComplexF64}; conjuga
     sr = pstate.state.sr_opt
     fill!(sr.sr_opt_oo, 0)
     fill!(sr.sr_opt_ho, 0)
+    store && fill!(sr.sr_opt_o_store, 0)
 
     wc = 0.0
     etot = ComplexF64(0)
+    n_stored = 0
     for c in configs
         cfg = MVMCOptimizers.PartonConfiguration(mp.nsite, mp.nelec, mp.nflavor, 1)
         for f = 1:mp.nflavor, (m, r) in enumerate(c)
@@ -66,19 +80,25 @@ function _enumerate_state(pstate, data, configs, α::Vector{ComplexF64}; conjuga
         e = MVMCOptimizers.parton_local_energy(pstate, data, ip)
         w = abs2(ip)                       # 重点サンプリングの厳密な重み
 
-        fill!(sr.sr_opt_o, 0)
-        sr.sr_opt_o[1] = ComplexF64(1)
-        sr.sr_opt_o[2] = ComplexF64(0)
-        MVMCOptimizers.parton_calculate_o!(
-            sr.sr_opt_o, pstate.amp, mfham, cfg, data, qpw, ip, n_proj)
-        conjugate && MVMCOptimizers._parton_conjugate_mf_slots!(
-            sr.sr_opt_o, n_proj, mfham.n_idx)
+        MVMCOptimizers.parton_fill_sr_opt_o!(
+            sr.sr_opt_o, pstate.amp, mfham, cfg, data, qpw, ip, n_proj;
+            conjugate = conjugate)
 
-        MVMCOptimizers.calculate_oo!(
-            sr.sr_opt_oo, sr.sr_opt_ho, sr.sr_opt_o, w, e, sr.sr_opt_size)
+        if store
+            MVMCOptimizers.calculate_oo_store!(
+                sr.sr_opt_oo, sr.sr_opt_ho, sr.sr_opt_o_store, sr.sr_opt_o,
+                w, e, n_stored, sr.sr_opt_size)
+        else
+            MVMCOptimizers.calculate_oo!(
+                sr.sr_opt_oo, sr.sr_opt_ho, sr.sr_opt_o, w, e, sr.sr_opt_size)
+        end
+        n_stored += 1
         wc += w
         etot += w * e
     end
+
+    store && MVMCOptimizers.finalize_oo_store!(
+        sr.sr_opt_oo, sr.sr_opt_o_store, sr.sr_opt_size, n_stored; nsrcg = false)
 
     # weight_average_sr_opt! と同じ正規化
     sr.sr_opt_oo ./= wc
@@ -125,7 +145,8 @@ function _force_vector(pstate, data, n_proj::Int, n_idx::Int)
     return g, S
 end
 
-@testset "§8-7 力ベクトル = 変分エネルギーの勾配(全数展開・有限差分)" begin
+@testset "§8-7 力ベクトル = 変分エネルギーの勾配($(store ? "store" : "非 store")経路)" for
+        store in (false, true)
     F = 2
     n_site, n_elec = 4, 2
     data = per_bond_mf_data(F; n_site = n_site, n_elec = n_elec)
@@ -136,7 +157,8 @@ end
     configs = [[i, j] for i = 1:n_site for j = (i + 1):n_site]
 
     α0 = MVMCOptimizers.parton_alpha_from_terms(data)
-    e0, _, _ = _enumerate_state(pstate, data, configs, α0; conjugate = true)
+    e0, _, _ = _enumerate_state(pstate, data, configs, α0;
+                                conjugate = true, store = store)
     @test isfinite(real(e0))
     @test abs(imag(e0)) < 1e-10        # ⟨H⟩ はエルミートなので実数
 
@@ -165,6 +187,27 @@ end
 
     # 勾配が全部ゼロだと上の検査が素通りしてしまうので、実際に効いていることを確認
     @test maximum(abs, g) > 1e-4
+end
+
+@testset "§8-7 store 経路と非 store 経路が同じ S・g を出す" begin
+    # 添字の転置は store 側にしかない落とし穴なので、2 経路の一致を直接見る。
+    F = 2
+    n_site, n_elec = 4, 2
+    data = per_bond_mf_data(F; n_site = n_site, n_elec = n_elec)
+    MVMCOptimizers.parton_materialize_flags!(data)
+    pstate = MVMCOptimizers.parton_build_optimization_state(data)
+    n_idx = pstate.mfham.n_idx
+    n_proj = MVMCExpertModeParsers.projection_layout(data).n_proj
+    configs = [[i, j] for i = 1:n_site for j = (i + 1):n_site]
+    α0 = MVMCOptimizers.parton_alpha_from_terms(data)
+
+    _enumerate_state(pstate, data, configs, α0; conjugate = true, store = false)
+    g_plain, S_plain = _force_vector(pstate, data, n_proj, n_idx)
+    _enumerate_state(pstate, data, configs, α0; conjugate = true, store = true)
+    g_store, S_store = _force_vector(pstate, data, n_proj, n_idx)
+
+    @test maximum(abs, g_store .- g_plain) < 1e-12
+    @test maximum(abs, S_store .- S_plain) < 1e-12
 end
 
 @testset "§8-7 シムが載っていないと勾配と合わない(回帰ガード)" begin

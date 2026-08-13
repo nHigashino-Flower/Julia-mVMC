@@ -151,5 +151,9 @@ function parton_vmc_para_opt!(
         end
     end
 
+    # 最適化された α を永続化する(zqp_opt.dat)。これを呼ばないと SR の結果が
+    # どこにも残らない。data_io.jl の登録点で pmfpara_terms も書かれる。
+    is_output_rank(ctx) && output_opt_data!(data; output_dir = output_dir)
+
     return 0
 end

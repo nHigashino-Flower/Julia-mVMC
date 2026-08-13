@@ -186,6 +186,38 @@ function parton_calculate_o!(
 end
 
 """
+    parton_fill_sr_opt_o!(sr_opt_o, amp, mfham, cfg, data, qp_weight, ip, n_proj;
+                          conjugate = true)
+
+1 サンプル分の sr_opt_o を、上流アキュムレータへ渡せる形に仕上げる。
+
+契約 5 の `parton_calculate_o!` と蓄積境界の `_parton_conjugate_mf_slots!` は
+必ず対で呼ぶ必要があり、片方を忘れても例外は出ず力ベクトルだけが静かに
+劣化する。呼び出し側が対を意識しなくて済むよう、ここに束ねてある。
+
+`conjugate = false` は §8-7 の回帰ガード(共役を外すと勾配と合わなくなること
+の確認)専用。本番経路では既定の true 以外を使わない。
+"""
+function parton_fill_sr_opt_o!(
+    sr_opt_o::AbstractVector{ComplexF64},
+    amp::PartonAmplitudeData,
+    mfham::PartonMFHamiltonian,
+    cfg::PartonConfiguration,
+    data::ExpertModeData,
+    qp_weight,
+    ip::ComplexF64,
+    n_proj::Int;
+    conjugate::Bool = true,
+)
+    fill!(sr_opt_o, 0)
+    sr_opt_o[1] = ComplexF64(1)     # 既存規約: 先頭 2 スロットは (1, 0)
+    sr_opt_o[2] = ComplexF64(0)
+    parton_calculate_o!(sr_opt_o, amp, mfham, cfg, data, qp_weight, ip, n_proj)
+    conjugate && _parton_conjugate_mf_slots!(sr_opt_o, n_proj, mfham.n_idx)
+    return sr_opt_o
+end
+
+"""
     _parton_conjugate_mf_slots!(sr_opt_o, n_proj, n_idx)
 
 MF ブロックのスロットを複素共役にしてから上流のアキュムレータへ渡す。
@@ -211,6 +243,18 @@ MF ブロックのスロットを複素共役にしてから上流のアキュ�
 
 契約 5 の `parton_calculate_o!` 自体は DESIGN §1.4 の O をそのまま格納する。
 上流の規約に合わせる変換はここ(受け渡し点)に閉じ込める。
+
+**成立に必要な不変条件**: 「S 行列が不変」が言えるのは、共役しない側(MF 以外)の
+全スロットの O が**実数**だからである。MF×他ブロックの交差項は片側だけ共役されるので、
+相手が複素なら実部が変わってしまう(実測: 相手が `(v, i·v)` の正則型だと交差ブロックだけ
+ΔS ≈ 0.17 ずれる。例外も非対称も出ず、静かに間違った計量になる)。
+M1 は門番が射影因子を拒否して n_proj = 0 を保証しているのでこの条件は自明に成り立つ。
+M2 で物理密度 Jastrow を足すときは「虚スロットに 0 を書く(O は実数)」という
+既存 `set_projection_diff!` と同じ規約を守ること。DESIGN §7 に固定条件として記載。
+
+もう 1 つの前提として、SR-CG 経路(`operate_by_s!`)は全スロットが MF なら偶然
+共役に不変だが、これは偶然にすぎない。門番の `NSRCG = 0` がこのシムの妥当性を
+支えている。
 """
 function _parton_conjugate_mf_slots!(
     sr_opt_o::AbstractVector{ComplexF64},
@@ -265,6 +309,11 @@ function parton_main_cal!(pstate::PartonOptimizationState, data::ExpertModeData)
 
     use_store = mp.nstore_o != 0
     n_skipped = 0
+    # 実際に蓄積したサンプル数。ノード上のサンプルを飛ばすと s とずれるので、
+    # store の書き込み位置と finalize に渡す個数はこちらを使う。前ステップの O が
+    # 残ったスロットを finalize が読むと、OO だけ古い値で汚れて S が静かに壊れる。
+    n_stored = 0
+    use_store && fill!(sr.sr_opt_o_store, 0)
 
     for s = 1:mp.nvmc_sample
         parton_restore_sample!(cfg, s)
@@ -282,11 +331,8 @@ function parton_main_cal!(pstate::PartonOptimizationState, data::ExpertModeData)
         energy.etot += w * e
         energy.etot2 += w * conj(e) * e
 
-        fill!(sr.sr_opt_o, 0)
-        sr.sr_opt_o[1] = ComplexF64(1)     # 既存規約: 先頭 2 スロットは (1, 0)
-        sr.sr_opt_o[2] = ComplexF64(0)
-        parton_calculate_o!(sr.sr_opt_o, amp, mfham, cfg, data, qp_weight, ip, n_proj)
-        _parton_conjugate_mf_slots!(sr.sr_opt_o, n_proj, mfham.n_idx)
+        parton_fill_sr_opt_o!(
+            sr.sr_opt_o, amp, mfham, cfg, data, qp_weight, ip, n_proj)
 
         if use_store
             calculate_oo_store!(
@@ -296,12 +342,13 @@ function parton_main_cal!(pstate::PartonOptimizationState, data::ExpertModeData)
                 sr.sr_opt_o,
                 w,
                 e,
-                s - 1,                      # sr_opt_o_store の添字は 0-based
+                n_stored,                   # sr_opt_o_store の添字は 0-based
                 sr.sr_opt_size,
             )
         else
             calculate_oo!(sr.sr_opt_oo, sr.sr_opt_ho, sr.sr_opt_o, w, e, sr.sr_opt_size)
         end
+        n_stored += 1
     end
 
     # store 経路では calculate_oo_store! は O の保存と HO の蓄積しか行わない。
@@ -312,7 +359,7 @@ function parton_main_cal!(pstate::PartonOptimizationState, data::ExpertModeData)
             sr.sr_opt_oo,
             sr.sr_opt_o_store,
             sr.sr_opt_size,
-            mp.nvmc_sample,
+            n_stored,               # 実際に詰めた個数。wc の母数と揃える
             nsrcg = false,          # 門番が NSRCG = 0 を保証している
         )
     end

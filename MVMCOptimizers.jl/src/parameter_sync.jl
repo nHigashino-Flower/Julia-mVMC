@@ -203,6 +203,9 @@ function _duplicate_checked_sections(data::ExpertModeData)
         (:charge_rbm_phys_hidden_terms, _rbm_parameter_sections(data)[7]),
         (:spin_rbm_phys_hidden_terms, _rbm_parameter_sections(data)[8]),
         (:general_rbm_phys_hidden_terms, _rbm_parameter_sections(data)[9]),
+        # --- parton-mode (fork addition) ---
+        # MF ブロックも共有 idx を持つので診断対象に含める(標準入力では空)。
+        (:pmfpara_terms, data.pmfpara_terms),
     )
 end
 

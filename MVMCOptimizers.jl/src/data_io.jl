@@ -33,6 +33,12 @@ function store_opt_data!(data::ExpertModeData, state::VMCOptimizationState, samp
         push!(parameters, term.value)
     end
 
+    # --- parton-mode (fork addition) ---
+    # 平均場パラメータ α。標準入力では pmfpara_terms が空なので列は増えない。
+    for term in data.pmfpara_terms
+        push!(parameters, term.value)
+    end
+
     # Store data point
     opt_point = OptDataPoint(state.energy.etot, parameters)
 
@@ -129,6 +135,11 @@ function output_data!(data::ExpertModeData, state::VMCOptimizationState, step::I
         for term in data.orbital_terms
             @printf(f, "% .18e % .18e 0.0 ", real(term.value), imag(term.value))
         end
+        # --- parton-mode (fork addition) ---
+        # 列は既存ブロックの後ろに付くだけなので、標準入力での出力バイト列は不変。
+        for term in data.pmfpara_terms
+            @printf(f, "% .18e % .18e 0.0 ", real(term.value), imag(term.value))
+        end
         @printf(f, "\n")
     end
 end
@@ -171,6 +182,13 @@ function output_opt_data!(data::ExpertModeData; output_dir::Union{String,Nothing
             for (i, term) in enumerate(data.orbital_terms)
                 @printf(f, "% .18e % .18e \n", real(term.value), imag(term.value))
             end
+        end
+
+        # --- parton-mode (fork addition) ---
+        # 平均場パラメータ α。これが無いと最適化結果が永続化されない。
+        # 行は既存ブロックの後ろに付くだけなので標準入力での出力は不変。
+        for term in data.pmfpara_terms
+            @printf(f, "% .18e % .18e \n", real(term.value), imag(term.value))
         end
     end
 
