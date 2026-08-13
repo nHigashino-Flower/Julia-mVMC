@@ -86,7 +86,7 @@ end
                   if !startswith(strip(l), "#") && !isempty(strip(l))]) == 5
 end
 
-@testset "§8-10-4 平均場ダンプが α から再構成した H と一致" begin
+@testset "§8-10-4 平均場ダンプ(密・0-based・.def 族)" begin
     status, out, data, pstate = _run_parton_with_output(; nstep = 4)
     ham_path = joinpath(out, "zqp_pmfham_opt.dat")
     band_path = joinpath(out, "zqp_pmfband_opt.dat")
@@ -94,42 +94,55 @@ end
 
     n_site = data.modpara.nsite
     n_flavor = data.modpara.nflavor
+    lines = readlines(ham_path)
+    # .def 族: ヘッダ 5 行固定、`#` を一切書かない
+    @test length(lines) >= 5
+    @test !any(l -> startswith(strip(l), "#"), lines)
+    @test split(strip(lines[2]))[1] == "NPmfHam"
+    # 全 (flavor, site1, site2) を h.c. 側もゼロ要素も含めて出す = 密ダンプ
+    @test parse(Int, split(strip(lines[2]))[2]) == n_flavor * n_site * n_site
+    body = lines[6:end]
+    filter!(l -> !isempty(strip(l)), body)
+    @test length(body) == n_flavor * n_site * n_site
+
     H = [zeros(ComplexF64, n_site, n_site) for _ = 1:n_flavor]
-    for l in eachline(ham_path)
-        s = strip(l)
-        (isempty(s) || startswith(s, "#") || startswith(s, "N")) && continue
-        t = split(s)
-        H[parse(Int, t[1])][parse(Int, t[2]), parse(Int, t[3])] =
-            ComplexF64(parse(Float64, t[4]), parse(Float64, t[5]))
+    minsite = typemax(Int); minflavor = typemax(Int)
+    for l in body
+        t = split(strip(l))
+        i, f1, j, f2 = parse.(Int, t[1:4])
+        @test f1 == f2                     # M1 はフレーバー対角のみ
+        minsite = min(minsite, i, j); minflavor = min(minflavor, f1)
+        H[f1 + 1][i + 1, j + 1] = ComplexF64(parse(Float64, t[5]), parse(Float64, t[6]))
     end
+    # 0-based で書かれていること(1-based で書いていないことの明示チェック)
+    @test minsite == 0
+    @test minflavor == 0
 
-    # α から再構成した H と一致すること(唯一の正は α 側)
-    mf2 = MVMCOptimizers.PartonMFHamiltonian(
-        n_site, data.modpara.nelec, n_flavor, MVMCOptimizers.parton_n_idx(data))
-    MVMCOptimizers.parton_build_mf_templates!(mf2, data)
-    MVMCOptimizers.parton_update_orbitals!(
-        mf2, MVMCOptimizers.parton_alpha_from_terms(data), data.modpara.nelec)
     for f = 1:n_flavor
-        @test maximum(abs, H[f] .- mf2.h_mf[f]) < 1e-12
+        @test maximum(abs, H[f] .- pstate.mfham.h_mf[f]) < 1e-12
+        # h.c. 側も入っている(片方向出力ではない)
+        @test maximum(abs, H[f] .- H[f]') < 1e-12
     end
 
-    # ダンプした H を対角化した固有値がバンドファイルと一致
+    # バンドは診断系: `#` ヘッダ、flavor/band_index とも 0-based
+    blines = readlines(band_path)
+    @test startswith(strip(blines[1]), "#")
     bands = [Float64[] for _ = 1:n_flavor]
-    for l in eachline(band_path)
-        s = strip(l)
-        (isempty(s) || startswith(s, "#") || startswith(s, "N")) && continue
-        t = split(s)
-        push!(bands[parse(Int, t[1])], parse(Float64, t[3]))
+    bmin_f = typemax(Int); bmin_k = typemax(Int)
+    for l in blines
+        s2 = strip(l)
+        (isempty(s2) || startswith(s2, "#")) && continue
+        t = split(s2)
+        bmin_f = min(bmin_f, parse(Int, t[1])); bmin_k = min(bmin_k, parse(Int, t[2]))
+        push!(bands[parse(Int, t[1]) + 1], parse(Float64, t[3]))
+        # occupied は下から NElec 個
+        @test parse(Int, t[4]) == (parse(Int, t[2]) < data.modpara.nelec ? 1 : 0)
     end
+    @test bmin_f == 0 && bmin_k == 0
     for f = 1:n_flavor
         @test maximum(abs, eigvals(Hermitian((H[f] + H[f]') / 2)) .- bands[f]) < 1e-10
     end
-
-    # バンドファイルの HOMO-LUMO ギャップは、ループ後に組み直した mfham と同じ時点
     ne = data.modpara.nelec
-    for f = 1:n_flavor
-        @test bands[f][ne + 1] - bands[f][ne] >= pstate.mfham.min_gap - 1e-10
-    end
     @test isapprox(minimum(f -> bands[f][ne + 1] - bands[f][ne], 1:n_flavor),
                    pstate.mfham.min_gap; rtol = 1e-10)
 end
@@ -185,4 +198,103 @@ end
     for proj in ("MVMCOptimizers.jl/Project.toml", "MVMCExpertModeParsers.jl/Project.toml")
         @test !occursin("Plots", read(joinpath(root, proj), String))
     end
+end
+
+@testset "§8-10-8 .def 族はヘッダ 5 行・`#` 非依存で往復できる" begin
+    # 初期値ダンプはドライバの責務なので、ここはドライバ経由で回す
+    dir = mktempdir(); nl, _ = _write_min_parton_input(dir)
+    out = mktempdir()
+    @test MVMCOptimizers.parton_run_para_opt_from_namelist(nl; output_dir = out) == 0
+    data = MVMCExpertModeParsers.parse_expert_mode_files(nl)
+    MVMCOptimizers.parton_read_in_pmfpara!(data, nl)
+    for name in ("zqp_pmfpara_opt.dat", "zqp_pmfpara_init.dat", "zqp_pmfham_opt.dat")
+        path = joinpath(out, name)
+        @test isfile(path)
+        lines = readlines(path)
+        # mVMC の .def にコメント機能はない。`clean_line` の `#` 除去に依存しない
+        @test !any(l -> occursin("#", l), lines)
+        @test length(lines) >= 5
+        # 2 行目がキーワードと件数
+        @test length(split(strip(lines[2]))) == 2
+        @test tryparse(Int, split(strip(lines[2]))[2]) !== nothing
+    end
+
+    # 往復: ヘッダ 5 行を読み飛ばすと idx = 0 が脱落せず全件そろう
+    n_idx = MVMCOptimizers.parton_n_idx(data)
+    rows = [split(strip(l)) for l in readlines(joinpath(out, "zqp_pmfpara_opt.dat"))[6:end]
+            if !isempty(strip(l))]
+    @test length(rows) == n_idx
+    @test parse(Int, rows[1][1]) == 0            # idx = 0 が先頭に残っている
+    @test [parse(Int, r[1]) for r in rows] == collect(0:(n_idx - 1))
+end
+
+@testset "§8-10-9 同一入力・同一シードの 2 run はバイト一致(行順の決定性)" begin
+    st1, out1, _, _ = _run_parton_with_output(; nstep = 5, seed = 31337)
+    st2, out2, _, _ = _run_parton_with_output(; nstep = 5, seed = 31337)
+    @test st1 == 0 && st2 == 0
+    # 時刻・壁時計を含むファイルは除外(runinfo / time / CalcTimer)
+    skip = Set(["zvo_parton_runinfo.dat", "zvo_parton_time.dat", "zvo_CalcTimer.dat"])
+    common = sort(collect(intersect(Set(readdir(out1)), Set(readdir(out2)))))
+    @test !isempty(setdiff(common, skip))
+    for name in common
+        name in skip && continue
+        @test read(joinpath(out1, name)) == read(joinpath(out2, name))
+    end
+end
+
+@testset "§8-10-10 同じ出力先で再実行しても前回の行が残らない" begin
+    out = mktempdir()
+    function run_into(dir, nstep)
+        data = dimerized_mf_data()
+        data.modpara.nsr_opt_itr_step = nstep
+        data.modpara.nsr_opt_itr_smp = 2
+        MVMCOptimizers.parton_materialize_flags!(data)
+        ps = MVMCOptimizers.parton_build_optimization_state(data)
+        rng = MVMCOptimizers.SFMT19937RNG(); Random.seed!(rng, 909)
+        MVMCOptimizers.parton_vmc_para_opt!(ps, data, MVMCOptimizers.serial_context();
+                                            rng = rng, output_dir = dir)
+    end
+    @test run_into(out, 7) == 0
+    @test run_into(out, 3) == 0
+    nrows(f) = length([l for l in eachline(joinpath(out, f))
+                       if !startswith(strip(l), "#") && !isempty(strip(l))])
+    # step 0 が "w" なので、短い 2 回目の後に長い 1 回目の行が残ってはいけない
+    @test nrows("zvo_parton_diag.dat") == 3
+    @test nrows("zvo_parton_time.dat") == 3
+    @test length(filter(!isempty, strip.(readlines(joinpath(out, "zvo_SRinfo.dat"))))) - 1 == 3
+end
+
+@testset "§8-10-11 CalcTimer がパートンでは既定で出て、既存モードでは出ない" begin
+    status, out, data, _ = _run_parton_with_output(; nstep = 4)
+    # parton_vmc_para_opt! を直接呼ぶ経路では c_timer は既定 OFF。
+    # 既定 ON はドライバ(parton_run_para_opt_from_namelist)の責務なのでそちらで見る。
+    mktempdir() do dir
+        nl, _ = _write_min_parton_input(dir)
+        out2 = mktempdir()
+        haskey(ENV, "MVMC_C_TIMER") && delete!(ENV, "MVMC_C_TIMER")
+        @test MVMCOptimizers.parton_run_para_opt_from_namelist(nl; output_dir = out2) == 0
+        path = joinpath(out2, "zvo_CalcTimer.dat")
+        @test isfile(path)
+        txt = read(path, String)
+        # 既存本体セクションとパートンセクションが同じファイルに揃っている
+        @test occursin("All                         [0] ", txt)
+        for (label, _) in MVMCOptimizers.CTIMER_PARTON_LINES
+            @test occursin(label, txt)
+        end
+        # 実際に時間が入っている(全ゼロではない)
+        m = match(r"Parton total               \[800\] *([0-9.]+)", txt)
+        @test m !== nothing && parse(Float64, m.captures[1]) >= 0.0
+        # ID 帯が既存と衝突していない
+        parton_ids = [id for (_, id) in MVMCOptimizers.CTIMER_PARTON_LINES]
+        used = Set(vcat([id for (_, id) in MVMCOptimizers.CTIMER_PARA_OPT_LINES],
+                        [id for (_, id) in MVMCOptimizers.CTIMER_DIAG_LINES]))
+        @test isempty(intersect(Set(parton_ids), used))
+        @test all(id -> 0 <= id < MVMCOptimizers.CTIMER_N, parton_ids)
+    end
+    # 既存モードの既定は変えていない: MVMC_C_TIMER なしでは生成されない
+    out3 = mktempdir()
+    d = MVMCExpertModeParsers.ExpertModeData()
+    d.modpara.nsr_opt_itr_step = 1
+    MVMCOptimizers.output_opt_data!(d; output_dir = out3)
+    @test !("zvo_CalcTimer.dat" in readdir(out3))
 end

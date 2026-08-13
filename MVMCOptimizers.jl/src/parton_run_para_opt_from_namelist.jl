@@ -85,11 +85,15 @@ function parton_run_para_opt_from_namelist(
         n_para = MVMCExpertModeParsers.count_variational_parameters(data),
         n_rank = ctx.size0, t_start = t_start, t_end = t_start)
 
+    # CalcTimer はパートンモードでは**既定で有効**(v3.5)。既存モードは
+    # `MVMC_C_TIMER=1` の opt-in のままで、既定は変えていない。
+    # `MVMC_C_TIMER=0` を明示すればパートンでも切れる。
     status = parton_vmc_para_opt!(
         pstate,
         data,
         ctx;
         rng = rng,
+        c_timer = CTimer(get(ENV, "MVMC_C_TIMER", "1") != "0"),
         output_dir = String(output_dir),
     )
 

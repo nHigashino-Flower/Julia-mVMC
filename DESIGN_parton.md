@@ -321,23 +321,97 @@ MVMCOptimizers.jl/src/
 | 出力 | `parton_write_*`(§3.3.1) | 既存 writer を再利用。**読むだけ**で新規の数値計算はしない。rank 0 のみ。step 0 が "w"、以降 "a" |
 | 配線 | `parton_vmc_para_opt!` / ドライバ | 委譲: weight_average / stochastic_opt! / output_data! / bcast_scalar / reduce_counter!(counter 直渡し)。`parton_sync_parameters!` は bcast + ゲージ射影(D_AmpMax は不適用)。射影は α にのみ作用し、射影因子には触れない |
 
-### 3.3.1 出力ファイル一覧(v3.4)
+### 3.3.1 出力ファイル一覧(v3.5)
 
-すべて rank 0 のみ。`PartonMode = 0` では 1 つも生成されない(パートンの
-オーケストレータからしか呼ばれないため)。既存ファイルの列形式は変更していない。
+すべて rank 0 のみ、`_output_path` 経由。`PartonMode = 0` では 1 つも生成されない。
+数値は `%.18e`。1 回書きは `"w"`、ステップ毎追記は step 0 が `"w"` で以降 `"a"`
+(同じ出力先で回し直したときに前 run の行が残らないこと。既存 SRinfo writer は
+「ファイルが無いか空」のときだけヘッダを出す追記実装なので、**開始前に消すのは
+呼び出し側の責務**)。既存ファイルの列形式は一切変更していない。
 
-| ファイル | 内容 | 出所 |
+出力は 2 系統に分ける。
+
+#### (a) `.def` 族 — 入力として読み戻せる出力
+
+`clean_line` が `#` と `//` を除去するのは **Julia 移植で足された拡張**であり、
+mVMC の .def 形式にコメント機能はない。**.def 族には `#` を書かないし読まない。**
+読み手はヘッダ 5 行を固定でスキップする(`parse_input_parameter_file` の
+`data_start = 6` と整合)。ヘッダは
+
+```
+===============================
+<キーワード> <件数>
+===============================
+== <列の説明> ==
+===============================
+<データ行…>
+```
+
+| ファイル | キーワード | データ行 |
 |---|---|---|
-| `zvo_SRinfo.dat` | Npara/Msize/optCut/diagCut/sDiagMax/sDiagMin/absRmax/imax | **直接法パス**から既存 writer をそのまま呼ぶ。ヘッダ・列は CG 版と 1 文字も違わない |
-| `zvo_parton_diag.dat` | step, min_gap, |α|, ..., 受理率, ノルム(射影前/後), 試行数, 受理数, 再計算数 | 既存カウンタと `PartonMFHamiltonian` の保持値を読むだけ |
-| `zvo_parton_time.dat` | step ごとの所要時間と累積時間(wall-clock) | `time()` 差分 |
-| `zqp_pmfham_opt.dat` | 最終 α の H_MF(flavor, i, j, Re, Im) | **SR ループ後に最終 α で組み直してから**ダンプ(唯一の正は α 側) |
-| `zqp_pmfband_opt.dat` | 上記 H_MF の全固有値 | 同上。HOMO-LUMO ギャップが `mfham.min_gap` と一致 |
-| `zvo_parton_runinfo.dat` | base_seed / PartonMode / n_idx / githash / wall_sec ほか | githash 取得失敗時は `"unknown"` で run は落ちない |
-| `zvo_conv.dat` | step, E, var, |E − E_tail| | `zvo_out.dat` の列を読み直したもの(再計算しない) |
+| `zqp_pmfpara_opt.dat` / `zqp_pmfpara_init.dat` | `NPmfParaIdx` | `idx ReAlpha ImAlpha`(idx は 0-based) |
+| `zqp_pmfham_opt.dat` | `NPmfHam` | `site1 flavor1 site2 flavor2 ReH ImH`(**サイト・フレーバーとも 0-based**) |
+
+`zqp_pmfham_opt.dat` は **全 (flavor, site1, site2) の組を h.c. 側もゼロ要素も含めて**
+出す密ダンプで、行順は `(flavor, site1, site2)` の辞書順に固定(run 間で `diff` が
+取れることが再現性・回帰テストの前提)。行の**形式**は `pmftrans.def` のデータ行と
+同じだが**内容は 1 対 1 ではない** — pmftrans は片方向のみ列挙して h.c. を暗黙付与
+する規約なので、**このファイルをそのまま pmftrans.def として再投入することはできない**
+(逆向き重複としてテンプレート build が弾く)。キーワードを `NPmfHam` にしてあるのは
+pmftrans の `NPartonMFTrans` とは別物であることを名前で示すため。
+
+既存 per-block writer(`zqp_orbital_opt.dat` 等)はヘッダ **4 行**で読み手と
+食い違うが(idx = 0 が脱落する)、**既存側には触らない**。§11 に upstream 報告候補。
+
+#### (b) 診断・解析用の出力
+
+先頭に `#` のヘッダ行(列名)。既存 SRinfo(`#Npara Msize optCut diagCut …`)の
+前例に倣う。こちらは `#` で正しい。
+
+| ファイル | 内容 |
+|---|---|
+| `zvo_SRinfo.dat` | Npara/Msize/optCut/diagCut/sDiagMax/sDiagMin/absRmax/imax。**直接法パス**から既存 writer をそのまま呼ぶ(ヘッダ・列は CG 版と 1 文字も違わない) |
+| `zvo_parton_diag.dat` | step, min_gap, 受理率, α ノルム(ゲージ射影の前/後), 試行数, 受理数, 再計算数。既存カウンタと `PartonMFHamiltonian` の保持値を読むだけ |
+| `zvo_parton_time.dat` | step ごとの所要時間と累積時間(wall-clock) |
+| `zqp_pmfband_opt.dat` | `flavor band_index eigenvalue occupied`(**flavor・band_index とも 0-based**)。`occupied` は下から `NElec` 個が 1。`# key value` 形式で NFlavor / NSite / NElec と各フレーバーの HOMO-LUMO ギャップを併記 |
+| `zqp_pmfvec_opt.dat` | 固有ベクトル。既定 OFF(`with_vectors = true` のときだけ) |
+| `zvo_parton_runinfo.dat` | `# key value` 形式。base_seed / PartonMode / n_idx / githash / wall_sec ほか。githash 取得失敗時は `"unknown"` で run は落ちない |
+| `zvo_conv.dat` | step, E, var, \|E − E_tail\|。`zvo_out.dat` の列を読み直したもの(再計算しない) |
+| `zvo_CalcTimer.dat` | §3.3.2 |
+
+`zqp_pmfham_opt.dat` の唯一の正は **α 側**(`zqp_pmfpara_opt.dat`)。H のダンプは
+SR ループ後に**最終 α で組み直してから**書く(ループ内の最後の
+`parton_update_orbitals!` は最終更新前の α で走っている)。
 
 作図は本体から切り離す: `tools/plot_conv.jl` + `tools/Project.toml`(Plots はここだけ)。
-本体パッケージに作図依存は入れない。
+
+### 3.3.2 CalcTimer(v3.5)
+
+既存 `c_timer.jl` の枠組みをそのまま使う(**新しいタイマ機構を作らない**)。
+既存 `write_ctimer_para_opt` が `zvo_CalcTimer.dat` を `"w"` で書いた後、
+`parton_write_ctimer` が同じファイルにパートンセクションを**追記**する
+(既存 writer に触らずにセクションを足すための形)。
+
+**パートンモードでは既定で有効。** 既存モードは `MVMC_C_TIMER=1` の opt-in のままで
+既定を変えていない。パートンでも `MVMC_C_TIMER=0` を明示すれば切れる。
+
+**ID 帯は 800–813。** 使用中の ID はリポジトリ全体で 0–72 / 600–603 / 920–966。
+C 版 `OutputTimerParaOpt` は 0–99 を主要フェーズ・600 番台を lspinflip 下位に使う
+体系で、920 番台以降は Julia 移植が足した診断。800 番台は完全に空きで、C 版の
+番号体系からも Julia 移植の診断からも離れており将来の衝突が最も起きにくい
+(`CTIMER_N = 1000` の上限内)。
+
+| ID | 区間 |
+|---|---|
+| 800 | Parton total(SR ループ全体) |
+| 801 / 802 | 契約0(H 構築+対角化)/ 契約0′(∂Φ) |
+| 803 | サンプリング骨格 |
+| 804 / 805 / 806 | 契約1(厳密再計算)/ 契約2(比)/ 契約3(更新) |
+| 807 | main_cal |
+| 808 / 809 / 810 | 契約4(E_loc)/ 契約5(O)/ OO 蓄積 |
+| 811 / 812 / 813 | SR / 同期 / 出力 |
+
+タイマは C と同じく **inclusive**(親を止めずに子を回す)。
 
 ## 4. サンプリング骨格の規約
 
@@ -431,12 +505,19 @@ stochastic_opt!(案 B 後は MF ブロックも解く)/ weight_average / paralle
    **idx = 0 が脱落していない**こと(既存 writer のヘッダ 4 行問題の回帰ガード)、
    (6c) 行を 1 本削った `InPmfPara.def` は警告止まりでなくエラーで停止すること。
    実装: `MVMCOptimizers.jl/test/test_parton_initial_params.jl`
-10. **出力ファイル**(v3.4 追加、恒久): (1) `PartonMode = 0` で新規ファイルが 1 つも
-   出ないこと、(2) SRinfo が直接法パスから出て既存 CG 版とヘッダ・列数が一致、
-   (3) 診断ログの行数・受理率が既存カウンタと整合、(4) 平均場ダンプが最終 α から
-   再構成した H と 1e-12 で一致し、バンドが対角化結果と 1e-10 で一致、
-   (5) run メタデータのベースシードが modpara と一致、(6) 収束テーブルが
-   `zvo_out.dat` と行単位で整合、(7) 作図スクリプトが本体依存に入っていないこと。
+10. **出力ファイル**(v3.4 追加、v3.5 拡張、恒久): (1) `PartonMode = 0` で新規ファイルが
+   1 つも出ないこと、(2) SRinfo が直接法パスから出て既存 CG 版とヘッダ・列数が一致、
+   (3) 診断ログの行数・受理率が既存カウンタと整合、(4) 平均場ダンプが**密**(件数 =
+   NFlavor×NSite²)で `mfham.h_mf` と 1e-12 一致・h.c. 側も入っている・**0-based**で
+   書かれている・`#` 行を含まない、バンドが対角化結果と 1e-10 一致し `occupied` が
+   下から NElec 個、(5) run メタデータのベースシードが modpara と一致、(6) 収束
+   テーブルが `zvo_out.dat` と行単位で整合、(7) 作図スクリプトが本体依存に入って
+   いないこと、(8) `.def` 族がヘッダ 5 行・`#` 非依存で往復でき **idx = 0 が
+   脱落しない**こと、(9) 同一入力・同一シードの 2 run が**バイト一致**すること
+   (行順の決定性。時刻を含む runinfo / time / CalcTimer は除外)、(10) 同じ出力先で
+   再実行しても前 run の行が残らないこと、(11) CalcTimer がパートンでは既定で生成され
+   パートンセクションが全て出ており **ID が既存と衝突しない**こと・既存モードでは
+   `MVMC_C_TIMER` なしで生成されないこと。
    実装: `MVMCOptimizers.jl/test/test_parton_output.jl`
 
 ## 9. マイルストーン
@@ -467,6 +548,16 @@ stochastic_opt!(案 B 後は MF ブロックも解く)/ weight_average / paralle
 
 ## 11. 決定ログ(要約)
 
+- v3.5 (2026-08-13): **出力形式の 2 系統化 + CalcTimer**(§3.3.1 / §3.3.2)。
+  `.def` 族は 5 行ヘッダ・`#` 非依存(mVMC の .def にコメント機能はなく、`clean_line` の
+  `#` 除去は Julia 移植の拡張。これに依存した形式を .def 族に持ち込まない)。
+  `zqp_pmfham_opt.dat` は**密な行形式**(全 flavor×site×site、h.c. もゼロも含む、
+  0-based、辞書順)。行の形式は pmftrans.def と同じだが**内容は 1 対 1 ではなく
+  再投入はできない**ためキーワードを `NPmfHam` として名前で区別する。
+  CalcTimer はパートンで既定 ON・ID 帯 800–813(調査の上、C 版と Julia 移植の
+  どちらの帯からも離れた空き帯を選んだ)。既存 writer は一切書き換えていない。
+  SRinfo の再実行残留は**呼び出し側で開始前に消す**ことで解決(既存 writer は
+  「無いか空のときだけヘッダ」の追記実装なので、writer 側は触らない)
 - v3.4 (2026-08-13): **出力ファイル整備**(§3.3.1)。診断は既存状態を読むだけで、
   収集のための新しい数値計算は足さない。平均場ダンプは SR ループ後に**最終 α で
   組み直してから**書く(ループ内の最後の `parton_update_orbitals!` は最終更新前の α で

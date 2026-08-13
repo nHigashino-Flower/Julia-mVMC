@@ -1,3 +1,5 @@
+using Printf
+
 """
 checkerboard 模型のパートン ansatz フィクスチャ生成
 --- parton-mode (fork addition) ---
@@ -65,6 +67,24 @@ function bond_class(i::Int, j::Int, dx::Int, dy::Int,
     return min(ki, kj)
 end
 
+
+"""
+    _idx_key(mode, orbit_key, bond) / _flavor_key(mode, key, f)
+
+変分パラメータ idx の粒度を決める(候補 C の検証用)。参照実装 PartonFCI の
+`symmetry_mode` に対応させてある:
+
+- `:orbit`        拡大セル軌道で縮約 + フレーバー共有 (= SU(K)_UNIFIED 相当)
+- `:orbit_flavor` 拡大セル軌道で縮約 + フレーバー独立
+- `:bond_flavor`  ボンドごと + フレーバー独立 (= SU(K)_INDEPENDENT 相当)
+
+`:orbit` が既定で、P1〜P3 のこれまでの結果はすべてこれ。
+"""
+_idx_key(mode::Symbol, orbit_key, bond) =
+    mode === :bond_flavor ? (:bond, bond) : orbit_key
+
+_flavor_key(mode::Symbol, key, f::Int) = mode === :orbit ? key : (key, f)
+
 """
     parton_fixture(nx, ny, nflavor, ex, ey; u_mf, p)
 
@@ -82,6 +102,7 @@ end
 function parton_fixture(nx::Int, ny::Int, nflavor::Int, ex::Int, ey::Int;
                         u_mf::Float64 = 0.0,
                         u_bonds::Symbol = :nn,
+                        idx_mode::Symbol = :orbit,
                         p::CheckerboardParams = CheckerboardParams())
     nsite = 2 * nx * ny
     bonds = cb_undirected_bonds(nx, ny)
@@ -98,13 +119,14 @@ function parton_fixture(nx::Int, ny::Int, nflavor::Int, ex::Int, ey::Int;
         # `u_bonds` で選ぶ(:nn なら最近接のみ、:all なら全ボンド)。
         add_u = (u_mf != 0.0) && (u_bonds === :all || d2 == 2)
         coeff = t + (add_u ? u_mf : 0.0)
-        key = bond_class(i, j, dx, dy, nx, ny, ex, ey)
-        idx = get!(class_of_idx, key, length(class_of_idx))
+        key = _idx_key(idx_mode, bond_class(i, j, dx, dy, nx, ny, ex, ey), (i, j))
         # pmftrans は `H[site1, site2] += α·value` と読まれる = c†_{site1} c_{site2}
         # の係数。こちらの t は c†_j c_i の係数なので (site1, site2) = (j, i) で出す。
         # physhop の (site1, site2, value) は b†_{site2} b_{site1} の係数なので
         # 向きが逆になる — 2 つの新設形式で添字の向きが違うことに注意。
         for f = 0:(nflavor - 1)
+            idx = get!(class_of_idx, _flavor_key(idx_mode, key, f),
+                       length(class_of_idx))
             push!(pmftrans, (ComplexF64(j), ComplexF64(f), ComplexF64(i),
                              ComplexF64(f), coeff))
             push!(pmfpara, (j, f, i, f, idx, ComplexF64(1, 0)))
@@ -114,9 +136,11 @@ function parton_fixture(nx::Int, ny::Int, nflavor::Int, ex::Int, ey::Int;
     # --- 平均場: オンサイト(対角 = U のみ)。u_mf = 0 なら入れない ---
     if u_mf != 0.0
         for i = 0:(nsite - 1)
-            key = (enlarged_cell_class(i, nx, ny, ex, ey), 0, 0)
-            idx = get!(class_of_idx, key, length(class_of_idx))
+            key = _idx_key(idx_mode, (enlarged_cell_class(i, nx, ny, ex, ey), 0, 0),
+                           (i, i))
             for f = 0:(nflavor - 1)
+                idx = get!(class_of_idx, _flavor_key(idx_mode, key, f),
+                           length(class_of_idx))
                 push!(pmftrans, (ComplexF64(i), ComplexF64(f), ComplexF64(i),
                                  ComplexF64(f), ComplexF64(u_mf)))
                 push!(pmfpara, (i, f, i, f, idx, ComplexF64(1, 0)))
@@ -150,4 +174,117 @@ end
 function physical_coulomb(nx::Int, ny::Int, u::Float64)
     u == 0.0 && return Tuple{Int,Int,Float64}[]
     return [(i, j, u) for (i, j, _, _, d2) in cb_undirected_bonds(nx, ny) if d2 == 2]
+end
+
+"""
+    write_parton_def_files(dir, nx, ny, F, ex, ey; u_mf, u_phys, sr...)
+
+パートンモードの入力一式を `dir` に書き出す。
+
+**pmfpara.def は value 列を空けた 5 列**で出す(DESIGN §2.3.1)。未入力なので
+α は乱数で初期化され、SR が π-flux 構造を探しに行く。明示指定したい場合は
+7 列(… idx Re Im)で書くか `InPmfPara.def` を与える。
+
+末尾の OptFlag 行は**全 idx を明示的に**書く(既定は 1 = 可動)。`opt_flags` に
+`Dict(idx => 0)` を渡せばその idx を凍結できる。ゲージ平坦方向は v3.2 以降
+`parton_project_gauge!` が潰すので、ゲージ目的でここを 0 にする必要はない。
+"""
+function write_parton_def_files(dir::AbstractString, nx::Int, ny::Int, F::Int,
+                                ex::Int, ey::Int;
+                                u_mf::Float64 = 0.0,
+                                u_phys::Float64 = 0.0,
+                                n_elec::Int,
+                                nvmc_sample::Int = 1500,
+                                nvmc_warmup::Int = 500,
+                                nsr_step::Int = 2300,
+                                nsr_smp::Int = 100,
+                                dt::Float64 = 0.005,
+                                sta_del::Float64 = 0.01,
+                                red_cut::Float64 = 1e-8,
+                                block_update::Int = 16,
+                                seed::Int = 11272,
+                                idx_mode::Symbol = :orbit,
+                                opt_flags::Union{Nothing,Dict{Int,Int}} = nothing)
+    mkpath(dir)
+    fx = parton_fixture(nx, ny, F, ex, ey; u_mf = u_mf, idx_mode = idx_mode)
+    cb = physical_coulomb(nx, ny, u_phys)
+
+    open(joinpath(dir, "pmftrans.def"), "w") do io
+        println(io, "===============================")
+        println(io, "NPartonMFTrans $(length(fx.pmftrans))")
+        println(io, "===============================")
+        println(io, "== site1 flavor1 site2 flavor2 Re Im ==")
+        println(io, "===============================")
+        for (a, b, c, d, v) in fx.pmftrans
+            @printf(io, "%d %d %d %d % .18e % .18e\n", a, b, c, d, real(v), imag(v))
+        end
+    end
+
+    # value 列を出さない = 5 列 = 未入力 → 乱数初期化
+    open(joinpath(dir, "pmfpara.def"), "w") do io
+        println(io, "===============================")
+        println(io, "NPartonMFParaIdx $(fx.n_idx)")
+        println(io, "ComplexType          1")
+        println(io, "===============================")
+        println(io, "===============================")
+        for (a, b, c, d, i, _) in fx.pmfpara
+            @printf(io, "%d %d %d %d %d\n", a, b, c, d, i)
+        end
+        # 末尾フラグ行は全 idx を明示的に書く(既定は 1 = 可動)。
+        # v3.2 以降 OptFlag はゲージ目的では使わず、用途はエルミート性
+        # (オンサイト群 Im の強制凍結。コード側が自動でやるのでここには書かない)と
+        # ユーザーの明示的固定に限られる。値を省略せず並べておくことで、
+        # 「何も固定していない」ことがファイル自身から読み取れるようにする。
+        flags = opt_flags === nothing ? Dict{Int,Int}() : opt_flags
+        for i = 0:(fx.n_idx - 1)
+            @printf(io, "%d %d\n", i, get(flags, i, 1))
+        end
+    end
+
+    open(joinpath(dir, "physhop.def"), "w") do io
+        println(io, "===============================")
+        println(io, "NPhysHop $(length(fx.physhop))")
+        println(io, "===============================")
+        println(io, "== site1 site2 Re Im ==")
+        println(io, "===============================")
+        for (a, b, v) in fx.physhop
+            @printf(io, "%d %d % .18e % .18e\n", a, b, real(v), imag(v))
+        end
+    end
+
+    entries = ["ModPara        modpara.def",
+               "PartonMFTrans  pmftrans.def",
+               "PartonMFPara   pmfpara.def",
+               "PhysHop        physhop.def"]
+    if !isempty(cb)
+        open(joinpath(dir, "coulombinter.def"), "w") do io
+            println(io, "===============================")
+            println(io, "NCoulombInter $(length(cb))")
+            println(io, "===============================")
+            println(io, "== CoulombInter ==")
+            println(io, "===============================")
+            for (a, b, v) in cb
+                @printf(io, "%d %d % .18e\n", a, b, v)
+            end
+        end
+        push!(entries, "CoulombInter   coulombinter.def")
+    end
+
+    open(joinpath(dir, "modpara.def"), "w") do io
+        for line in [
+            "CDataFileHead zvo", "CParaFileHead zqp", "NVMCCalMode 0",
+            "Nsite $(fx.nsite)", "NElec $n_elec",
+            "PartonMode 1", "NFlavor $F",
+            "PartonBlockUpdateSize $block_update",
+            "NVMCWarmUp $nvmc_warmup", "NVMCInterval 1", "NVMCSample $nvmc_sample",
+            "NSROptItrStep $nsr_step", "NSROptItrSmp $nsr_smp",
+            "DSROptStepDt $dt", "DSROptStaDel $sta_del", "DSROptRedCut $red_cut",
+            "ComplexType 1", "2Sz 0", "NExUpdatePath 6", "RndSeed $seed",
+        ]
+            println(io, line)
+        end
+    end
+
+    write(joinpath(dir, "namelist.def"), join(entries, "\n") * "\n")
+    return joinpath(dir, "namelist.def"), fx
 end

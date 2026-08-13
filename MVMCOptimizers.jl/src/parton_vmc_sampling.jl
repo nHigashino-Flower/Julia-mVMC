@@ -199,7 +199,8 @@ burn からの再開時は `Sample + 1`、`PartonBlockUpdateSize` 回の受理�
 上書きされる。逆順(振幅 → 配置)だと、再計算が古い配置を読んで受理済みの
 移動が消えるという追いにくいバグになる。
 """
-function parton_make_sample!(pstate::PartonOptimizationState, data::ExpertModeData, rng)
+function parton_make_sample!(pstate::PartonOptimizationState, data::ExpertModeData, rng;
+                             c_timer::CTimer = CTIMER_DISABLED)
     amp = pstate.amp
     cfg = pstate.config
     mfham = pstate.mfham
@@ -212,7 +213,9 @@ function parton_make_sample!(pstate::PartonOptimizationState, data::ExpertModeDa
     if cfg.burn_flag
         parton_copy_from_burn_sample!(cfg)
         n_out = mp.nvmc_sample + 1
+        ctimer_start!(c_timer, 804)
         parton_recompute_amplitude_all!(amp, mfham, cfg, data, ws)   # 最初の錨
+        ctimer_stop!(c_timer, 804)
     else
         n_out = mp.nvmc_warmup + mp.nvmc_sample
         parton_make_initial_sample!(cfg, amp, mfham, data, ws; rng = rng)  # 錨も打つ
@@ -228,18 +231,24 @@ function parton_make_sample!(pstate::PartonOptimizationState, data::ExpertModeDa
 
             log_pr = parton_log_proj_ratio(cfg, m, r_old, r_new)
             ratio, _ =
-                parton_amplitude_ratio!(ws, amp, mfham, data, qp_weight, m, r_new)
+                (ctimer_start!(c_timer, 805);
+                 _pr = parton_amplitude_ratio!(ws, amp, mfham, data, qp_weight, m, r_new);
+                 ctimer_stop!(c_timer, 805); _pr)
             rng_real2(rng) < exp(2 * log_pr) * abs2(ratio) || continue
 
             cfg.counter[2] += 1                                  # 受理数
             parton_update_ele_config!(cfg, m, r_old, r_new)      # ① 配置を先に確定
+            ctimer_start!(c_timer, 806)
             st = parton_update_amplitude!(amp, mfham, data, ws, m, r_new)  # ② 高速更新
+            ctimer_stop!(c_timer, 806)
             n_accept_anchor += 1
             if st === :need_recompute || n_accept_anchor >= mp.parton_block_update_size
                 # counter[3] = ratio_floor ヒット回数、counter[4] = 厳密再計算の回数
                 st === :need_recompute && (cfg.counter[3] += 1)
                 cfg.counter[4] += 1
+                ctimer_start!(c_timer, 804)
                 parton_recompute_amplitude_all!(amp, mfham, cfg, data, ws)
+                ctimer_stop!(c_timer, 804)
                 n_accept_anchor = 0
             end
         end

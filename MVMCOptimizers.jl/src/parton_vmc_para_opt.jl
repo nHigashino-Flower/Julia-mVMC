@@ -197,25 +197,46 @@ function parton_vmc_para_opt!(
     n_smp = mp.nsr_opt_itr_smp
     mfham = pstate.mfham
 
+    # 既存の SRinfo writer は追記で、ヘッダは「ファイルが無いか空」のときだけ書く。
+    # 同じ出力先で回し直したときに前 run の行が残らないよう、開始前に消しておく
+    # (既存 writer には触らない — 消すのは呼び出し側の責務)。
+    if diag_dir !== nothing
+        srinfo_path = _parton_out(data, "_SRinfo.dat", diag_dir)
+        isfile(srinfo_path) && rm(srinfo_path)
+    end
+
+    ctimer_start!(c_timer, 800)
     for step = 0:(n_steps - 1)
         t_step0 = time()
         α = parton_alpha_from_terms(data)
+        ctimer_start!(c_timer, 801)
         parton_update_orbitals!(mfham, α, n_elec)             # 契約 0
+        ctimer_stop!(c_timer, 801)
+        ctimer_start!(c_timer, 802)
         parton_update_orbital_derivatives!(mfham, n_elec)     # 契約 0′
+        ctimer_stop!(c_timer, 802)
 
-        parton_make_sample!(pstate, data, rng)                # 骨格 + 契約 2, 3
-        parton_main_cal!(pstate, data)                        # 契約 4, 5
+        ctimer_start!(c_timer, 803)
+        parton_make_sample!(pstate, data, rng; c_timer = c_timer)   # 骨格 + 契約 2, 3
+        ctimer_stop!(c_timer, 803)
+        ctimer_start!(c_timer, 807)
+        parton_main_cal!(pstate, data; c_timer = c_timer)           # 契約 4, 5
+        ctimer_stop!(c_timer, 807)
 
         weight_average_we!(ctx, pstate.state)
         weight_average_sr_opt!(ctx, pstate.state)
         reduce_counter!(ctx, pstate.config.counter)
 
+        ctimer_start!(c_timer, 813)
         is_output_rank(ctx) &&
             output_data!(data, pstate.state, step; output_dir = output_dir)
+        ctimer_stop!(c_timer, 813)
 
+        ctimer_start!(c_timer, 811)
         info = stochastic_opt!(data, pstate.state, c_timer;
                                write_srinfo = diag_dir !== nothing,
                                srinfo_dir = diag_dir, srinfo_iter = step)
+        ctimer_stop!(c_timer, 811)
         info = Int(bcast_scalar(ctx, info))
         if info != 0
             is_output_rank(ctx) &&
@@ -224,7 +245,10 @@ function parton_vmc_para_opt!(
         end
 
         norm_pre = sqrt(sum(abs2, parton_alpha_from_terms(data)))
+        ctimer_start!(c_timer, 812)
         parton_sync_parameters!(data, ctx, mfham)
+        ctimer_stop!(c_timer, 812)
+        ctimer_start!(c_timer, 813)
         if diag_dir !== nothing
             norm_post = sqrt(sum(abs2, parton_alpha_from_terms(data)))
             parton_write_diag(data, pstate, step, diag_dir;
@@ -235,11 +259,14 @@ function parton_vmc_para_opt!(
             t_now = time()
             parton_write_time(data, step, diag_dir, t_now - t_step0, t_now - t_run0)
         end
+        ctimer_stop!(c_timer, 813)
 
         if step >= n_steps - n_smp
             store_opt_data!(data, pstate.state, step - (n_steps - n_smp))
         end
     end
+
+    ctimer_stop!(c_timer, 800)
 
     # 最適化された α を永続化する(zqp_opt.dat)。これを呼ばないと SR の結果が
     # どこにも残らない。data_io.jl の登録点で pmfpara_terms も書かれる。
@@ -252,6 +279,11 @@ function parton_vmc_para_opt!(
         parton_update_orbitals!(mfham, parton_alpha_from_terms(data), n_elec)
         parton_write_mfham(data, mfham, diag_dir)
         parton_write_conv(data, diag_dir)
+        # CalcTimer は既存 writer が本体セクションを "w" で書いた後に追記する
+        write_ctimer_para_opt(c_timer, String(diag_dir);
+                              prefix = isempty(data.modpara.c_data_file_head) ?
+                                       "zvo" : data.modpara.c_data_file_head)
+        parton_write_ctimer(data, c_timer, diag_dir)
     end
 
     return 0

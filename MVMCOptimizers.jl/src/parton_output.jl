@@ -12,6 +12,9 @@ DESIGN_parton.md §3.3 の出力一覧に対応する。共通規約:
   読むだけで、新しい数値計算は足さない
 """
 
+"`.def` 族の区切り行。mVMC の .def はコメント機能を持たないので `#` は使わない。"
+const PARTON_DEF_RULE = "==============================="
+
 "接頭辞つきの出力パスを作る。`_output_path` は data_io.jl の既存ヘルパ。"
 _parton_out(data::ExpertModeData, suffix::String, dir) =
     _output_path((isempty(data.modpara.c_data_file_head) ? "zvo" :
@@ -103,14 +106,37 @@ end
 
 SR ループ終了後に 1 回。研究の出口(バンド構造・Chern 数解析)へ直結する成果物。
 
-- `<para>_pmfham_opt.dat` — 各フレーバーの H^(f)(α*)(サイト×サイト、複素)
-- `<para>_pmfband_opt.dat` — 各フレーバーの固有値。占有/非占有の境界と
-  HOMO-LUMO ギャップも記録
+- `<para>_pmfham_opt.dat` — **`.def` 族**。`site1 flavor1 site2 flavor2 Re Im` の
+  行形式(サイト・フレーバーとも 0-based)で、**全 (flavor, site1, site2) の組を
+  h.c. 側もゼロ要素も含めて**出力する(密ダンプ)
+- `<para>_pmfband_opt.dat` — **診断系**。各フレーバーの固有値
 - 固有ベクトルは大きくなるので既定 OFF(`with_vectors = true` で
-  `<para>_pmfvec_opt.dat` に出す)
+  `<para>_pmfvec_opt.dat` に出す。こちらも診断系)
 
 **唯一の正は α 側**(`<para>_pmfpara_opt.dat`)。このファイルは α から H を組み直す
 手間を省くための便宜で、α と齟齬が出たら α を信じること。
+
+## `.def` 族の形式規約(v3.5)
+
+`clean_line` が `#` と `//` を除去するのは **Julia 移植で足された拡張**で、mVMC の
+.def 形式にコメント機能はない。.def 族の出力に `#` を**書かないし読まない**。
+読み手はヘッダ 5 行を固定でスキップする(`parse_input_parameter_file` の
+`data_start = 6` と整合)。既存 per-block writer は 4 行ヘッダで読み手と食い違うが、
+**既存側には触らない**(DESIGN §11 に upstream 報告候補として記録済み)。
+
+## pmftrans.def との関係
+
+行の**形式**は pmftrans.def のデータ行と同じだが、**内容は 1 対 1 ではない**。
+pmftrans は片方向のみ列挙して h.c. を暗黙付与する規約なのに対し、こちらは
+H^(f) の全要素をそのまま並べる(h.c. 側も入る)。したがって
+**このファイルをそのまま pmftrans.def として再投入することはできない**
+(逆向き重複としてテンプレート build が弾く)。キーワードを `NPmfHam` にしてあるのは
+そのため — pmftrans パーサの `NPartonMFTrans` とは別物であることを名前で示す。
+
+## 行順(決定論)
+
+`(flavor, site1, site2)` の辞書順で全組を走査する。run 間で `diff` が取れることが
+再現性・回帰テストの前提。
 """
 function parton_write_mfham(data::ExpertModeData, mfham::PartonMFHamiltonian, dir;
                             with_vectors::Bool = false)
@@ -121,29 +147,30 @@ function parton_write_mfham(data::ExpertModeData, mfham::PartonMFHamiltonian, di
 
     ham_path = _parton_para_out(data, "_pmfham_opt.dat", dir)
     open(ham_path, "w") do f
-        println(f, "# 最適化後の平均場ハミルトニアン H^(f)(alpha*)")
-        println(f, "# 唯一の正は alpha 側(*_pmfpara_opt.dat)。これは再構成の手間を省く便宜。")
-        println(f, "# flavor(1-based)  site1(1-based)  site2  Re  Im")
-        @printf(f, "NFlavor %d\nNSite %d\n", n_flavor, n_site)
-        for fl = 1:n_flavor, i = 1:n_site, j = 1:n_site
-            v = mfham.h_mf[fl][i, j]
-            abs(v) > 1e-14 || continue
-            @printf(f, "%d %d %d % .18e % .18e\n", fl, i, j, real(v), imag(v))
+        println(f, PARTON_DEF_RULE)
+        println(f, "NPmfHam $(n_flavor * n_site * n_site)")
+        println(f, PARTON_DEF_RULE)
+        println(f, "== site1 flavor1 site2 flavor2 ReH ImH ==")
+        println(f, PARTON_DEF_RULE)
+        for fl = 0:(n_flavor - 1), i = 0:(n_site - 1), j = 0:(n_site - 1)
+            v = mfham.h_mf[fl + 1][i + 1, j + 1]   # 0-based → 1-based はここだけ
+            @printf(f, "%d %d %d %d % .18e % .18e\n", i, fl, j, fl, real(v), imag(v))
         end
     end
 
     band_path = _parton_para_out(data, "_pmfband_opt.dat", dir)
     open(band_path, "w") do f
-        println(f, "# 最適化後の平均場バンド(固有値、昇順)")
-        println(f, "# flavor  level(1-based)  eigenvalue  occupied(1=占有)")
-        @printf(f, "NFlavor %d\nNSite %d\nNElec %d\n", n_flavor, n_site, n_elec)
+        @printf(f, "# NFlavor %d  NSite %d  NElec %d\n", n_flavor, n_site, n_elec)
         for fl = 1:n_flavor
             ev = mfham.eig_vals[fl]
             gap = n_elec < n_site ? ev[n_elec + 1] - ev[n_elec] : NaN
-            @printf(f, "# flavor %d  HOMO=% .10e  LUMO=% .10e  gap=% .10e\n",
-                    fl, ev[n_elec], n_elec < n_site ? ev[n_elec + 1] : NaN, gap)
+            @printf(f, "# gap flavor %d % .18e\n", fl - 1, gap)
+        end
+        println(f, "# flavor band_index eigenvalue occupied")
+        for fl = 1:n_flavor
+            ev = mfham.eig_vals[fl]
             for k = 1:n_site
-                @printf(f, "%d %d % .18e %d\n", fl, k, ev[k], k <= n_elec ? 1 : 0)
+                @printf(f, "%d %d % .18e %d\n", fl - 1, k - 1, ev[k], k <= n_elec ? 1 : 0)
             end
         end
     end
@@ -152,11 +179,11 @@ function parton_write_mfham(data::ExpertModeData, mfham::PartonMFHamiltonian, di
     if with_vectors
         vec_path = _parton_para_out(data, "_pmfvec_opt.dat", dir)
         open(vec_path, "w") do f
-            println(f, "# 平均場固有ベクトル  flavor  level  site  Re  Im")
-            @printf(f, "NFlavor %d\nNSite %d\n", n_flavor, n_site)
+            println(f, "# flavor band_index site Re Im")
             for fl = 1:n_flavor, k = 1:n_site, i = 1:n_site
                 v = mfham.eig_vecs[fl][i, k]
-                @printf(f, "%d %d %d % .18e % .18e\n", fl, k, i, real(v), imag(v))
+                @printf(f, "%d %d %d % .18e % .18e\n", fl - 1, k - 1, i - 1,
+                        real(v), imag(v))
             end
         end
     end
@@ -274,6 +301,59 @@ function parton_write_conv(data::ExpertModeData, dir)
             @printf(f, "%6d % .17g % .17g % .17g % .17g\n",
                     k, ek, var[k], abs(ek - e_tail),
                     ek == 0 ? NaN : var[k] / (ek * ek))
+        end
+    end
+    return path
+end
+
+# =====================================================================
+# G. CalcTimer(パートンセクション)
+# =====================================================================
+
+"""
+パートンモードの CalcTimer セクション。
+
+## ID 帯の選定(v3.5)
+
+既存で使用中の ID は **0–72 / 600–603 / 920–966**(リポジトリ全体を grep して確認)。
+C 版 mVMC の `OutputTimerParaOpt` は 0–99 を主要フェーズに、600 番台を lspinflip の
+下位に使う体系で、920 番台以降は Julia 移植が足した診断。**800 番台は完全に空き**で、
+C 版の番号体系(0–99 / 600 番台)からも Julia 移植の診断(900 番台)からも離れているので
+将来の衝突が最も起きにくい。`CTIMER_N = 1000` なので上限内。
+
+ラベル書式は既存 `CTIMER_PARA_OPT_LINES` と同じ `"  Label  [ID] "` + `%12.5f`。
+タイマは C と同じく **inclusive**(親を止めずに子を回す)。
+"""
+const CTIMER_PARTON_LINES = Tuple{String,Int}[
+    ("Parton total               [800] ", 800),
+    ("  contract0 H+eigen        [801] ", 801),
+    ("  contract0' dPhi          [802] ", 802),
+    ("  sampling                 [803] ", 803),
+    ("    contract1 recompute    [804] ", 804),
+    ("    contract2 ratio        [805] ", 805),
+    ("    contract3 update       [806] ", 806),
+    ("  main_cal                 [807] ", 807),
+    ("    contract4 E_loc        [808] ", 808),
+    ("    contract5 O            [809] ", 809),
+    ("    OO accumulate          [810] ", 810),
+    ("  SR                       [811] ", 811),
+    ("  sync                     [812] ", 812),
+    ("  output                   [813] ", 813),
+]
+
+"""
+    parton_write_ctimer(data, timer, dir)
+
+`<head>_CalcTimer.dat` に**追記**する。既存の `write_ctimer_para_opt` が
+先に本体セクションを `"w"` で書いた後に呼ぶこと。既存 writer には触らず、
+同じファイルにパートンセクションを足すためにこの形にしてある。
+"""
+function parton_write_ctimer(data::ExpertModeData, timer::CTimer, dir)
+    dir === nothing && return nothing
+    path = _parton_out(data, "_CalcTimer.dat", dir)
+    open(path, "a") do f
+        for (label, id) in CTIMER_PARTON_LINES
+            print(f, label, @sprintf("%12.5f\n", ctimer_seconds(timer, id)))
         end
     end
     return path

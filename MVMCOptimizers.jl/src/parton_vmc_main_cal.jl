@@ -344,7 +344,8 @@ O の蓄積は既存の `calculate_oo!` / `calculate_oo_store!` にそのまま�
 これらは sr_opt_o の中身と (w, e) にしか依存しないので、MF ブロックが
 非正則であることは蓄積側に影響しない。
 """
-function parton_main_cal!(pstate::PartonOptimizationState, data::ExpertModeData)
+function parton_main_cal!(pstate::PartonOptimizationState, data::ExpertModeData;
+                          c_timer::CTimer = CTIMER_DISABLED)
     amp = pstate.amp
     cfg = pstate.config
     mfham = pstate.mfham
@@ -386,16 +387,20 @@ function parton_main_cal!(pstate::PartonOptimizationState, data::ExpertModeData)
             continue
         end
 
+        ctimer_start!(c_timer, 808)
         e = parton_local_energy(pstate, data, ip)
+        ctimer_stop!(c_timer, 808)
         w = 1.0
 
         energy.wc += w
         energy.etot += w * e
         energy.etot2 += w * conj(e) * e
 
+        ctimer_start!(c_timer, 809)
         parton_fill_sr_opt_o!(
             sr.sr_opt_o, amp, mfham, cfg, data, qp_weight, ip, n_proj;
             project_gauge = gauge_proj, alpha = α_now)
+        ctimer_stop!(c_timer, 809)
 
         if use_store
             calculate_oo_store!(
@@ -418,6 +423,7 @@ function parton_main_cal!(pstate::PartonOptimizationState, data::ExpertModeData)
     # <O†O> は最後にまとめて store から組む(既存 vmc_main_cal! と同じ段取り)。
     # これを落とすと直接ソルバが全ゼロの S を受け取り、SR が NaN を返す。
     if use_store
+        ctimer_start!(c_timer, 810)
         finalize_oo_store!(
             sr.sr_opt_oo,
             sr.sr_opt_o_store,
@@ -425,6 +431,7 @@ function parton_main_cal!(pstate::PartonOptimizationState, data::ExpertModeData)
             n_stored,               # 実際に詰めた個数。wc の母数と揃える
             nsrcg = false,          # 門番が NSRCG = 0 を保証している
         )
+        ctimer_stop!(c_timer, 810)
     end
 
     n_skipped > 0 && @warn "Skipped samples sitting on a node of the wave function" n_skipped

@@ -164,7 +164,7 @@ end
     ===============================
     NPmfParaIdx <n_idx>
     ===============================
-    ===============================
+    == idx ReAlpha ImAlpha ==
     ===============================
     <idx 0-based> <Re %.18e> <Im %.18e>
 
@@ -188,7 +188,7 @@ function parton_write_pmfpara(data::ExpertModeData, path::AbstractString)
         println(f, "===============================")
         println(f, "NPmfParaIdx $n_idx")
         println(f, "===============================")
-        println(f, "===============================")
+        println(f, "== idx ReAlpha ImAlpha ==")
         println(f, "===============================")
         for k = 1:n_idx
             @printf(f, "%d % .18e % .18e \n", k - 1, real(α[k]), imag(α[k]))
