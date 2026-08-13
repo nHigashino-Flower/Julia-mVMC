@@ -185,6 +185,46 @@ function parton_calculate_o!(
     return nothing
 end
 
+"""
+    _parton_conjugate_mf_slots!(sr_opt_o, n_proj, n_idx)
+
+MF ブロックのスロットを複素共役にしてから上流のアキュムレータへ渡す。
+
+実パラメータ θ に対する変分エネルギーの勾配は
+
+    ∂E/∂θ = 2 Re[ ⟨E_loc O_θ*⟩ − ⟨E_loc⟩⟨O_θ*⟩ ]
+
+で、O には共役が要る。ところが既存の `calculate_oo!` / `calculate_oo_store!` は
+`HO[j] += w · e · srOptO[j]` と共役なしで蓄積し、`build_s_matrix_and_g_vector!` は
+その実部をそのまま力ベクトルに使う。f_ij のように波動関数がパラメータについて
+正則な場合は、その規約と 2 スロット(val, val·im)の詰め方が噛み合って正しい
+勾配になるが、H が α* を含む MF ブロックは非正則なので噛み合わない。
+
+共役を先に取っておくと、上流が読む量は
+
+    HO[j]     → ⟨e · O_j*⟩        (これが必要な形)
+    OO[0][j]  → ⟨O_j*⟩            (実部は ⟨O_j⟩ と同じ)
+    OO[i][j]  → ⟨O_i O_j*⟩ 相当   (build が使うのは実部だけで不変)
+
+となり、S 行列は変わらないまま力ベクトルだけが正しくなる。この対応は
+有限差分による勾配検証で確認してある(test_parton_ed_convergence.jl)。
+
+契約 5 の `parton_calculate_o!` 自体は DESIGN §1.4 の O をそのまま格納する。
+上流の規約に合わせる変換はここ(受け渡し点)に閉じ込める。
+"""
+function _parton_conjugate_mf_slots!(
+    sr_opt_o::AbstractVector{ComplexF64},
+    n_proj::Int,
+    n_idx::Int,
+)
+    @inbounds for k = 1:n_idx
+        p = n_proj + k
+        sr_opt_o[o_slot_re(p)] = conj(sr_opt_o[o_slot_re(p)])
+        sr_opt_o[o_slot_im(p)] = conj(sr_opt_o[o_slot_im(p)])
+    end
+    return nothing
+end
+
 # ---------------------------------------------------------------------
 # サンプルループ
 # ---------------------------------------------------------------------
@@ -246,6 +286,7 @@ function parton_main_cal!(pstate::PartonOptimizationState, data::ExpertModeData)
         sr.sr_opt_o[1] = ComplexF64(1)     # 既存規約: 先頭 2 スロットは (1, 0)
         sr.sr_opt_o[2] = ComplexF64(0)
         parton_calculate_o!(sr.sr_opt_o, amp, mfham, cfg, data, qp_weight, ip, n_proj)
+        _parton_conjugate_mf_slots!(sr.sr_opt_o, n_proj, mfham.n_idx)
 
         if use_store
             calculate_oo_store!(
