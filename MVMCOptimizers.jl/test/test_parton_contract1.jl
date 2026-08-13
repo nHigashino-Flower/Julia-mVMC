@@ -60,9 +60,12 @@ end
         t = ComplexF64(-1.0, 0.3),
     )
     shift = [collect(2:n_site); 1]
-    data.qp_trans = [collect(1:n_site), shift]
-    data.qp_trans_sgn = [ones(Int, n_site), [iseven(r) ? 1 : -1 for r = 1:n_site]]
-    qp_weight = ComplexF64[0.5, 0.5]
+    qp_weight = set_shift_qp!(
+        data,
+        [collect(1:n_site), shift],
+        [ones(Int, n_site), [iseven(r) ? 1 : -1 for r = 1:n_site]],
+        ComplexF64[0.5, 0.5],
+    )
 
     mfham = build_toy_mfham(data)
     sites = [2, 5]

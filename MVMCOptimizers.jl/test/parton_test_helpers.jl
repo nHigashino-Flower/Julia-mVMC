@@ -59,12 +59,45 @@ function toy_mf_data(;
     return data
 end
 
-"恒等 QP(射影なし)を実体化する。n_qp = 1、重みは 1。"
+"""
+    set_identity_qp!(data) -> Vector{ComplexF64}
+
+恒等 QP(射影なし、n_qp = 1、重み 1)を実体化して重みベクトルを返す。
+`data.qp_weights` も既存の init_qp_weight! で埋めるので、
+`parton_qp_weight(data)` から同じ値が読める。
+"""
 function set_identity_qp!(data::MVMCExpertModeParsers.ExpertModeData)
     n_site = data.modpara.nsite
     data.qp_trans = [collect(1:n_site)]
     data.qp_trans_sgn = [ones(Int, n_site)]
-    return ComplexF64[1]
+    data.modpara.nsp_gauss_leg = 1
+    data.modpara.nsp_stot = 0
+    data.modpara.nmp_trans = 1
+    data.para_qp_trans = ComplexF64[1]
+    MVMCExpertModeParsers.init_qp_weight!(data)
+    return data.qp_weights.qp_full_weight
+end
+
+"""
+    set_shift_qp!(data, shifts, sgns, weights) -> Vector{ComplexF64}
+
+非自明な並進 QP を実体化する。`shifts[qp][r]` は 1-based の写像、
+`sgns[qp][r]` はサイトごとの符号。
+"""
+function set_shift_qp!(
+    data::MVMCExpertModeParsers.ExpertModeData,
+    shifts::Vector{Vector{Int}},
+    sgns::Vector{Vector{Int}},
+    weights::Vector{ComplexF64},
+)
+    data.qp_trans = shifts
+    data.qp_trans_sgn = sgns
+    data.modpara.nsp_gauss_leg = 1
+    data.modpara.nsp_stot = 0
+    data.modpara.nmp_trans = length(shifts)
+    data.para_qp_trans = copy(weights)
+    MVMCExpertModeParsers.init_qp_weight!(data)
+    return data.qp_weights.qp_full_weight
 end
 
 """

@@ -84,6 +84,7 @@ include("parton_types.jl")
 include("parton_unsupported_inputs.jl")
 include("parton_orbital.jl")
 include("parton_calculate_m_all.jl")
+include("parton_vmc_sampling.jl")
 
 # Export main functions
 export ParallelContext, serial_context, build_parallel_context, is_output_rank
