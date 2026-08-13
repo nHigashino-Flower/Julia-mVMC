@@ -135,6 +135,11 @@ mutable struct ModParaParameters
     # Orbital parameters
     n_orbital_idx::Int  # Number of unique orbital parameters (from NOrbitalIdx in orbitalidx.def)
 
+    # --- parton-mode (fork addition) ---
+    parton_mode::Int          # PartonMode: 0=既存 mVMC / 1=パートン平均場 VMC
+    nflavor::Int              # NFlavor: フレーバー数(PartonMode=1 で必須)
+    nblock_update_size::Int   # NBlockUpdateSize: 受理 N 回ごとに振幅を厳密再計算する錨
+
     function ModParaParameters(;
         nsite::Int = 0,
         nelec::Int = 0,
@@ -180,6 +185,10 @@ mutable struct ModParaParameters
         n_two_body_g_ex::Int = 0,
         nex_update_path::Int = 1,
         n_orbital_idx::Int = 0,
+        # --- parton-mode (fork addition) ---
+        parton_mode::Int = DEFAULT_PARTON_MODE,
+        nflavor::Int = DEFAULT_NFLAVOR,
+        nblock_update_size::Int = DEFAULT_NBLOCK_UPDATE_SIZE,
     )
         new(
             nsite,
@@ -225,6 +234,10 @@ mutable struct ModParaParameters
             n_two_body_g_ex,
             nex_update_path,
             n_orbital_idx,
+            # --- parton-mode (fork addition) ---
+            parton_mode,
+            nflavor,
+            nblock_update_size,
         )
     end
 end
@@ -698,6 +711,40 @@ struct ProjectionLayout
     n_proj::Int
 end
 
+# --- parton-mode (fork addition) ---
+"""
+    PartonMFTransTerm
+"""
+struct PartonMFTransTerm
+    site1::Int
+    flavor1::Int
+    site2::Int
+    flavor2::Int
+    value::ComplexF64
+    is_complex::Bool
+end
+
+"""
+    PartonMFParaTerm
+"""
+mutable struct PartonMFParaTerm
+    site1::Int
+    flavor1::Int
+    site2::Int
+    flavor2::Int
+    idx::Int
+    value::ComplexF64
+    is_complex::Bool
+end
+
+struct PhysHopTerm            # 物理ハミルトニアンの定義 = 不変(値は変分でない)
+    site1      :: Int
+    site2      :: Int
+    value      :: ComplexF64
+    is_complex :: Bool
+end
+# --------------------------------------
+
 """
     ExpertModeData
 
@@ -792,6 +839,11 @@ mutable struct ExpertModeData
     # orbital block begins, mirroring readdef.c (Slater[iNOrbitalAntiParallel + idx]).
     n_orbital_anti_parallel::Int
 
+    # Parton-mode (fork addition)
+    pmftrans_terms::Vector{PartonMFTransTerm}
+    pmfpara_terms::Vector{PartonMFParaTerm}
+    pmfpara_idx_matrix::Union{Nothing,Matrix{Int}} # PartonMFParaIdx[ri, rj] = idx for site pair (ri, rj) (0-based indexing)
+
     function ExpertModeData()
         new(
             ModParaParameters(),
@@ -851,6 +903,9 @@ mutable struct ExpertModeData
             0,
             0,  # i_flg_orbital_general, i_flg_orbital_anti_parallel, i_flg_orbital_parallel (default: 0)
             0,  # n_orbital_anti_parallel (NArrayAP, default: 0)
+            PartonMFTransTerm[],
+            PartonMFParaTerm[],
+            nothing, # pmfpara_idx_matrix
         )
     end
 end

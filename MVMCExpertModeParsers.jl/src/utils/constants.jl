@@ -41,6 +41,8 @@ const MVMC_KEYWORDS = Dict{String,String}(
     "TwoBodyGEx" => "greentwoex.def",
     "InterAll" => "interall.def",
     "OptTrans" => "opttrans.def",
+    "PartonMFTrans" => "pmftrans.def", # Parton-mode (fork addition)
+    "PartonMFPara" => "pmfpara.def", # Parton-mode (fork addition)
     # Input parameter files (ReadInputParameters)
     "InGutzwiller" => "ingutzwiller.def",
     "InJastrow" => "injastrow.def",
@@ -60,6 +62,7 @@ const MVMC_KEYWORDS = Dict{String,String}(
     "InOrbitalParallel" => "inorbitalparallel.def",
     "InOrbitalGeneral" => "inorbitalgeneral.def",
     "InOptTrans" => "inopttrans.def",
+    "InPartonMFPara" => "inpmfpara.def", # Parton-mode (fork addition)
 )
 
 # Keyword indices matching C enum KWIdxInt
@@ -144,6 +147,10 @@ const DEFAULT_N_TWO_BODY_G = 0
 const DEFAULT_N_TWO_BODY_G_EX = 0
 const DEFAULT_NEX_UPDATE_PATH = 1
 const DEFAULT_NSPLIT_SIZE = 1  # Default value for NSplitSize (from C SetDefaultValuesModPara)
+# --- parton-mode (fork addition) ---
+const DEFAULT_PARTON_MODE = 0
+const DEFAULT_NFLAVOR = 0
+const DEFAULT_NBLOCK_UPDATE_SIZE = 16
 
 # Error messages
 const ERROR_FILE_NOT_FOUND = "File not found"
