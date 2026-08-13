@@ -1,26 +1,50 @@
 """
-PartonMFPara Parser
+PartonMFPara Parser  --- parton-mode (fork addition) ---
 
-Parser for pmfpara.def files containing parton mean-field parameter terms.
+pmfpara.def のパーサ: パートン平均場の変分パラメータ α と idx 写像。
+α の正準置き場は `PartonMFParaTerm.value` で、SR のパラメータロケータが
+直接読み書きする(DESIGN §1.2)。
+
+形式(0-based サイト・フレーバー・idx、複素値 2 列):
+
+    =============================================
+    NPartonMFParaIdx  2
+    ComplexType       1
+    =============================================
+    =============================================
+    0 0 1 0  0  -1.0  0.0      <- site1 flavor1 site2 flavor2 idx Re Im
+    1 1 2 1  1  -1.0  0.0
+    0 1                        <- 末尾フラグ行: idx OptFlag
+    1 0
+
+規約(DESIGN §2.3):
+- idx は 0-based の連番。同一 idx の複数セル(フレーバー跨ぎ可)は α の共有で、
+  value の一致検証と連番性の検査はテンプレート build / 門番が行う
+- 末尾フラグ行はゲージ固定・固定項の表現(欠落ではなく OptFlag 凍結)
+パーサ自身は家風どおり「忠実な読み手」に徹する。
 """
 
 """
-    parse_parton_mf_params_def(filepath::String) -> Tuple{ParseResult{Vector{PartonMFParaTerm}}, Dict{Int, Int}, Int}
+    parse_parton_mf_para_def(filepath::String)
+        -> Tuple{ParseResult{Vector{PartonMFParaTerm}}, Dict{Int,Int}, Int}
 
-Parse orbital.def file from file path.
-Returns parton mean-field parameter terms, OptFlag dictionary (idx -> opt_flag), and the header
-declared parameter count (`NPartonMFParaIdx`). The declared count
-is the authoritative parameter count even when some indices are unreferenced.
+pmfpara.def をファイルパスから読む。返り値は (項のパース結果, OptFlag 辞書
+(0-based idx -> flag), ヘッダ宣言のパラメータ数 NPartonMFParaIdx)。
 """
-function parse_parton_mf_params_def(
+function parse_parton_mf_para_def(
     filepath::String,
 )::Tuple{ParseResult{Vector{PartonMFParaTerm}},Dict{Int,Int},Int}
     try
         content = read_def_file(filepath)
-        return parse_parton_mf_params_content(content)
+        return parse_parton_mf_para_content(content)
     catch e
         return (
-            ParseResult{Vector{PartonMFParaTerm}}(false, nothing, "Error reading file: $e", 0),
+            ParseResult{Vector{PartonMFParaTerm}}(
+                false,
+                nothing,
+                "Error reading file: $e",
+                0,
+            ),
             Dict{Int,Int}(),
             0,
         )
@@ -28,149 +52,83 @@ function parse_parton_mf_params_def(
 end
 
 """
-    parse_parton_mf_params_content(content::String) -> Tuple{ParseResult{Vector{PartonMFParaTerm}}, Dict{Int, Int}, Int}
+    parse_parton_mf_para_content(content::String)
+        -> Tuple{ParseResult{Vector{PartonMFParaTerm}}, Dict{Int,Int}, Int}
 
-Parse pmfpara.def content from string.
-Returns parton mean-field parameter terms, OptFlag dictionary (idx -> opt_flag), and the header
-declared parameter count (0 for the headerless legacy format, where it falls
-back to `max(idx)+1`).
+pmfpara.def の中身を文字列から読む。7 トークン行が α セル、2 トークン行が
+末尾の OptFlag 行。
 """
-function parse_parton_mf_params_content(
+function parse_parton_mf_para_content(
     content::String,
-)::Tuple{ParseResult{Vector{PatonMFParaTerm}},Dict{Int,Int},Int}
+)::Tuple{ParseResult{Vector{PartonMFParaTerm}},Dict{Int,Int},Int}
     context = ParsingContext("pmfpara.def")
-    terms = OrbitalTerm[]
+    terms = PartonMFParaTerm[]
+    opt_flags = Dict{Int,Int}()
+    declared = -1
+    is_complex_flag = false
 
     lines = split(content, '\n')
-
-    # Skip header lines (first 5 lines) for pmfpara.def format
-    # Format: =============================================
-    #         NPartonMFParaIdx          N
-    #         ComplexType          flag
-    #         =============================================
-    #         =============================================
-    # Then data lines: site1 flavor1 site2 flavor2 idx (NPartonMFParaIdx lines), then idx opt_flag (NPara lines)
-    IGNORE_LINES_IN_DEF = 5
-    start_line = 1
-
-    # Read NPartonMFParaIdx from header (line 2: "NPartonMFParaIdx N")
-    n_partonmfpara_idx = 0
-    has_header = false
-    if length(lines) > 1
-        header_line = clean_line(lines[2])
-        tokens = split_def_line(header_line)
-        # Accept any NPartonMFPara* header keyword (NPartonMFParaIdx,
-        if length(tokens) >= 2 && startswith(tokens[1], "NPartonMFPara")
-            n_partonmfpara_idx = safe_parse_int(tokens[2], 0)
-            has_header = true
-        end
-    end
-
-    # Read ComplexType from header (line 3: "ComplexType flag")
-    complex_type = 0
-    if has_header && length(lines) > 2
-        complex_type_line = clean_line(lines[3])
-        tokens = split_def_line(complex_type_line)
-        if length(tokens) >= 2 && tokens[1] == "ComplexType"
-            complex_type = safe_parse_int(tokens[2], 0)
-        end
-    end
-    # Convert to boolean: 0 = false (real), != 0 = true (complex)
-    is_complex_flag = (complex_type != 0)
-
-    # Check if this looks like pmfpara.def format (has header)
-    if length(lines) > IGNORE_LINES_IN_DEF && has_header
-        first_data_line = clean_line(lines[IGNORE_LINES_IN_DEF+1])
-        if !isempty(first_data_line)
-            tokens = split_def_line(first_data_line)
-            # If first data line has at least 5 tokens (site1 flavor1 site2 flavor2 idx), skip header
-            if length(tokens) >= 5
-                start_line = IGNORE_LINES_IN_DEF + 1
-            end
-        end
-    end
-
-    # If no header, process all lines normally (orbital.def format)
-    if !has_header
-        start_line = 1
-    end
-
-    # Parse all PartonMFParaIdx entries (5-column lines: site1 flavor1 site2 flavor2 idx)
-    # Note: pmfpara.def has N_site * N_site * Nflavor * Nflavor PartonMFParaIdx entries (64 for 4 sites and 2 flavors),
-    # followed by NPartonMFParaIdx OptFlag entries (idx opt_flag format, 2 columns).
-    # The NPartonMFParaIdx value is the number of unique parton mean-field parameters, NOT the number of PartonMFParaIdx entries.
-    processing_partonmfpara_idx = true  # Flag to track if we're still in PartonMFParaIdx section
-    opt_flags = Dict{Int,Int}()  # Store OptFlag: idx -> opt_flag
-
-    for line_num = start_line:length(lines)
-        line = lines[line_num]
+    for (line_num, line) in enumerate(lines)
         context.line_number = line_num
-        clean_line_str = clean_line(line)
+        cl = clean_line(line)
+        isempty(cl) && continue
 
-        if isempty(clean_line_str)
-            continue
-        end
+        tokens = split_def_line(cl)
+        isempty(tokens) && continue
 
-        tokens = split_def_line(clean_line_str)
-
-        # 2-column lines are OptFlag (idx opt_flag format)
-        # Once we see 2-column lines after 5-column lines, we're done with PartonMFParaIdx
-        if length(tokens) == 2
-            if processing_partonmfpara_idx && !isempty(terms)
-                # We've finished PartonMFParaIdx section, now in OptFlag section
-                processing_partonmfpara_idx = false
-            end
-
-            # Parse OptFlag: idx opt_flag
-            if !processing_partonmfpara_idx
-                try
-                    idx = safe_parse_int(tokens[1], -1)
-                    opt_flag = safe_parse_int(tokens[2], 0)
-                    if idx >= 0
-                        opt_flags[idx] = opt_flag
-                    end
-                catch e
-                    push!(context.errors, "Line $line_num: Error parsing OptFlag: $e")
+        # 数字で始まらない行はヘッダ。NPartonMFParaIdx と ComplexType だけ拾う。
+        if tryparse(Int, String(tokens[1])) === nothing
+            if length(tokens) >= 2
+                key = String(tokens[1])
+                if startswith(key, "NPartonMFPara")
+                    v = tryparse(Int, String(tokens[2]))
+                    v !== nothing && (declared = v)
+                elseif key == "ComplexType"
+                    v = tryparse(Int, String(tokens[2]))
+                    v !== nothing && (is_complex_flag = v != 0)
                 end
             end
             continue
         end
 
-        if length(tokens) < 5
-            continue
-        end
-
-        # Only process 5-column lines in PartonMFParaIdx section
-        if !processing_partonmfpara_idx
-            continue
-        end
-
-        try
-            # Pass is_complex_flag to parse_orbital_term
-            term = parse_parton_mf_params_term(tokens, context, is_complex_flag)
-            if term !== nothing
-                push!(terms, term)
+        if length(tokens) == 2
+            # 末尾フラグ行: idx OptFlag
+            idx = tryparse(Int, String(tokens[1]))
+            flag = tryparse(Int, String(tokens[2]))
+            if idx === nothing || flag === nothing || idx < 0
+                push!(
+                    context.errors,
+                    "Line $line_num: invalid PartonMFPara OptFlag row (need: idx flag)",
+                )
+            else
+                opt_flags[idx] = flag
             end
+            continue
+        end
+
+        length(tokens) < 7 && continue
+        try
+            term = parse_parton_mf_para_term(tokens, context, is_complex_flag)
+            term !== nothing && push!(terms, term)
         catch e
-            push!(context.errors, "Line $line_num: Error parsing parton mean-field params term: $e")
+            push!(
+                context.errors,
+                "Line $line_num: Error parsing parton mean-field parameter term: $e",
+            )
         end
     end
 
-    # Note: NPartonMFParaIdx is the number of unique parton mean-field parameters, not the number of PartonMFParaIdx entries.
-    # All PartonMFParaIdx entries (site pairs) should be parsed, even if there are more than NPartonMFParaIdx.
-
-    success = length(context.errors) == 0
+    success = isempty(context.errors)
     result = ParseResult{Vector{PartonMFParaTerm}}(
         success,
         success ? terms : nothing,
         join(context.errors, "; "),
         context.line_number,
     )
-    # Declared parameter count from the header.so it is the
-    # authoritative count even when some indices are unreferenced by site pairs.
-    # Fall back to max(idx)+1 only for the headerless legacy pmfpara.def format.
-    declared_count = if has_header
-        n_partonmfpara_idx
+
+    # ヘッダの宣言値が一意なパラメータ数。ヘッダが無い場合のみ max(idx)+1 で代替。
+    declared_count = if declared >= 0
+        declared
     elseif !isempty(terms)
         maximum(t.idx for t in terms) + 1
     else
@@ -180,63 +138,46 @@ function parse_parton_mf_params_content(
 end
 
 """
-    parse_parton_mf_params_term(tokens::Vector{String}, context::ParsingContext, is_complex_flag::Bool) -> Union{PartonMFParaTerm, Nothing}
+    parse_parton_mf_para_term(tokens, context, is_complex_flag) -> Union{PartonMFParaTerm, Nothing}
 
-Parse a single parton mean-field parameter term from tokens.
-For pmfpara.def format, tokens[5] is the parton mean-field parameter index (idx), not a value.
-The is_complex_flag comes from the ComplexType header in the file.
+1 行分: `site1 flavor1 site2 flavor2 idx Re Im`(0-based のまま格納)。
 """
-function parse_parton_mf_params_term(
-    tokens::Vector{String},
+function parse_parton_mf_para_term(
+    tokens::Vector{<:AbstractString},
     context::ParsingContext,
     is_complex_flag::Bool = false,
 )::Union{PartonMFParaTerm,Nothing}
-    if length(tokens) < 5
-        push!(context.warnings, "Insufficient tokens for parton mean-field parameter term")
+    site1 = tryparse(Int, String(tokens[1]))
+    flavor1 = tryparse(Int, String(tokens[2]))
+    site2 = tryparse(Int, String(tokens[3]))
+    flavor2 = tryparse(Int, String(tokens[4]))
+    idx = tryparse(Int, String(tokens[5]))
+    re = tryparse(Float64, String(tokens[6]))
+    imv = tryparse(Float64, String(tokens[7]))
+
+    if any(isnothing, (site1, flavor1, site2, flavor2, idx, re, imv))
+        push!(
+            context.errors,
+            "Line $(context.line_number): invalid PartonMFPara row " *
+            "(need: site1 flavor1 site2 flavor2 idx Re Im)",
+        )
+        return nothing
+    end
+    if idx < 0
+        push!(
+            context.errors,
+            "Line $(context.line_number): PartonMFPara idx must be >= 0, got $idx",
+        )
         return nothing
     end
 
-    # Parse site and flavor indices
-    site1 = safe_parse_int(tokens[1], -1)
-    flavor1 = safe_parse_int(tokens[2], -1)
-    site2 = safe_parse_int(tokens[3], -1)
-    flavor2 = safe_parse_int(tokens[4], -1)
-    
-    if site1 < 0 || site2 < 0
-        push!(context.errors, "Invalid site indices: $site1, $site2")
-        return nothing
-    end
-
-    if flavor1 < 0 || flavor2 < 0
-        push!(context.errors, "Invalid flavor indices: $flavor1, $flavor2")
-        return nothing
-    end
-
-    # Parse fifth token 
-    # For pmfpara.def: this is the parton mean-field parameter index (idx), not a value
-    # For pmfpara.def (legacy format): this might be a value
-    # Try to parse as integer first (pmfpara.def format)
-    idx = safe_parse_int(tokens[5], -1)
-
-    if idx >= 0
-        # This is pmfpara.def format: site1 flavor1 site2 flavor2 idx
-        # Value is not specified here, initialize to 0.0
-        # The actual value will be set from InPartonMFPara.def or during initialization
-        value = ComplexF64(0.0, 0.0)
-        # Store idx in PartonMFParaTerm
-        return PartonMFParaTerm(site1, flavor1, site2, flavor2, idx, value, is_complex_flag)
-    else
-        # Try to parse as a value (legacy pmfpara.def format)
-        value = safe_parse_complex(tokens[5])
-        # For legacy format, check if value has imaginary part
-        # But prefer the is_complex_flag if provided
-        if is_complex_flag
-            # Use flag from header
-        elseif imag(value) != 0.0
-            # Fallback to checking value if flag not provided
-            is_complex_flag = true
-        end
-        # Use is_complex_flag from ComplexType header
-        return PartonMFParaTerm(site1, flavor1, site2, flavor2, 0, value, is_complex_flag)
-    end
+    return PartonMFParaTerm(
+        site1,
+        flavor1,
+        site2,
+        flavor2,
+        idx,
+        ComplexF64(re, imv),
+        is_complex_flag,
+    )
 end

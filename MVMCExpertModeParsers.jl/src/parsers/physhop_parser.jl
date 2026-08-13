@@ -21,9 +21,6 @@ t_ij b†_j b_i(b_i = Π_f f^(f)_i)。
   V n_i n_i = V n_i(硬芯)で表現する)。検査は門番。
 - パーサ自身は家風どおり「忠実な読み手」: ヘッダ行は静かにスキップし、
   宣言個数 NPhysHop と実行数の不一致のみエラーに積む。
-
-貼り込み先: MVMCExpertModeParsers.jl/src/parsers/physhop_parser.jl
-(ファイル末尾に登録点3箇所+門番のスニペットをコメントで添付)
 """
 
 """
@@ -111,56 +108,3 @@ function parse_physhop_term(
     end
     return PhysHopTerm(site1, site2, ComplexF64(re, imv), imv != 0.0)
 end
-
-# =====================================================================
-# 登録スニペット(各既存ファイルの分岐末尾へ、fork マーカー付きで)
-# =====================================================================
-#
-# ① types/expert_types.jl — Term 構造体群の末尾(パートングループ内):
-#
-#     # --- parton-mode (fork addition) ---
-#     struct PhysHopTerm            # 物理ハミルトニアンの定義 = 不変(値は変分でない)
-#         site1      :: Int
-#         site2      :: Int
-#         value      :: ComplexF64
-#         is_complex :: Bool
-#     end
-#
-#   ExpertModeData 本体の一番下にフィールド追加+内部コンストラクタ new(...) 末尾に既定値:
-#
-#     physhop_terms :: Vector{PhysHopTerm}     # フィールド
-#     PhysHopTerm[],                           # new(...) 末尾
-#
-# ② utils/constants.jl — MVMC_KEYWORDS 表の末尾:
-#
-#     # --- parton-mode (fork addition) ---
-#     "PhysHop" => "physhop.def",
-#
-# ③ 入口ファイル parse_file_by_type! の elseif 連鎖末尾:
-#
-#     # --- parton-mode (fork addition) ---
-#     elseif file_type == "PhysHop"
-#         result = parse_physhop_def(file_path)
-#         result.success && (data.physhop_terms = result.data)
-#         # 失敗時は家風どおり警告経由で続行(致命化しない)。
-#         # 「読めているべきものが読めているか」は門番が検査する(下記④)
-#
-# ④ parton_unsupported_inputs.jl — validate_parton_data に追記:
-#
-#     # PhysHop: 存在・範囲・自己ループ禁止・逆向き重複禁止
-#     isempty(data.physhop_terms) && error(
-#         "No physical hopping terms parsed: physhop.def missing or failed. " *
-#         "Check parser warnings and the PhysHop entry in namelist.def.")
-#     seen = Set{NTuple{2,Int}}()
-#     for (k, t) in enumerate(data.physhop_terms)
-#         0 <= t.site1 < n_site && 0 <= t.site2 < n_site || error(
-#             "physhop.def term $k: site out of range")
-#         t.site1 != t.site2 || error(
-#             "physhop.def term $k: site1 == site2 is not allowed " *
-#             "(chemical potential goes to coulombinter diagonal rows)")
-#         (t.site1, t.site2) in seen && error("physhop.def: duplicate bond at term $k")
-#         (t.site2, t.site1) in seen && error(
-#             "physhop.def term $k: both directions listed — list once, h.c. is implicit")
-#         push!(seen, (t.site1, t.site2))
-#     end
-# =====================================================================

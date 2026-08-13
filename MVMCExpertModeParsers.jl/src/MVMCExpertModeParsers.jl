@@ -50,8 +50,10 @@ include("parsers/green_parser.jl")
 include("parsers/qptrans_parser.jl")
 include("parsers/rbm_parser.jl")
 include("parsers/doublon_holon_parser.jl")
-include("parsers/pmftrans_parser.jl")  # Parton-mode (fork addition)
-include("parsers/pmfpara_parser.jl")  # Parton-mode (fork addition)
+# --- parton-mode (fork addition) ---
+include("parsers/pmftrans_parser.jl")
+include("parsers/pmfpara_parser.jl")
+include("parsers/physhop_parser.jl")
 
 # Export main parsing function
 export parse_expert_mode_files
@@ -769,7 +771,7 @@ function parse_file_by_type!(data::ExpertModeData, file_type::String, file_path:
         else
             error("Failed to parse DH4 file '$file_path': $(result.error_message)")
         end
-    # Parton-mode (fork addition) ongoing...
+    # --- parton-mode (fork addition) ---
     elseif file_type == "PartonMFTrans"
         result = parse_parton_mf_trans_def(file_path)
         if result.success
@@ -778,12 +780,19 @@ function parse_file_by_type!(data::ExpertModeData, file_type::String, file_path:
             error("Failed to parse PartonMFTrans file '$file_path': $(result.error_message)")
         end
     elseif file_type == "PartonMFPara"
-        result = parse_parton_mf_para_def(file_path)
-        # PartonMFPara に関する情報で ExpertModeData に追加したい要素は　parse_parton_mf_para_def　がここで実装し、代入する。
+        result, opt_flags, _declared = parse_parton_mf_para_def(file_path)
         if result.success
             data.pmfpara_terms = result.data
+            data.pmfpara_opt_flags = opt_flags
         else
             error("Failed to parse PartonMFPara file '$file_path': $(result.error_message)")
+        end
+    elseif file_type == "PhysHop"
+        result = parse_physhop_def(file_path)
+        if result.success
+            data.physhop_terms = result.data
+        else
+            error("Failed to parse PhysHop file '$file_path': $(result.error_message)")
         end
     end
 end

@@ -41,8 +41,10 @@ const MVMC_KEYWORDS = Dict{String,String}(
     "TwoBodyGEx" => "greentwoex.def",
     "InterAll" => "interall.def",
     "OptTrans" => "opttrans.def",
-    "PartonMFTrans" => "pmftrans.def", # Parton-mode (fork addition)
-    "PartonMFPara" => "pmfpara.def", # Parton-mode (fork addition)
+    # --- parton-mode (fork addition) ---
+    "PartonMFTrans" => "pmftrans.def",
+    "PartonMFPara" => "pmfpara.def",
+    "PhysHop" => "physhop.def",
     # Input parameter files (ReadInputParameters)
     "InGutzwiller" => "ingutzwiller.def",
     "InJastrow" => "injastrow.def",
