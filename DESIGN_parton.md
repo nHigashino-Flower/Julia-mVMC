@@ -1,7 +1,9 @@
 # DESIGN: パートン平均場モード for Julia-mVMC
 
 - ステータス: **M2 完了**(§8 の 0〜17 と P 層 P0〜P2 全緑・既存回帰全緑。
-  SR の gap 崩壊漂流は応急処置済み・根治は §10)
+  SR の gap 崩壊漂流は **v3.12 で根治**(占有追跡 `PartonOccMode`。既定は従来と
+  ビット一致の opt-in)。機構は REPORT §15、実装の記録は §11)
+- 改訂: v3.12 (2026-08-14) — SR 漂流の根治: 占有追跡 PartonOccMode(§1.1 / §2.1 / §2.5 / §3.3.1 / §8-17)
 - 改訂: v3.11 (2026-08-13) — M2 完了: 物理密度 Jastrow(§1.1 / §2.3.2 / §8-16)+ SR 応急処置(§7 / §8-17)
 - ベース: tmisawa/Julia-mVMC v0.5.0(fork、ブランチ `parton-mode`)
 
@@ -36,7 +38,24 @@ P_J(x) = exp( Σ_{i<j} v_{ij} · n^b_i · n^b_j ),   n^b_i ∈ {0, 1}   (v3.11 M
 - P_G(Gutzwiller)は固縛下で自明化する(ダブロン数 = NElec の定数)ため**存在しない**。
   指定されたら門番が理由つきで拒否する(§2)
 
-- Φ^(f): H_MF^(f)(α) の下から Ne 個の固有ベクトル(占有軌道)
+- Φ^(f): H_MF^(f)(α) の固有ベクトルのうち**占有集合 `O^(f)` に属する Ne 本**(占有軌道)
+- **占有集合 `O` は導出量ではなく状態の一部**(v3.12)。`PartonOccMode` で選び方を切り替える:
+  - `0 = aufbau`(既定): 下から Ne 個。v3.11 までの唯一の規則で、既定挙動は不変
+  - `1 = mom`: 前ステップの占有部分空間との**重なり**が大きい Ne 本
+    (`score_m = ‖Φ_ref† φ_m‖²` の上位。フレーバーごとに独立)
+  - 値 2 以降は予約(門番が明示的に拒否)
+- **なぜ必要か**(REPORT §15): 変分多様体内の level crossing は回避型なので Φ(α) 自体は
+  連続だが、混成が効く境界層の幅は `w ~ gap` しかない。実測では gap ~ 5e-6 に対し SR の
+  ステップ長が 0.0017 = 層の幅の 300 倍以上あり、離散ステップから見ると Φ は不連続に
+  飛ぶ(主角 89.99°、同じ step で E が +1.1)。エネルギー順(断熱追跡)ではなく重なり
+  (ダイアバティック追跡)で選ぶと、この急回転そのものが消えて ∂Φ が有界に戻る。
+  **共変トラスト領域 `δ†Sδ ≤ r²` は原理的に効かない** — S は現在地の局所計量なので
+  300 倍先の層を予測できない
+- **タイブレークは決定論的**(スコア降順 → 固有値昇順 → band index 昇順)。同一入力・
+  同一シードでビット再現するために必要
+- `mom` では α → Φ が**履歴依存**になるので、占有集合を `_pmfocc_{init,opt}.dat` に
+  出力し `(α*, O*)` の組で状態が閉じるようにする(§3.3.1)。SR 終了後に
+  「占有がアウフバウと一致し、かつ gap が健全か」を検査して記録する(§2.5)
 - 配置は**フレーバー固縛**: 全フレーバーが常に同一サイト集合を占有し、同時に移動する
   (硬い Gutzwiller 射影と厳密等価。移動集合で拘束を保つ = 物理的セクター内サンプリング)
 - 量子数射影: 運動量射影(qptrans)対応。スピン射影は SU(2) 前提のため OFF(NSPGaussLeg=1)
@@ -129,7 +148,11 @@ per-QP 軌道は実体化しない(行置換+符号なので gather 時に写像
   C-mVMC の `NBlockUpdateSize`(スレーター行列のブロック更新閾値)とは**意味が違う**ので、
   同名を避けてフォーク固有の接頭辞を付けてある
 - **`PartonFlavorSymFast`**(v3.9): 1=フレーバー対称の自動検出 + det^F 高速路(既定)/
-  0=強制無効(完全に従来経路)。対称判定はテンプレート build が行う(§7)
+  0=強制無効(完全に従来経路)。対称判定はテンプレート build が行う(§7)。
+  高速路は「H^(f) が全フレーバーで同一」を前提に f=1 の結果を配るので、占有集合も
+  同一になるはず。**そうでなければ前提が崩れているので検出してエラー**にする(v3.12)
+- **`PartonOccMode`**(v3.12): 0=aufbau(既定、v3.11 と完全に同一)/ 1=mom(占有追跡)。
+  値 2 以降は予約で門番が拒否。機構と根拠は §1.1 / REPORT §15
 - 必須設定(門番が検査): `2Sz=0`(デフォルト −1=FSZ の罠)、`ComplexType=1`, `NVMCCalMode=0`,
   `NSRCG=0`, `NLanczosMode=0`, `NSPGaussLeg=1`, `NSPStot=0`, `NCond=-1`, `NLocSpin=0`,
   `NOrbitalIdx=0`, `NNeuron=0`, `NExUpdatePath=6`, `NSplitSize=1`(M1)
@@ -159,6 +182,18 @@ pmfpara.def の各行:
         ↓ 上書き(namelist.def に InPmfPara が書かれているときだけ)
 InPmfPara.def              → ウォームスタート / リスタート
 ```
+
+**確定順序(v3.12 で占有を追加)**:
+
+```
+pmfpara.def → 乱数 → InPmfPara.def 上書き → OptFlag 実体化 → 門番
+  → 初期占有の確定(参照が無いので PartonOccMode に依らず aufbau)
+  → gauge_target_norm 確定 → SR ループ
+```
+
+初期占有は `_pmfocc_init.dat` に落とす。`mom` はこの占有を出発点として枝を追う。
+**占有を入力で固定する経路(`InPmfOcc`)は作っていない** — 必要かどうかは §2.5 の
+終端検査が決める(REPORT §15-10)。
 
 - **「未入力」と「0 を指定」を列の有無で区別する**。値がゼロかどうかで分岐する判定は
   採らない — 意図的に α = 0 で始めたい結合を黙って乱数で埋めないため。
@@ -273,6 +308,20 @@ v の**値の意味だけ**が変数の取り方ぶん異なる。x = n−1 と�
     現れ、その群の一様成分を引いて潰す
   - スイッチは modpara の `PartonGaugeFix`(既定 1)。射影は bcast の**後**に適用する
     (α から決定論的に決まるので追加通信は不要)
+- **終端の自己完結性検査(v3.12)**。SR ループ終了後、最終 α で組み直した状態について
+  次の 2 条件を検査し、`zvo_parton_runinfo.dat` に記録する(§3.3.1):
+  1. `occ_gap_ok` — 占有↔非占有のギャップが数値誤差より十分大きく、かつ正
+  2. `occ_aufbau_ok` — 選ばれた占有が「下から Ne 個」と一致する
+
+  両方成立(`occ_selfcontained = 1`)なら **α\* 単独で状態が決まる**ので従来と同じ意味を
+  持つ。不成立なら**非アウフバウ最適解が本物**ということで、`_pmfocc_opt.dat` を必ず
+  添えて使う必要がある旨を `@warn` で知らせる。**どちらに転んでも黙って壊れない**。
+  - **この検査が、占有を入力で固定する経路(`InPmfOcc`)の要否を決める**。成立するなら
+    永久に不要。不成立ならそのとき実装する — 占有は既に出力に記録済みなので情報は
+    失われない(REPORT §15-10)
+  - 注意: **現行(aufbau)が常に成立するわけではない**。gap が潰れた α\* では条件 1 が
+    破れ、対角化しても占有が決まらない(バンドが分離しないので Chern 解析もできない)。
+    その意味で MOM は逸脱ではなく救済
 - **OptFlag はゲージ目的では使わない**(v3.2 で降格)。用途はエルミート性
   (オンサイト Im の強制凍結)とユーザーの明示的固定に限る。凍結には
   「最適解が α_rep = 0 のときスライスに到達できない」という失敗モードがある。
@@ -395,7 +444,15 @@ mVMC の .def 形式にコメント機能はない。**.def 族には `#` を書
 | ファイル | キーワード | データ行 |
 |---|---|---|
 | `zqp_pmfpara_opt.dat` / `zqp_pmfpara_init.dat` | `NPmfParaIdx` | `idx ReAlpha ImAlpha`(idx は 0-based) |
+| `zqp_pmfocc_opt.dat` / `zqp_pmfocc_init.dat` | `NPmfOcc` | `flavor band_index`(**どちらも 0-based**) |
 | `zqp_pmfham_opt.dat` | `NPmfHam` | `site1 flavor1 site2 flavor2 ReH ImH`(**サイト・フレーバーとも 0-based**) |
+
+`zqp_pmfocc_*.dat` は**占有集合 `O`**(§1.1)。行順は `(flavor, band_index)` の辞書順に
+固定。`_init` は初期占有の確定直後、`_opt` は SR ループ後に**最終 α で組み直してから**
+書く(pmfham と同じ理由)。`PartonOccMode = 1` では α → Φ が履歴依存になるので、
+このファイルが無いと α\* から状態を再現できない。`aufbau` の run でも書く
+(ファイルの有無で読み手の経路が分岐すると壊れやすいため)。**読み戻しの経路
+(`InPmfOcc`)は未実装** — 必要かどうかは §2.5 の終端検査が決める。
 
 `zqp_pmfham_opt.dat` は **全 (flavor, site1, site2) の組を h.c. 側もゼロ要素も含めて**
 出す密ダンプで、行順は `(flavor, site1, site2)` の辞書順に固定(run 間で `diff` が
@@ -416,11 +473,11 @@ pmftrans の `NPartonMFTrans` とは別物であることを名前で示すた�
 | ファイル | 内容 |
 |---|---|
 | `zvo_SRinfo.dat` | Npara/Msize/optCut/diagCut/sDiagMax/sDiagMin/absRmax/imax。**直接法パス**から既存 writer をそのまま呼ぶ(ヘッダ・列は CG 版と 1 文字も違わない) |
-| `zvo_parton_diag.dat` | step, min_gap, 受理率, α ノルム(ゲージ射影の前/後), 試行数, 受理数, 再計算数。既存カウンタと `PartonMFHamiltonian` の保持値を読むだけ |
+| `zvo_parton_diag.dat` | step, min_gap, 受理率, α ノルム(ゲージ射影の前/後), 試行数, 受理数, 再計算数, **n_occ_deviation**, **principal_angle_max**(v3.12)。既存カウンタと `PartonMFHamiltonian` の保持値を読むだけ。`min_gap` は**占有↔非占有の符号つき差**(§1.1)。`n_occ_deviation` は占有が「下から Ne 個」と一致しない本数で、常時非ゼロなら非アウフバウ最適解が本物ということ。`principal_angle_max` は前ステップの占有部分空間との主角の最大値(度)で、枝の乗り換えは 90° として現れる |
 | `zvo_parton_time.dat` | step, step_sec, cumulative_sec, **n_out, n_in, n_sample_total, n_update_total**(v3.10)。列名ヘッダの前に `# key value` で n_mpi_rank / n_julia_thread / nvmc_sample_total を併記(単体でスケーリング解析可)。**役割分担**: CalcTimer(§3.3.2)= 区間別の累積時間を最後に 1 回 / time = ステップ毎の経過時間と**サンプリング量**を逐次追記。区間別内訳は複製しない。n_out は初回 WarmUp+Sample・以降 Sample+1(式の家は `parton_n_out`)。C 版の `<head>_time_<idx>.dat` は受理率+試行カウンタ+ctime で列構成がパートンの実態と合わず(hop/ex/lsf は存在しない)、その役割は diag が担う |
-| `zqp_pmfband_opt.dat` | `flavor band_index eigenvalue occupied`(**flavor・band_index とも 0-based**)。`occupied` は下から `NElec` 個が 1。`# key value` 形式で NFlavor / NSite / NElec と各フレーバーの HOMO-LUMO ギャップを併記 |
+| `zqp_pmfband_opt.dat` | `flavor band_index eigenvalue occupied`(**flavor・band_index とも 0-based**)。`occupied` は**実際の占有集合**(§1.1)。aufbau では下から `NElec` 個が 1 になり従来と同じ。唯一の正は `zqp_pmfocc_opt.dat` 側。`# key value` 形式で NFlavor / NSite / NElec と各フレーバーの HOMO-LUMO ギャップを併記 |
 | `zqp_pmfvec_opt.dat` | 固有ベクトル。既定 OFF(`with_vectors = true` のときだけ) |
-| `zvo_parton_runinfo.dat` | `key value` 形式(`#` はコメント行)。base_seed / PartonMode / n_idx / githash / wall_sec に加え(v3.10)並列構成: n_mpi_rank / n_julia_thread / blas_num_threads / inner_threads_enabled / nsplit_size / nvmc_sample_per_rank / **nvmc_sample_total**(= NVMCSample × n_rank。comm0 allreduce の実効統計量。NSplitSize>1 解禁時は式の再確認が要る旨をコード内コメントに記載)。githash 取得失敗時は `"unknown"` で run は落ちない |
+| `zvo_parton_runinfo.dat` | `key value` 形式(`#` はコメント行)。base_seed / PartonMode / n_idx / githash / wall_sec、**PartonOccMode と終端の自己完結性検査**(`occ_selfcontained` / `occ_gap_ok` / `occ_aufbau_ok` / `occ_n_deviation` / `occ_min_gap`。v3.12、§2.5)に加え(v3.10)並列構成: n_mpi_rank / n_julia_thread / blas_num_threads / inner_threads_enabled / nsplit_size / nvmc_sample_per_rank / **nvmc_sample_total**(= NVMCSample × n_rank。comm0 allreduce の実効統計量。NSplitSize>1 解禁時は式の再確認が要る旨をコード内コメントに記載)。githash 取得失敗時は `"unknown"` で run は落ちない |
 | `zvo_conv.dat` | step, E, var, \|E − E_tail\|。`zvo_out.dat` の列を読み直したもの(再計算しない) |
 | `zvo_CalcTimer.dat` | §3.3.2 |
 
@@ -542,7 +599,11 @@ stochastic_opt!(案 B 後は MF ブロックも解く)/ weight_average / paralle
   pack/unpack スナップショットで巻き戻し、MC だけ進める。判定は sync 後 =
   全 rank 同一決定)、(3) **RedCut は 1e-6 を推奨**(参照の「必須」値。
   fixture 既定も 1e-6 へ。ライブラリ既定はもともと 1e-6)。
-  §8-17 が恒久検証。**根治(gap トラスト領域など)は §10 の未決事項**
+  §8-17 が恒久検証。**根治は §10 の未決事項**。
+  **注(v3.12 の診断で訂正)**: 上の「RedCut が健全方向を大量カット → SR が漂流」は
+  **症状の記述であって主犯ではない**。真の主犯はアウフバウ占有規則による枝の
+  不連続な乗り換えで、RedCut を撤廃しても軌跡は変わらない。「漂流」の実体も
+  **凍結**(発症すると 1 step の α 変化が 3.5e-8 に落ちる)。証拠は REPORT §15
 - ホットループ内アロケーションゼロ。eigen/lu の小確保は頻度が低く許容
 - デバッグ恒等式: v[m]==R / gather vs 実体化 / 錨の冪等性
 
@@ -696,6 +757,29 @@ stochastic_opt!(案 B 後は MF ブロックも解く)/ weight_average / paralle
    参照実装をそのまま実行して確認した対応(Nux=Nuy=4, Nsite=32):
    `puc(K)=2 → NQPTrans=2, uclist=[(0,0),(1,0)]`、`K=4 → 4 本`。
 
+17. **SR 安定化**(v3.11 で 17-1/17-2、v3.12 で 17-3 以降を追加。恒久)。
+   v3.11 の応急処置(`test_parton_srguard.jl`): (17-1) 契約 0′ の gap_tol clamp —
+   厳密な縮退でも ∂Φ が有限、(17-2) NaN/Inf ゲートの部品(pack が検出・unpack が復元)。
+
+   v3.12 の**占有追跡**(`test_parton_occmode.jl`。機構は REPORT §15):
+   (17-3) `PartonOccMode` の既定 0・パース・2 以上の拒否、
+   (17-4) 選択則 — 部分空間の重なりで選ぶ / 参照なしは aufbau / 昇順で返す /
+   線形結合でも部分空間を拾う / 位相不変 / **決定論的タイブレーク**(縮退でも同じ),
+   (17-5) 契約 0 — 占有集合が状態に入る、厳密な交差で aufbau は乗り換え mom は追う、
+   **健全域では両者がビット一致**、
+   (17-6) `min_gap` の符号つき定義(aufbau で従来と一致、非アウフバウで負)、
+   (17-7) 契約 0′ — 非アウフバウ占有でも `Φ† ∂Φ = 0` と「∂Φ が非占有部分空間に収まる」
+   が成立(占有集合を取り違えるとここが破れる)、(17-7a) build が modpara を写す、
+   (17-8) `_pmfocc` 出力と `pmfband` の occupied 列、(17-9) ドライバの出力と整合、
+   (17-10) 終端の自己完結性検査、(17-10b) 検査結果が runinfo に残る、
+   (17-11) 診断列 `n_occ_deviation` / `principal_angle_max`、
+   (17-12) **決定性** — 同一入力・同一シードで占有履歴を含めバイト一致、
+   (17-13) 高速路との整合(フレーバー対称なら占有も一致。崩れたら落とす)。
+
+   **既定のビット一致**は変更前の worktree(HEAD)と同じ入力を回して実測で確認する
+   (手順は REPORT §16)。数値・再現に関わる出力(`zvo_out` / `zvo_var` / `zvo_SRinfo` /
+   `zqp_*`)がバイト一致し、差分は診断列と runinfo の追加行のみであること。
+
 ## 9. マイルストーン
 
 - **M1**(完了): 一般 F 構造での ParaOpt 初点火(射影なし・n_qp=1・複素 1 変種・直接 SR)。
@@ -716,10 +800,54 @@ stochastic_opt!(案 B 後は MF ブロックも解く)/ weight_average / paralle
 ## 10. リスクと未決事項
 
 - [x] 物理密度 Jastrow の設計 → v3.11 で実装(§1.1 / §2.3.2 / §8-16)
-- [ ] **gap 崩壊による SR 漂流の根治**(v3.11 応急処置は下限ガードのみ)。
-  候補: gap トラスト領域(min_gap が閾値を割ったらステップ縮小)、
-  sr_eig_cut 相当(固有値ベースの null 空間射影。参照に前例・既定 OFF)。
-  機構と証拠は REPORT §14
+- [x] **gap 崩壊による SR 漂流の根治** → **v3.12 で占有追跡(`PartonOccMode = 1`)を実装**
+  (§1.1 / §2.1 / §2.5 / §8-17)。既定は `0 = aufbau` で v3.11 とビット一致。
+  以下は診断で確定した「やらないことにした対処」と、その理由:
+  - **RedCut の置換は入れていない**(実測に基づく判断)。MOM 有効時の RedCut 発火は
+    0/400 step で、RedCut 撤廃単独では軌跡が変わらない(−15.3462 → −15.3411)。
+    **現時点で測定可能な利得がゼロ**。必要になったときの実装は設計済みなので安い:
+    - 案 1(RedCut 撤廃)と案 2(死床 + 均衡化 + Tikhonov)は**数値的に完全同一**
+      (cos = 1.0000)。乗法 StaDel と「均衡化 + 一様 Tikhonov」の同値性の実証
+    - **死床は発火しない**(`S_aa < 2·SE` でも median 相対でも切る本数 0)。ゲージ
+      平坦方向は**群全体の実数倍**なので座標軸に乗らず、対角に現れない。
+      `D^{-1/2}` が死方向を増幅する懸念も該当しない
+    - `SE(S_aa)` は既定の store 経路(`NStoreO ≠ 0`)ならサンプル毎 O があるので
+      追加累積器は不要。非 store 経路のみ `Σ_s w_s |O_a|⁴` の累積器が 1 本要る
+    - 発火が実際に観測されたら実装する。**勾配式に触れないので §8 の等式テストは無傷**
+  - **共変トラスト領域 `δ†Sδ ≤ r²` は不採用**。S は現在地の局所計量なので、幅
+    `w ~ gap` の境界層をその 300 倍先から予測できない(実測でも破綻直前の FS ステップ長は
+    直前 step と同サイズ)
+  - **絶対閾値は不採用**(単位・テンプレートごとの自然スケール差で壊れる)
+  - **分母正則化 `D → D/(D²+ε²)` は不採用**。目的関数が整数占有のままで勾配だけ
+    差し替えるのは「別の汎関数の勾配で元の汎関数を下る」ことになり誤り。正統化には
+    目的関数ごと平滑化(有限温度占有)が必要で重い。**M3 候補として記録のみ**
+- [ ] **`InPmfOcc`(占有を入力で固定する経路)**: §2.5 の終端検査で **「必要」と実測された**
+  (REPORT §16-5)。`PartonOccMode = 1` の run は `occ_selfcontained = 0`
+  (占有の 67〜78% の step が非アウフバウ、終端の `occ_min_gap` も負)なので、
+  α\* 単独では状態を再現できない。占有は `_pmfocc_opt.dat` に記録済みなので情報は
+  失われておらず、**読み戻し経路を次の作業で作る**。
+  併せて、`aufbau` の run でも `occ_min_gap` が 3.7e-08 のような値だと形式的には
+  `selfcontained = 1` でもバンドが分離せず占有を復元できない点に注意(この意味では
+  MOM の終端の方が状態として健全)
+- [ ] **盆地選択の手当て(MOM のスコープ外)**: seed 11272 はコールドスタートで
+  E ≈ −14.1 の別盆地に入り、MOM はその中で安定化するだけ(REPORT §16-4)。
+  aufbau の枝の乗り換えには「悪い盆地から偶然抜ける」働きもあったので、MOM は
+  漂流を止める代わりに探索も止める。必要なのは初期値・アニーリング・
+  ウォームスタート(§13 で実証済み)であってソルバの修理ではない
+  - **機構の記録(REPORT §15 で確定。§14 の RedCut 主犯説は訂正)**: 真の主犯は
+    **アウフバウ占有規則による枝の不連続な乗り換え**。level crossing は変分多様体内では
+    回避型なので Φ(α) 自体は連続だが、混成が効く境界層の幅は `w ~ gap` しかなく、
+    gap ~ 5e-6 に対し SR のステップ長 0.0017 = 層の 300 倍以上。離散ステップから見ると
+    占有スライスが飛び、E が +1.1 跳ぶ(主角 89.99° と同期。実測)。RedCut の大量カットは
+    **症状**で、撤廃しても軌跡は変わらない(発症後に α を凍結させて回復を妨げる共犯)。
+    「漂流」の実体も**凍結**(発症期の 1 step の α 変化が 3.5e-8)
+  - **条件数説は棄却**(Tikhonov 後 cond(C) = 4.6e3)。**セクター説は適用外**
+    (H_MF が並進非対称・充填非整数で Chern 数が定義できない)
+- [ ] **S 行列の定義差(上流規約、既存 mVMC 由来)**: `build_s_matrix_and_g_vector!` は
+  `S_ab = Re⟨O_a O_b*⟩ − Re⟨O_a⟩Re⟨O_b⟩` と組むが、実パラメータの Fubini–Study 計量は
+  `Im⟨O_a⟩Im⟨O_b⟩` の項も引く。射影 O が実数・f_ij が正則な既存モードでは
+  `Im⟨O⟩ = 0` で差は出ないが、**MF ブロックは非正則**なので残る(実測で相対
+  1.3e-4〜1.5e-1、REPORT §15-7)。既存 run の再現性に関わるので本作業では変更しない
 - [ ] **`NSplitSize > 1` を門番が拒否している理由は「未検証」**(v3.9 明記)。
   comm1 グループ内のサンプル分割はパートンの保存配置・振幅の持ち方と噛み合うかを
   確かめていないだけで、原理的な障害は特定していない。解禁は M3 の検証作業
@@ -739,6 +867,22 @@ stochastic_opt!(案 B 後は MF ブロックも解く)/ weight_average / paralle
 
 ## 11. 決定ログ(要約)
 
+- v3.12 (2026-08-14, SR 漂流の根治): **占有集合を状態の一級市民にした**(§1.1 / §2.5 /
+  §3.3.1 / §8-17)。`PartonOccMode` = 0 aufbau(既定、v3.11 とビット一致)/ 1 mom
+  (前ステップの占有部分空間との重なりで選ぶ)。値 2 以降は予約で門番が拒否。
+  - **主犯はアウフバウ規則による枝の乗り換え、RedCut は症状**(REPORT §15 で確定。
+    §14 の主犯説を訂正)。混成が効く境界層の幅 `w ~ gap` に対し SR のステップ長が
+    300 倍以上あるため、離散ステップから見ると占有スライスが不連続に飛ぶ
+  - 契約 0/0′ は「1:Ne / Ne+1:NSite」から**占有集合 O 経由**へ。`min_gap` は
+    「占有↔非占有の差」で**符号つき**(aufbau では従来と一致)
+  - **既定経路は添字を UnitRange のまま渡す**。`@view U[:, occ]` を Vector{Int} で
+    作ると非連続 view になり `mul!` が BLAS gemm から generic matmul へ落ちて総和順が
+    変わる(実測: E の最終桁が 1e-15 ずれた)。値が同じでも演算列が変わるので、
+    aufbau と MOM で経路を分けている
+  - 占有は `.def` 族 `zqp_pmfocc_{init,opt}.dat` に出力。`(α*, O*)` の組で状態が閉じる。
+    読み戻し(`InPmfOcc`)は**作っていない** — 要否は §2.5 の終端検査が決める
+  - **RedCut の置換は入れない**(MOM 有効時の発火が 0/400 step、撤廃単独では軌跡が
+    変わらない = 測定可能な利得がゼロ)。設計は §10 に記録して発火観測時に実装
 - v3.11 (2026-08-13, M2 完了 + SR 応急処置): **物理密度 Jastrow**(§1.1 / §2.3.2 /
   §8-16)。P_J = exp(Σ_{i<j} v n^b n^b)を n^b で定義(上流の x = n−1 やパートン和
   F·n^b は v の意味が F 依存になるため不採用。構造規約 — Σ_{i<j}・自己項なし・

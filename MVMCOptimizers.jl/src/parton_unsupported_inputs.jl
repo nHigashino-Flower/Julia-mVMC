@@ -42,6 +42,12 @@ covers the mean-field block (DESIGN §2.5).
 const PARTON_MODE_OFF = 0
 const PARTON_MODE_MEAN_FIELD = 1
 
+# 占有集合の選び方(REPORT §15、DESIGN §1.1)。
+# `aufbau` は「下から Ne 個」= v3.11 までの唯一の規則。`mom` は前ステップの占有
+# 部分空間との重なりで選ぶ(枝を連続に追う)。値 2 以降は予約。
+const PARTON_OCC_AUFBAU = 0
+const PARTON_OCC_MOM = 1
+
 """
     is_parton_mode(modpara::ModParaParameters) -> Bool
 
@@ -99,6 +105,16 @@ function validate_parton_modpara(modpara::ModParaParameters)
             "PartonMode = $(modpara.parton_mode) is not implemented: only " *
             "PartonMode = 1 (parton mean-field VMC) exists. Values >= 2 are " *
             "reserved for future parton ansatze.",
+        )
+    end
+
+    # --- occupation rule ---------------------------------------------------
+    if modpara.parton_occ_mode != PARTON_OCC_AUFBAU &&
+       modpara.parton_occ_mode != PARTON_OCC_MOM
+        error(
+            "PartonOccMode = $(modpara.parton_occ_mode) is not implemented: " *
+            "only 0 (aufbau, default) and 1 (mom, occupation tracking) exist. " *
+            "Values >= 2 are reserved.",
         )
     end
 

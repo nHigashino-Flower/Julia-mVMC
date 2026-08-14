@@ -139,6 +139,10 @@ function parton_build_mf_templates!(mfham::PartonMFHamiltonian, data::ExpertMode
         data.modpara.parton_flavor_sym_fast != 0 &&
         _parton_templates_flavor_symmetric(template, n_flavor, n_idx)
 
+    # 占有規則(DESIGN §1.1)。契約 0 は data を受け取らないので、起動時 1 回の
+    # build でここに写す。既定 0 = aufbau なので既存入力の挙動は変わらない。
+    mfham.occ_mode = data.modpara.parton_occ_mode
+
     parton_resolve_gauge_groups!(mfham, data)
     return mfham
 end
@@ -253,6 +257,130 @@ function parton_alpha_from_terms(data::ExpertModeData)
 end
 
 """
+    parton_select_occupation(U, ev, phi_ref, n_elec) -> Vector{Int}
+
+占有集合 `O`(1-based の band index、昇順)を選ぶ。
+
+- `phi_ref === nothing`(初回、または `PartonOccMode = 0`)→ **aufbau**「下から
+  n_elec 個」。v3.11 までの唯一の規則で、既定の挙動を変えない
+- 参照があるとき(`PartonOccMode = 1` = MOM)→ **部分空間の重なり**
+
+      score_m = ‖Φ_ref† φ_m‖²
+
+  の上位 n_elec 本。個別軌道の一対一対応ではなく部分空間で測るのは、占有スライスの
+  **内側**の回転が `Tr[A⁻¹ ∂A]` から厳密に消えて元から無害だから(壊れているのは
+  フェルミ面をまたぐ**メンバーシップ**の方。REPORT §15)。
+
+**タイブレークは決定論的**: スコア降順 → 固有値昇順 → band index 昇順。
+同一入力・同一シードでビット再現するために必要(§8-17 の決定性テスト)。
+浮動小数の同点は厳密一致でのみ起きるが、縮退部分空間では実際に起きる。
+"""
+function parton_select_occupation(
+    U::AbstractMatrix,
+    ev::AbstractVector,
+    phi_ref::Union{Nothing,AbstractMatrix},
+    n_elec::Int,
+)
+    phi_ref === nothing && return collect(1:n_elec)
+    n = size(U, 2)
+    score = Vector{Float64}(undef, n)
+    @inbounds for m = 1:n
+        score[m] = sum(abs2, phi_ref' * view(U, :, m))
+    end
+    order = sort(collect(1:n); by = m -> (-score[m], ev[m], m))
+    return sort(order[1:n_elec])
+end
+
+"""
+    parton_check_occupation_selfcontained(mfham, n_elec; gap_tol=1e-8)
+        -> (; selfcontained, gap_ok, aufbau_ok, min_gap, n_deviation)
+
+終端の自己完結性検査(REPORT §15、DESIGN §1.1)。**本作業でいちばん重要な測定**。
+
+1. `gap_ok`: 占有↔非占有のエネルギー差が数値誤差より十分大きい
+2. `aufbau_ok`: 選ばれた占有が「下から Ne 個」と一致する
+
+両方成立すれば **α\\* 単独で状態が決まる**(対角化して下から Ne 個を取れば同じ Φ に
+なる)ので、従来と同じ意味を持つ。不成立なら**非アウフバウ最適解が本物**という
+ことで、`_pmfocc_opt.dat` を必ず添えて使う必要がある。
+
+**この検査が、占有を入力で固定する経路(`explicit` / `InPmfOcc`)を作る必要が
+あるかどうかを決める。** 成立するなら永久に不要。不成立でも占有は出力に
+記録済みなので情報は失われない。
+
+注意: 現行(aufbau)が常に成立するわけではない。gap が潰れた α\\* では 1 が破れ、
+対角化しても占有が決まらない(バンドが分離しないので Chern 解析もできない)。
+"""
+function parton_check_occupation_selfcontained(
+    mfham::PartonMFHamiltonian,
+    n_elec::Int;
+    gap_tol::Float64 = 1e-8,
+)
+    n_dev = 0
+    for occ in mfham.occ
+        n_dev += count(m -> m > n_elec, occ)     # 「下から Ne 個」から外れた本数
+    end
+    gap_ok = abs(mfham.min_gap) > gap_tol && mfham.min_gap > 0
+    aufbau_ok = n_dev == 0
+    return (
+        selfcontained = gap_ok && aufbau_ok,
+        gap_ok = gap_ok,
+        aufbau_ok = aufbau_ok,
+        min_gap = mfham.min_gap,
+        n_deviation = n_dev,
+    )
+end
+
+"""
+    parton_occupation_deviation(mfham, n_elec) -> Int
+
+占有集合が「下から Ne 個」と一致しない本数(全フレーバー合計)。診断列
+`n_occ_deviation` の値。常時非ゼロなら非アウフバウ最適解が本物ということで、
+物理的に重要な情報になる。
+"""
+parton_occupation_deviation(mfham::PartonMFHamiltonian, n_elec::Int) =
+    sum(occ -> count(m -> m > n_elec, occ), mfham.occ; init = 0)
+
+"""
+    parton_principal_angle_max(prev, mfham) -> Float64
+
+前ステップの占有部分空間との**主角の最大値(度)**。`prev` は各フレーバーの占有軌道。
+枝の乗り換えは主角 90° として現れる(診断では 89.99° を観測)ので、破綻の検出に
+直結する。`prev` が空なら 0 を返す。
+"""
+function parton_principal_angle_max(prev, mfham::PartonMFHamiltonian)
+    isempty(prev) && return 0.0
+    θ = 0.0
+    for f in eachindex(mfham.orbitals)
+        s = svdvals(prev[f]' * mfham.orbitals[f])
+        isempty(s) && continue
+        θ = max(θ, rad2deg(acos(clamp(minimum(s), -1.0, 1.0))))
+    end
+    return θ
+end
+
+"""
+    _parton_unocc(occ, n_site) -> Vector{Int}
+
+占有集合の補集合(非占有 band index、昇順)。`occ` は昇順であることを前提に
+1 パスで作る。
+"""
+function _parton_unocc(occ::Vector{Int}, n_site::Int)
+    unocc = Vector{Int}(undef, n_site - length(occ))
+    k = 1
+    oi = 1
+    @inbounds for m = 1:n_site
+        if oi <= length(occ) && occ[oi] == m
+            oi += 1
+        else
+            unocc[k] = m
+            k += 1
+        end
+    end
+    return unocc
+end
+
+"""
     parton_update_orbitals!(mfham, alpha, n_elec; gap_tol=1e-8) -> mfham
 
 契約 0(SR ステップ毎): H(α) を組んでフレーバーごとに対角化し、占有軌道 Φ を
@@ -291,18 +419,49 @@ function parton_update_orbitals!(
             mfham.eig_vals[f] .= mfham.eig_vals[1]
             mfham.eig_vecs[f] .= mfham.eig_vecs[1]
             mfham.orbitals[f] .= mfham.orbitals[1]
+            # 高速路の前提は「H^(f) が全フレーバーで同一」なので占有も同一になるはず。
+            # そうならないのは前提が崩れている(= 選択が履歴で分岐した)ときだけなので、
+            # 黙って f=1 の占有を配るのではなく検出して落とす(DESIGN §7)。
+            if mfham.occ_mode != 0 && !isempty(mfham.occ[f]) && mfham.occ[f] != mfham.occ[1]
+                error(
+                    "PartonFlavorSymFast: flavour $f が f=1 と違う占有集合を持っています " *
+                    "($(mfham.occ[f]) vs $(mfham.occ[1]))。H^(f) が同一という高速路の " *
+                    "前提が崩れています。PartonFlavorSymFast = 0 で再実行してください。",
+                )
+            end
+            mfham.occ[f] = copy(mfham.occ[1])
             continue
         end
         F = eigen(Hermitian(mfham.h_mf[f]))
+        # 占有集合を選ぶ(DESIGN §1.1)。MOM の参照は**更新前**の占有軌道。
+        # この後 mfham.orbitals[f] を上書きするが、参照はここで読み終えている。
+        phi_ref = (mfham.occ_mode != 0 && !isempty(mfham.occ[f])) ?
+                  mfham.orbitals[f] : nothing
+        occ = parton_select_occupation(F.vectors, F.values, phi_ref, n_elec)
+        mfham.occ[f] = occ
         mfham.eig_vals[f] .= F.values
         mfham.eig_vecs[f] .= F.vectors
-        mfham.orbitals[f] .= @view F.vectors[:, 1:n_elec]
+        mfham.orbitals[f] .= @view F.vectors[:, occ]
         if n_elec < n_site
-            mfham.min_gap =
-                min(mfham.min_gap, F.values[n_elec + 1] - F.values[n_elec])
+            # 占有↔非占有のエネルギー差(**符号つき**)。アウフバウ占有では
+            # 従来の HOMO-LUMO と一致し、非アウフバウ占有では負を取りうる。
+            lo = typemax(Float64)
+            hi = typemin(Float64)
+            oi = 1
+            @inbounds for m = 1:n_site
+                if oi <= n_elec && occ[oi] == m
+                    hi = max(hi, F.values[m])
+                    oi += 1
+                else
+                    lo = min(lo, F.values[m])
+                end
+            end
+            mfham.min_gap = min(mfham.min_gap, lo - hi)
         end
     end
-    mfham.min_gap < gap_tol &&
+    # 縮退の警告は絶対値で見る。MOM の非アウフバウ占有では min_gap が負になるが、
+    # それは異常ではない(摂動論の分母が壊れるのは |差| が小さいときだけ)。
+    abs(mfham.min_gap) < gap_tol &&
         @warn "MF spectrum nearly degenerate at the Fermi level" min_gap = mfham.min_gap
     return mfham
 end
@@ -342,6 +501,8 @@ function parton_update_orbital_derivatives!(mfham::PartonMFHamiltonian, n_elec::
     # 不要になり、まるごと空いたため。
     W = view(mfham.dh_uo_scratch, 1:n_un, :)
     for f in eachindex(mfham.h_mf)
+        isempty(mfham.occ[f]) && error(
+            "契約 0′ は契約 0 の後にしか呼べません(occ[$f] が未確定)。")
         if mfham.flavor_symmetric && f > 1
             # 対称なら ∂Φ^(f) も f=1 と同一(H・テンプレートとも同一)。
             # コピーは gemm(O(NSite·n_un·Ne))より n_un 倍安い。
@@ -350,10 +511,50 @@ function parton_update_orbital_derivatives!(mfham::PartonMFHamiltonian, n_elec::
             end
             continue
         end
+        # 占有 / 非占有の分割は**占有集合 O**で決まる(DESIGN §1.1)。
+        #
+        # **aufbau のときは添字を UnitRange のまま渡す**。`@view U[:, occ]` を
+        # Vector{Int} で作ると非連続 view になり、`mul!` が BLAS gemm から
+        # generic matmul へ落ちて総和順が変わる = 既存 run とビット一致しない
+        # (実測: E の最終桁が 1e-15 ずれた)。値は同じでも演算列が変わるので、
+        # 既定経路は従来と同じ型を通す。DESIGN §7 の「既定経路では 1 bit も
+        # 変えない」に該当する。
+        occ = mfham.occ[f]
+        if _parton_is_aufbau(occ, n_elec)
+            _parton_derivatives_flavor!(
+                mfham, f, 1:n_elec, (n_elec + 1):n_site, W, n_elec, n_un, gap_tol)
+        else
+            _parton_derivatives_flavor!(
+                mfham, f, occ, _parton_unocc(occ, n_site), W, n_elec, n_un, gap_tol)
+        end
+    end
+    return nothing
+end
+
+"`occ` が「下から n_elec 個」か(昇順を前提に端だけ見る)。"
+@inline _parton_is_aufbau(occ::Vector{Int}, n_elec::Int) =
+    length(occ) == n_elec && (n_elec == 0 || (occ[1] == 1 && occ[n_elec] == n_elec))
+
+"""
+    _parton_derivatives_flavor!(mfham, f, occ, unocc, W, n_elec, n_un, gap_tol)
+
+契約 0′ のフレーバー 1 本分。`occ` / `unocc` は `UnitRange`(aufbau)でも
+`Vector{Int}`(MOM)でもよく、それぞれに特殊化される。
+"""
+function _parton_derivatives_flavor!(
+    mfham::PartonMFHamiltonian,
+    f::Int,
+    occ,
+    unocc,
+    W,
+    n_elec::Int,
+    n_un::Int,
+    gap_tol::Float64,
+)
         U = mfham.eig_vecs[f]
         ev = mfham.eig_vals[f]
-        Uo = @view U[:, 1:n_elec]
-        Uu = @view U[:, (n_elec + 1):n_site]
+        Uo = @view U[:, occ]
+        Uu = @view U[:, unocc]
 
         for k = 1:mfham.n_idx
             onsite = mfham.is_onsite_group[k]
@@ -389,16 +590,16 @@ function parton_update_orbital_derivatives!(mfham::PartonMFHamiltonian, n_elec::
                     end
                 end
 
-                # 分母 D[u, n] = ε_n − ε_{Ne+u} をインプレースで割る(バッファ不要)。
-                # |D| < gap_tol は 0(参照互換の clamp。上の docstring 参照)
+                # 分母 D[u, n] = ε_{occ[n]} − ε_{unocc[u]} をインプレースで割る
+                # (バッファ不要)。|D| < gap_tol は 0(参照互換の clamp。上の
+                # docstring 参照)。非アウフバウ占有では D が負にもなるが、式は同じ。
                 @inbounds for n = 1:n_elec, u = 1:n_un
-                    d = ev[n] - ev[n_elec + u]
+                    d = ev[occ[n]] - ev[unocc[u]]
                     W[u, n] = abs(d) < gap_tol ? zero(ComplexF64) : W[u, n] / d
                 end
                 mul!(dPhi, Uu, W)                 # ∂Φ = U_unocc (W ./ D)
             end
         end
-    end
     return nothing
 end
 

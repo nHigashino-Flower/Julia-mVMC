@@ -196,3 +196,46 @@ function parton_write_pmfpara(data::ExpertModeData, path::AbstractString)
     end
     return String(path)
 end
+
+"""
+    parton_write_pmfocc(data, mfham, path) -> String
+
+占有集合 `O` を `.def` 族(DESIGN §3.3.1 系統 (a))で書く。
+
+    ===============================
+    NPmfOcc <n_flavor × Ne>
+    ===============================
+    == flavor band_index ==
+    ===============================
+    <flavor 0-based> <band_index 0-based>
+
+**占有集合は導出量ではなく状態の一部**(REPORT §15)。`PartonOccMode = 1` では
+α → Φ が履歴依存になるので α だけでは状態を再現できない。`(α*, O*)` の組で
+状態が完全に決まるように、α と同じタイミングで必ず書く。
+
+行順は `(flavor, band_index)` の辞書順に固定する(run 間で `diff` が取れること)。
+`aufbau` の run でも書く — そちらは α だけで再現できるが、ファイルの有無で
+読み手の経路が分岐すると壊れやすいため。
+"""
+function parton_write_pmfocc(
+    data::ExpertModeData,
+    mfham::PartonMFHamiltonian,
+    path::AbstractString,
+)
+    n_occ = sum(length, mfham.occ)
+    dir = dirname(abspath(String(path)))
+    isempty(dir) || mkpath(dir)
+    open(String(path), "w") do f
+        println(f, "===============================")
+        println(f, "NPmfOcc $n_occ")
+        println(f, "===============================")
+        println(f, "== flavor band_index ==")
+        println(f, "===============================")
+        for fl in eachindex(mfham.occ)
+            for band in mfham.occ[fl]           # occ は昇順(契約 0 が保証)
+                @printf(f, "%d %d\n", fl - 1, band - 1)
+            end
+        end
+    end
+    return String(path)
+end

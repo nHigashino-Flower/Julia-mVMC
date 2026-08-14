@@ -219,9 +219,16 @@ function parton_vmc_para_opt!(
     for step = 0:(n_steps - 1)
         t_step0 = time()
         α = parton_alpha_from_terms(data)
+        # 主角は「更新前の占有部分空間」との比較なので契約 0 の**前**に退避する。
+        # 診断専用(DESIGN §3.3.1 B)。診断を書かない run では確保もしない。
+        occ_prev = diag_dir === nothing ? Matrix{ComplexF64}[] :
+                   [copy(o) for o in mfham.orbitals]
         ctimer_start!(c_timer, 801)
         parton_update_orbitals!(mfham, α, n_elec)             # 契約 0
         ctimer_stop!(c_timer, 801)
+        θ_max = diag_dir === nothing ? 0.0 :
+                (step == 0 ? 0.0 : parton_principal_angle_max(occ_prev, mfham))
+        n_dev = parton_occupation_deviation(mfham, n_elec)
         ctimer_start!(c_timer, 802)
         parton_update_orbital_derivatives!(mfham, n_elec)     # 契約 0′
         ctimer_stop!(c_timer, 802)
@@ -282,7 +289,9 @@ function parton_vmc_para_opt!(
                               n_recompute = pstate.config.counter[4],
                               n_need_recompute = pstate.config.counter[3],
                               alpha_norm_pre = norm_pre,
-                              alpha_norm_post = norm_post)
+                              alpha_norm_post = norm_post,
+                              n_occ_deviation = n_dev,
+                              principal_angle_max = θ_max)
             t_now = time()
             parton_write_time(data, step, diag_dir, t_now - t_step0, t_now - t_run0;
                               n_out = n_out_step, n_rank = ctx.size0)
@@ -305,6 +314,9 @@ function parton_vmc_para_opt!(
         # SR ループ内の最後の parton_update_orbitals! は「最終更新**前**」の α を使って
         # いるので、ダンプ前に最終 α で組み直す。そうしないと α* と H が食い違う。
         parton_update_orbitals!(mfham, parton_alpha_from_terms(data), n_elec)
+        # 占有集合は状態の一部(DESIGN §1.1)。α* とセットで残さないと
+        # PartonOccMode = 1 の run は α だけから再現できない。
+        parton_write_pmfocc(data, mfham, _parton_para_out(data, "_pmfocc_opt.dat", diag_dir))
         parton_write_mfham(data, mfham, diag_dir)
         parton_write_conv(data, diag_dir)
         # CalcTimer は既存 writer が本体セクションを "w" で書いた後に追記する

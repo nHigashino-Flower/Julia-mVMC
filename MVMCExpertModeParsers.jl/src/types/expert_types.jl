@@ -141,6 +141,7 @@ mutable struct ModParaParameters
     parton_block_update_size::Int   # PartonBlockUpdateSize: 受理 N 回ごとに振幅を厳密再計算する錨
     parton_gauge_fix::Int     # PartonGaugeFix: 0=無効 / 1=有効(既定)。α のゲージ射影
     parton_flavor_sym_fast::Int   # PartonFlavorSymFast: 1=対称検出+det^F 高速路(既定) / 0=強制無効
+    parton_occ_mode::Int      # PartonOccMode: 0=aufbau(既定、現行と同一) / 1=mom(占有追跡)
 
     function ModParaParameters(;
         nsite::Int = 0,
@@ -193,6 +194,7 @@ mutable struct ModParaParameters
         parton_block_update_size::Int = DEFAULT_PARTON_BLOCK_UPDATE_SIZE,
         parton_gauge_fix::Int = DEFAULT_PARTON_GAUGE_FIX,
         parton_flavor_sym_fast::Int = DEFAULT_PARTON_FLAVOR_SYM_FAST,
+        parton_occ_mode::Int = DEFAULT_PARTON_OCC_MODE,
     )
         new(
             nsite,
@@ -244,6 +246,7 @@ mutable struct ModParaParameters
             parton_block_update_size,
             parton_gauge_fix,
             parton_flavor_sym_fast,
+            parton_occ_mode,
         )
     end
 end

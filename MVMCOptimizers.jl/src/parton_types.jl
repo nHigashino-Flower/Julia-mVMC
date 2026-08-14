@@ -100,6 +100,14 @@ mutable struct PartonMFHamiltonian
     gauge_shift_groups::Vector{Vector{Int}}
     gauge_target_norm::Vector{Float64}
 
+    # 占有集合(REPORT §15、DESIGN §1.1)。**導出量ではなく状態の一部**として持つ。
+    # - occ[f]: フレーバー f の占有 band index(1-based、昇順)。空 = まだ一度も
+    #   契約 0 を通っていない(= MOM の参照が無い初回)
+    # - occ_mode: 0 = aufbau(既定。下から Ne 個で v3.11 と同一)/ 1 = mom(占有追跡)。
+    #   テンプレート build が modpara から写す
+    occ::Vector{Vector{Int}}
+    occ_mode::Int
+
     function PartonMFHamiltonian(n_site::Int, n_elec::Int, n_flavor::Int, n_idx::Int)
         n_dof = 2 * n_idx
         new(
@@ -117,6 +125,10 @@ mutable struct PartonMFHamiltonian
             Vector{Int}[],
             Vector{Int}[],
             Float64[],
+            [Int[] for _ = 1:n_flavor],   # occ(空 = 初回。契約 0 が埋める)
+            0,                            # occ_mode = PARTON_OCC_AUFBAU(定数は
+                                          # parton_unsupported_inputs.jl 側。types が
+                                          # include 順の先頭なのでリテラルで置く)
         )
     end
 end

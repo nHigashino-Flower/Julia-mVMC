@@ -35,8 +35,14 @@ _parton_para_out(data::ExpertModeData, suffix::String, dir) =
 upstream に対応物はない。
 
 列の意味:
-- `min_gap` — 全フレーバーの HOMO-LUMO ギャップの最小値。閉じると契約 0′ の分母が
-  小さくなり O_k が発散する(DESIGN §8 のリスク項目)
+- `min_gap` — 全フレーバーの**占有↔非占有**エネルギー差の最小値(符号つき)。
+  aufbau 占有では従来の HOMO-LUMO と一致する。閉じると契約 0′ の分母が
+  小さくなり O_k が発散する(DESIGN §8 のリスク項目)。非アウフバウ占有では
+  負を取りうるが、それ自体は異常ではない(REPORT §15)
+- `n_occ_deviation` — 占有集合が「下から Ne 個」と一致しない本数。常時非ゼロなら
+  **非アウフバウ最適解が本物**ということで、物理的に重要な情報になる
+- `principal_angle_max` — 前ステップの占有部分空間との主角の最大値(度)。
+  枝の乗り換えは 90° として現れる(診断では 89.99° を観測)ので破綻の検出に直結する
 - `n_need_recompute` — `ratio_floor` を割って `:need_recompute` になった回数。
   DESIGN §7 の防御が何回発動したか
 - `n_exact_recompute` — 厳密再計算(錨)の総発動回数。頻度が妥当かを見る
@@ -53,6 +59,8 @@ function parton_write_diag(
     n_need_recompute::Int = 0,
     alpha_norm_pre::Float64 = 0.0,
     alpha_norm_post::Float64 = 0.0,
+    n_occ_deviation::Int = 0,
+    principal_angle_max::Float64 = 0.0,
 )
     dir === nothing && return nothing
     path = _parton_out(data, "_parton_diag.dat", dir)
@@ -63,11 +71,13 @@ function parton_write_diag(
     open(path, step == 0 ? "w" : "a") do f
         if step == 0
             println(f, "# step  min_gap  n_need_recompute  n_exact_recompute  " *
-                       "accept_ratio  alpha_norm_pre  alpha_norm_post  n_trial  n_accept")
+                       "accept_ratio  alpha_norm_pre  alpha_norm_post  n_trial  n_accept  " *
+                       "n_occ_deviation  principal_angle_max")
         end
-        @printf(f, "%6d % .8e %8d %8d % .6e % .8e % .8e %10d %10d\n",
+        @printf(f, "%6d % .8e %8d %8d % .6e % .8e % .8e %10d %10d %8d % .6e\n",
                 step, pstate.mfham.min_gap, n_need_recompute, n_recompute,
-                acc, alpha_norm_pre, alpha_norm_post, trials, accepts)
+                acc, alpha_norm_pre, alpha_norm_post, trials, accepts,
+                n_occ_deviation, principal_angle_max)
     end
     return path
 end
@@ -202,8 +212,12 @@ function parton_write_mfham(data::ExpertModeData, mfham::PartonMFHamiltonian, di
         println(f, "# flavor band_index eigenvalue occupied")
         for fl = 1:n_flavor
             ev = mfham.eig_vals[fl]
+            # occupied は**実際の占有集合**(DESIGN §1.1)。aufbau では下から
+            # NElec 個になるので従来の出力と一致する。
+            occ = mfham.occ[fl]
             for k = 1:n_site
-                @printf(f, "%d %d % .18e %d\n", fl - 1, k - 1, ev[k], k <= n_elec ? 1 : 0)
+                @printf(f, "%d %d % .18e %d\n",
+                        fl - 1, k - 1, ev[k], insorted(k, occ) ? 1 : 0)
             end
         end
     end
@@ -244,6 +258,7 @@ function parton_write_runinfo(
     n_rank::Int = 1,
     t_start::Float64 = 0.0,
     t_end::Float64 = 0.0,
+    occ_check = nothing,
 )
     dir === nothing && return nothing
     path = _parton_out(data, "_parton_runinfo.dat", dir)
@@ -288,8 +303,19 @@ function parton_write_runinfo(
                 mp.nsr_opt_itr_step, mp.nsr_opt_itr_smp)
         @printf(f, "DSROptStepDt %.17g\nDSROptStaDel %.17g\nDSROptRedCut %.17g\n",
                 mp.dsr_opt_step_dt, mp.dsr_opt_sta_del, mp.dsr_opt_red_cut)
-        @printf(f, "PartonGaugeFix %d\nPartonBlockUpdateSize %d\n",
-                mp.parton_gauge_fix, mp.parton_block_update_size)
+        @printf(f, "PartonGaugeFix %d\nPartonBlockUpdateSize %d\nPartonOccMode %d\n",
+                mp.parton_gauge_fix, mp.parton_block_update_size, mp.parton_occ_mode)
+        # 終端の自己完結性検査(DESIGN §1.1、REPORT §15)。
+        # occ_selfcontained = 1 なら α* 単独で状態が決まる(対角化して下から Ne 個で
+        # 同じ Φ になる)ので、従来と同じ意味を持つ。0 なら _pmfocc_opt.dat を
+        # 必ず添えて使うこと。この記録が「占有を入力で固定する経路」の要否を決める。
+        if occ_check !== nothing
+            @printf(f, "occ_selfcontained %d\nocc_gap_ok %d\nocc_aufbau_ok %d\n",
+                    occ_check.selfcontained ? 1 : 0, occ_check.gap_ok ? 1 : 0,
+                    occ_check.aufbau_ok ? 1 : 0)
+            @printf(f, "occ_n_deviation %d\nocc_min_gap %.17g\n",
+                    occ_check.n_deviation, occ_check.min_gap)
+        end
         @printf(f, "t_start %.6f\nt_end %.6f\nwall_sec %.6f\n",
                 t_start, t_end, t_end - t_start)
         # 入力 .def 一式(namelist に挙がっているもの)の名前とサイズ・ハッシュ

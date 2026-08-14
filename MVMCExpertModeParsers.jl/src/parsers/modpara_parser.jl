@@ -207,6 +207,8 @@ function parse_modpara_parameter!(
     elseif name == "PartonFlavorSymFast"
         params.parton_flavor_sym_fast =
             safe_parse_int(value, DEFAULT_PARTON_FLAVOR_SYM_FAST)
+    elseif name == "PartonOccMode"
+        params.parton_occ_mode = safe_parse_int(value, DEFAULT_PARTON_OCC_MODE)
     elseif name == "NParticle" || name == "NPartonPerFlavor"
         # NElec の別名。同一フィールドへ書き、食い違いはパースエラー(DESIGN §2.1)。
         # NElec 側の分岐は upstream のまま触らないので、別名が後に来た場合のみ検出できる。

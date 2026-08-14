@@ -81,6 +81,15 @@ function parton_run_para_opt_from_namelist(
     is_output_rank(ctx) && parton_write_pmfpara(
         data, joinpath(output_dir, data.modpara.c_para_file_head * "_pmfpara_init.dat"))
 
+    # 9b. 初期占有を確定させてダンプする(DESIGN §2.3.1 の確定順序:
+    #     乱数 → InPmfPara 上書き → OptFlag → 門番 → **初期占有** → SR ループ)。
+    #     初回は参照が無いので `PartonOccMode` に依らず aufbau になる。MOM はこの
+    #     占有を出発点として枝を追う。占有集合は状態の一部なので α と同じ扱いで残す。
+    parton_update_orbitals!(pstate.mfham, parton_alpha_from_terms(data), mp.nelec)
+    is_output_rank(ctx) && parton_write_pmfocc(
+        data, pstate.mfham,
+        joinpath(output_dir, data.modpara.c_para_file_head * "_pmfocc_init.dat"))
+
     # 10. run メタデータ(出自の追跡用)。base_seed は乱数初期化の再現に要る値。
     t_start = time()
     is_output_rank(ctx) && parton_write_runinfo(
@@ -101,12 +110,26 @@ function parton_run_para_opt_from_namelist(
         output_dir = String(output_dir),
     )
 
+    # 終端の自己完結性検査(DESIGN §1.1 / §2-c)。SR ループの最後で mfham は
+    # **最終 α で組み直されている**ので、そのまま検査できる。
+    occ_check = parton_check_occupation_selfcontained(pstate.mfham, mp.nelec)
+    if is_output_rank(ctx)
+        if occ_check.selfcontained
+            @info "Parton: 終端の占有はアウフバウで、gap も健全です。α だけで状態が再現できます" min_gap =
+                occ_check.min_gap
+        else
+            @warn "Parton: 終端の占有が α 単独では再現できません。_pmfocc_opt.dat を必ず添えて使ってください" gap_ok =
+                occ_check.gap_ok aufbau_ok = occ_check.aufbau_ok n_deviation =
+                occ_check.n_deviation min_gap = occ_check.min_gap
+        end
+    end
+
     # 壁時計を確定させて書き直す
     is_output_rank(ctx) && parton_write_runinfo(
         data, String(output_dir); namelist_path = namelist_str, base_seed = base_seed,
         n_idx = parton_n_idx(data),
         n_para = MVMCExpertModeParsers.count_variational_parameters(data),
-        n_rank = ctx.size0, t_start = t_start, t_end = time())
+        n_rank = ctx.size0, t_start = t_start, t_end = time(), occ_check = occ_check)
     return status
 end
 
