@@ -336,3 +336,64 @@ function _write_min_parton_input(dir::AbstractString)
           "CoulombInter   coulombinter.def\n")
     return joinpath(dir, "namelist.def"), n_idx
 end
+
+"""
+サイトごとに独立なオンサイト項だけを持つ系(1 フレーバー)。H = diag(α_0 … α_{n-1})
+なので固有ベクトルは常に単位ベクトルで、α を動かすと準位が**厳密に交差する**。
+回避交差ではないので、アウフバウ占有が枝を乗り換える瞬間を確実に作れる。
+"""
+function onsite_crossing_data(; n_site::Int = 4, n_elec::Int = 2)
+    data = MVMCExpertModeParsers.ExpertModeData()
+    mp = data.modpara
+    mp.nsite = n_site
+    mp.nelec = n_elec
+    mp.nflavor = 1
+    mp.parton_mode = 1
+    mp.two_sz = 0
+    mp.complex_flag = 1
+    mp.nex_update_path = 6
+    for i = 0:(n_site - 1)
+        push!(
+            data.pmftrans_terms,
+            MVMCExpertModeParsers.PartonMFTransTerm(i, 0, i, 0, ComplexF64(1, 0), false),
+        )
+        push!(
+            data.pmfpara_terms,
+            MVMCExpertModeParsers.PartonMFParaTerm(i, 0, i, 0, i, ComplexF64(0, 0), true),
+        )
+    end
+    return data
+end
+
+"""
+`onsite_crossing_data` に弱い一様ホッピングを足した系。ホッピングがあると
+∂Φ ≠ 0 になるので契約 0′ を検査できる。t が十分小さければ交差は回避交差に
+なるだけでほぼ厳密に残り、アウフバウは枝を乗り換える。
+"""
+function crossing_hop_data(; n_site::Int = 4, n_elec::Int = 2, t::Float64 = 0.02)
+    data = onsite_crossing_data(; n_site = n_site, n_elec = n_elec)
+    for i = 0:(n_site - 1)
+        j = mod(i + 1, n_site)
+        push!(
+            data.pmftrans_terms,
+            MVMCExpertModeParsers.PartonMFTransTerm(
+                i, 0, j, 0, ComplexF64(t, 0.3t), true),
+        )
+        push!(
+            data.pmfpara_terms,
+            MVMCExpertModeParsers.PartonMFParaTerm(
+                i, 0, j, 0, n_site, ComplexF64(1, 0), true),
+        )
+    end
+    return data
+end
+
+"onsite_crossing_data 用の mfham を組む(占有規則は occ_mode で指定)。"
+function build_crossing_mfham(data; occ_mode::Int = 0)
+    mp = data.modpara
+    n_idx = MVMCOptimizers.parton_n_idx(data)
+    mfham = MVMCOptimizers.PartonMFHamiltonian(mp.nsite, mp.nelec, mp.nflavor, n_idx)
+    MVMCOptimizers.parton_build_mf_templates!(mfham, data)
+    mfham.occ_mode = occ_mode
+    return mfham
+end

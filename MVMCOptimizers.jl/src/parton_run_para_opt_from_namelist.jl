@@ -83,9 +83,13 @@ function parton_run_para_opt_from_namelist(
 
     # 9b. 初期占有を確定させてダンプする(DESIGN §2.3.1 の確定順序:
     #     乱数 → InPmfPara 上書き → OptFlag → 門番 → **初期占有** → SR ループ)。
-    #     初回は参照が無いので `PartonOccMode` に依らず aufbau になる。MOM はこの
-    #     占有を出発点として枝を追う。占有集合は状態の一部なので α と同じ扱いで残す。
-    parton_update_orbitals!(pstate.mfham, parton_alpha_from_terms(data), mp.nelec)
+    #     `InPmfOcc` があればその占有を採用し、無ければ aufbau(参照が無いので
+    #     `PartonOccMode` に依らない)。MOM はこの占有を出発点として枝を追うので、
+    #     継続 run は前 run の枝をそのまま引き継げる。占有集合は状態の一部なので
+    #     α と同じ扱いで残す(`_pmfocc_init.dat` には**実際に採用された**占有を書く)。
+    occ_in = parton_read_in_pmfocc(data, namelist_str)
+    parton_update_orbitals!(pstate.mfham, parton_alpha_from_terms(data), mp.nelec;
+                            forced_occ = occ_in)
     is_output_rank(ctx) && parton_write_pmfocc(
         data, pstate.mfham,
         joinpath(output_dir, data.modpara.c_para_file_head * "_pmfocc_init.dat"))

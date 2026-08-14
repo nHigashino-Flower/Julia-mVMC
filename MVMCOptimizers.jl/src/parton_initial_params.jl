@@ -239,3 +239,81 @@ function parton_write_pmfocc(
     end
     return String(path)
 end
+
+"""
+    parton_read_in_pmfocc(data, namelist_path) -> Union{Nothing,Vector{Vector{Int}}}
+
+`namelist.def` に `InPmfOcc` が書かれているときだけ、占有集合を読んで
+**フレーバーごとの 1-based・昇順 band index** として返す。書かれていなければ
+`nothing`(= 初期占有は aufbau。既定挙動は変わらない)。
+
+形式は `zqp_pmfocc_opt.dat` と**同一**(`.def` 族、5 行ヘッダ、キーワード
+`NPmfOcc`、データ行 `flavor band_index`、どちらも 0-based)。出力した
+`_pmfocc_opt.dat` / `_pmfocc_init.dat` をそのまま渡せる。
+
+`parse_input_parameter_file` は `idx Re Im` の 3 列専用でこの形式には使えないので、
+既存の汎用ヘルパ(`read_def_file` / `clean_line` / `split_def_line`)を組み合わせた
+最小のリーダをここに置く。**新規パーサファイルは作らない**(DESIGN §3.1)。
+
+検証は**読んだ直後に全部**行い、ひとつでも破れたらエラーで止める(部分適用しない):
+
+- ヘッダの件数と実データの行数が一致
+- 行数が `n_flavor × Ne` と一致
+- `flavor ∈ [0, NFlavor)`、`band_index ∈ [0, NSite)`
+- 各フレーバーちょうど Ne 本、かつ重複なし
+
+なぜ必要か(REPORT §16-5): `PartonOccMode = 1` の run は終端が非アウフバウ占有に
+なるため、α\\* 単独では状態を再現できない。ウォームスタート / 鎖方式・PhysCal で
+最適化済み状態から始めるには占有も渡す必要がある。
+"""
+function parton_read_in_pmfocc(data::ExpertModeData, namelist_path::AbstractString)
+    base_dir = dirname(abspath(String(namelist_path)))
+    file_list = MVMCExpertModeParsers.parse_namelist_content(
+        MVMCExpertModeParsers.read_def_file(String(namelist_path)))
+
+    path = nothing
+    for (file_type, file_path) in file_list
+        file_type == "InPmfOcc" && (path = joinpath(base_dir, file_path))
+    end
+    path === nothing && return nothing
+    isfile(path) || error("InPmfOcc file listed in namelist.def but not found: $path")
+
+    lines = split(MVMCExpertModeParsers.read_def_file(String(path)), '\n')
+    length(lines) >= 5 || error("InPmfOcc: $path is too short to hold the 5-line header.")
+
+    declared = -1
+    header = MVMCExpertModeParsers.split_def_line(
+        MVMCExpertModeParsers.clean_line(lines[2]))
+    length(header) >= 2 && (declared = MVMCExpertModeParsers.safe_parse_int(header[2], -1))
+
+    # 読み取りは形式(トークン数と整数パース)だけを見る。意味の検証(範囲・本数・
+    # 重複・件数)は門番 `validate_parton_occupation` が一手に引き受ける(DESIGN §2)。
+    rows = Tuple{Int,Int}[]
+    for i = 6:length(lines)
+        line = MVMCExpertModeParsers.clean_line(lines[i])
+        isempty(line) && continue
+        tok = MVMCExpertModeParsers.split_def_line(line)
+        length(tok) >= 2 || error(
+            "InPmfOcc: $path line $i: expected 'flavor band_index', got '$line'.")
+        fl = _parse_int_strict_local(tok[1], path, i, "flavor")
+        band = _parse_int_strict_local(tok[2], path, i, "band_index")
+        push!(rows, (fl, band))
+    end
+
+    validate_parton_occupation(rows, declared, data.modpara, path)
+
+    n_flavor = data.modpara.nflavor
+    occ = [Int[] for _ = 1:n_flavor]
+    for (fl, band) in rows
+        push!(occ[fl + 1], band + 1)        # 0-based → 1-based はここで 1 回だけ
+    end
+    foreach(sort!, occ)
+    return occ
+end
+
+"`InPmfOcc` の整数フィールドを厳密にパースする(位置つきエラー)。"
+function _parse_int_strict_local(tok::AbstractString, path, line_num::Int, field::String)
+    v = tryparse(Int, tok)
+    v === nothing && error("InPmfOcc: $path line $line_num: invalid $field '$tok'.")
+    return v
+end

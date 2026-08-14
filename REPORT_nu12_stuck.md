@@ -1164,3 +1164,72 @@ mom      E:  -0.99 -12.75 -14.08 -14.17 -14.26 -14.26  … -14.30   gap −7.7e-
   必要なのは初期値・アニーリング・ウォームスタート(§13 で実証済み)といった
   盆地選択の手当てで、ソルバの修理ではない
 - **次に作るなら `InPmfOcc`**(§16-5)。`_pmfocc_opt.dat` をそのまま読み戻せる形にする
+
+---
+
+## 17. `InPmfOcc`(占有集合の読み戻し)の実装(v3.13、2026-08-14)
+
+§16-5 の終端検査が `occ_selfcontained = 0` を返した — **非アウフバウ最適解は本物**で、
+`PartonOccMode = 1` の run は α\* 単独では状態を再現できない。占有は
+`zqp_pmfocc_opt.dat` に記録済みだが**読み戻す経路が無かった**ので、それを埋めた。
+
+実務上の穴だったもの: ウォームスタート / 鎖方式(α だけ渡すと別状態から始まる)、
+PhysCal(M3)で最適化済み状態を測定できない。バンド / Chern 解析は
+`_pmfocc_opt.dat` を直接読めば済むので影響なし。
+
+### 17-1. 実装
+
+| 対象 | 内容 |
+|---|---|
+| スイッチ | `namelist.def` に `InPmfOcc` の行があるかどうか。**modpara にキーは足さない**(`InPmfPara` と同じ作法) |
+| 形式 | `zqp_pmfocc_{init,opt}.dat` と**同一**(`.def` 族、5 行ヘッダ、`NPmfOcc`、`flavor band_index` の 0-based)。**出力をそのまま渡せる** |
+| 効き方 | **初期占有としてのみ**。以後は `PartonOccMode` に従う(0 なら次 step から選び直し、1 ならこれが最初の参照になって枝を追う) |
+| リーダ | 既存の汎用ヘルパ(`read_def_file` / `clean_line` / `split_def_line`)を組み合わせた最小の 1 関数。**新規パーサファイルは作らない** |
+| 検証 | 門番 `validate_parton_occupation`。行数 / 範囲 / フレーバーあたり本数 / 重複 / ヘッダ件数を計算開始前に検査し、破れたらエラー停止(**部分適用しない**) |
+| 適用点 | ドライバの確定順序(§2.3.1): 乱数 → InPmfPara → OptFlag → 門番 → **初期占有(InPmfOcc があればそれ)** → gauge_target_norm → SR ループ |
+
+**`parse_input_parameter_file` は流用できない**(`idx Re Im` の 3 列専用で
+`Dict{Int,ComplexF64}` を返す)。ただし新規パーサも不要で、汎用ヘルパの組み合わせで
+足りた。形式は変えていない。
+
+`parton_update_orbitals!` に `forced_occ` キーワードを足し、選択則を丸ごと上書き
+できるようにした(占有の格納先は増やしていない — 引数で渡すだけ)。
+
+**`explicit`(全 step 占有を固定 = `PartonOccMode = 2`)は実装していない。**
+ウォームスタート / 鎖方式には初期占有の読み戻しで足りる。値 2 は予約のままで
+門番が拒否し続ける。
+
+### 17-2. 検証
+
+**§4-1 ビット一致**: `InPmfOcc` を与えない run を v3.12(`c2431f5`)と比較した。
+`zvo_out` / `zvo_var` / `zvo_SRinfo` / `zvo_conv` / `zvo_parton_diag` / `zqp_*`
+(`pmfocc_{init,opt}` を含む)が**全てバイト一致**。差分は `zvo_CalcTimer` /
+`zvo_parton_time`(壁時計)と runinfo の githash・時刻のみ。
+
+**§4-2 往復(本命)**: `PartonOccMode = 1` の run の `zqp_pmfpara_opt.dat` と
+`zqp_pmfocc_opt.dat` を `InPmfPara.def` / `InPmfOcc.def` として継続 run に渡すと、
+
+- 継続 run の `zqp_pmfocc_init.dat` が 1 本目の `zqp_pmfocc_opt.dat` と一致
+- 両者の初期 Φ が**ビット一致**(`(α*, O*)` の組で状態が閉じた)
+
+**§4-3 非アウフバウ占有の往復**: 「下から Ne 個」でない占有を渡すと、aufbau 初期化では
+到達できない Φ が再現される(同じ α でも aufbau は別の Φ を作る)ことを確認。
+
+**§4-4 検証の発火**: 行数不一致 / band 範囲外 / flavor 範囲外 / 重複 /
+フレーバーあたり本数不一致 / ヘッダ件数の食い違いの 6 ケースすべてでエラー停止。
+
+**§4-5 init ダンプ**: `InPmfOcc` 由来でも `_pmfocc_init.dat` に実際の初期占有が残る。
+
+**§4-6 aufbau との併用**(挙動の記録): `PartonOccMode = 0` + `InPmfOcc` では、
+初期占有は `InPmfOcc`(非アウフバウ)だが**終端は aufbau に選び直されている**。
+仕様どおりの挙動で、拒否はしていない — 「aufbau で回すが初期状態だけ前 run から
+引き継ぐ」という使い方が成立するため。
+
+**§4-7 回帰**: Parton Mode Tests 2733 pass(v3.12 の 2706 から +27)/ Unit Tests
+793 pass / Slater Update 25 pass。既存全緑。
+
+### 17-3. 残っているもの
+
+- `explicit`(全 step 占有固定): 必要になってから。値 2 は予約
+- 盆地選択の手当て(REPORT §16-4 の seed 11272): MOM のスコープ外で、初期値・
+  アニーリング・ウォームスタートの領域。**`InPmfOcc` はその鎖方式の土台になる**

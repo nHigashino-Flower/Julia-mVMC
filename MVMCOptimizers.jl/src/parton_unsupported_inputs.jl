@@ -639,3 +639,56 @@ function validate_parton_inputs(data::ExpertModeData, ctx::ParallelContext)
     validate_parton_parallel(ctx, data.modpara)
     return nothing
 end
+
+"""
+    validate_parton_occupation(rows, declared, modpara, path)
+
+`InPmfOcc` で読み込んだ占有集合を検証する(DESIGN §2)。`rows` は
+`(flavor, band_index)` の 0-based ペア列、`declared` はヘッダの `NPmfOcc`
+(無ければ負)。
+
+**部分適用はしない** — ひとつでも破れたらエラーで停止する。占有集合は状態の一部
+(§1.1)なので、壊れた占有で走り出すと「どの状態を計算したのか」が分からなくなる。
+
+検査:
+
+- ヘッダの件数と実データの行数が一致
+- 行数が `NFlavor × NElec` と一致
+- `flavor ∈ [0, NFlavor)`、`band_index ∈ [0, NSite)`
+- 各フレーバーちょうど `NElec` 本、かつ重複なし
+"""
+function validate_parton_occupation(
+    rows::Vector{Tuple{Int,Int}},
+    declared::Int,
+    modpara::ModParaParameters,
+    path,
+)
+    n_flavor = modpara.nflavor
+    n_site = modpara.nsite
+    n_elec = modpara.nelec
+
+    declared >= 0 && declared != length(rows) && error(
+        "InPmfOcc: $path declares NPmfOcc = $declared but holds $(length(rows)) data rows.")
+    length(rows) == n_flavor * n_elec || error(
+        "InPmfOcc: $path holds $(length(rows)) entries but NFlavor × NElec = " *
+        "$(n_flavor * n_elec) are required. Refusing to apply it partially.")
+
+    seen = [Set{Int}() for _ = 1:n_flavor]
+    for (k, (fl, band)) in enumerate(rows)
+        0 <= fl < n_flavor || error(
+            "InPmfOcc: $path entry $k: flavor $fl is out of range [0, $(n_flavor - 1)].")
+        0 <= band < n_site || error(
+            "InPmfOcc: $path entry $k: band_index $band is out of range " *
+            "[0, $(n_site - 1)].")
+        band in seen[fl + 1] && error(
+            "InPmfOcc: $path entry $k: band_index $band appears twice for flavor $fl. " *
+            "An occupation set cannot hold the same orbital twice.")
+        push!(seen[fl + 1], band)
+    end
+    for f = 1:n_flavor
+        length(seen[f]) == n_elec || error(
+            "InPmfOcc: $path gives $(length(seen[f])) orbitals for flavor $(f - 1), " *
+            "but NElec = $n_elec are required (each flavour occupies exactly NElec).")
+    end
+    return nothing
+end

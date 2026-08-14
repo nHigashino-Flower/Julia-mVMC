@@ -396,6 +396,7 @@ function parton_update_orbitals!(
     alpha::Vector{ComplexF64},
     n_elec::Int;
     gap_tol::Float64 = 1e-8,
+    forced_occ::Union{Nothing,Vector{Vector{Int}}} = nothing,
 )
     foreach(H -> fill!(H, 0), mfham.h_mf)
     for k = 1:mfham.n_idx
@@ -435,9 +436,15 @@ function parton_update_orbitals!(
         F = eigen(Hermitian(mfham.h_mf[f]))
         # 占有集合を選ぶ(DESIGN §1.1)。MOM の参照は**更新前**の占有軌道。
         # この後 mfham.orbitals[f] を上書きするが、参照はここで読み終えている。
-        phi_ref = (mfham.occ_mode != 0 && !isempty(mfham.occ[f])) ?
-                  mfham.orbitals[f] : nothing
-        occ = parton_select_occupation(F.vectors, F.values, phi_ref, n_elec)
+        # `forced_occ` は選択則を丸ごと上書きする(InPmfOcc による初期占有。§2.3.1)。
+        # MOM はこれを最初の参照として枝を追う(次の呼び出しから通常の選択則)。
+        occ = if forced_occ !== nothing
+            copy(forced_occ[f])
+        else
+            phi_ref = (mfham.occ_mode != 0 && !isempty(mfham.occ[f])) ?
+                      mfham.orbitals[f] : nothing
+            parton_select_occupation(F.vectors, F.values, phi_ref, n_elec)
+        end
         mfham.occ[f] = occ
         mfham.eig_vals[f] .= F.values
         mfham.eig_vecs[f] .= F.vectors
