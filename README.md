@@ -14,8 +14,27 @@ Julia port of the [mVMC](https://github.com/issp-center-dev/mVMC) (many-variable
 | MPI parallelization | 🧪 Partially verified / smoke-tested | `VMCParaOpt` supports direct SR (`NSRCG = 0`) with `NSplitSize >= 1` for `NQPFull = 1` and for sz-conserved standard-projection `NQPFull > 1` when `NQPOptTrans = 1` (`NSPGaussLeg > 1` and/or `NMPTrans > 1`), plus standard SR-CG (`NSRCG = 1`) with `NSplitSize = 1`; rank0 output/readback, comm0 reductions, `NSplitSize/NStore`, and standard-projection self-consistency paths are smoke-tested under `mpiexec -n 2/-n 4`. `VMCPhysCal` supports `NSplitSize > 1` for sz-conserved normal-Green runs (`NLanczosMode = 0`). `VMCPhysCal` split with Lanczos, FSZ/general-orbital PhysCal split, SR-CG with `NSplitSize > 1`, FSZ standard-projection `NQPFull > 1` (`NSPGaussLeg > 1` or `abs(NMPTrans) > 1`), OptTrans-derived QP sectors (`NQPOptTrans > 1` or active `OptTrans`) with `NSplitSize > 1`, `NSRCG >= 2`, `useDiagScale != 0`, and `RescaleSmat != 0` are still rejected. |
 
 <!-- --- parton-mode (fork addition) --- -->
-> **Parton mode (fork)**: 実行手順(スレッド数の決まり方・Slurm 例・実効サンプル数)は
-> [docs/parton_run.md](docs/parton_run.md)、設計は `DESIGN_parton.md` を参照。
+> ### このフォークについて(parton mean-field VMC)
+>
+> これは [tmisawa/Julia-mVMC](https://github.com/tmisawa/Julia-mVMC) のフォークで、
+> **パートン平均場 VMC モード**(`PartonMode = 1`)を追加したものです。フレーバーごとの
+> スレーター行列式の積を変分波動関数とし、平均場ハミルトニアン H_MF の係数 α を
+> 変分パラメータにします。`PartonMode = 0`(既定)では上流とビット単位で同一に動きます。
+>
+> **ブランチ運用**:
+>
+> | ブランチ | 役割 |
+> |---|---|
+> | `parton-mode` | **日常の開発ブランチ**(default branch)。実装・文書・テストはここ |
+> | `main` | **upstream の純粋な鏡**。マージしません(追従を fast-forward に保ち、upstream への PR をいつでもクリーンに切れるようにするため) |
+>
+> **どこを読むか**:
+>
+> | 文書 | 内容 |
+> |---|---|
+> | [`DESIGN_parton.md`](DESIGN_parton.md) | **設計と全決定の記録**。仕様の唯一の正。まずここ |
+> | [`docs/parton_run.md`](docs/parton_run.md) | 実行手順(スレッド数の決まり方・Slurm 例・実効サンプル数) |
+> | [`REPORT_nu12_stuck.md`](REPORT_nu12_stuck.md) | 診断・調査の記録(ν=1/2 が局所解に留まる件の機構特定と対処) |
 <!-- --- end parton-mode --- -->
 
 ## Installation

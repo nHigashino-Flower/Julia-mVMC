@@ -68,3 +68,12 @@ _fixture_harvest/
 .devcontainer/
 .vscode/
 .idea/
+
+# --- parton-mode (fork addition) ---
+# 一時的な git worktree の置き場(upstream へ PR を出すときだけ生やす。常設しない)。
+# 中身は別の作業ツリーなので、こちらの履歴には決して入れない。
+/.claude/worktrees/
+# 手元の計算ディレクトリ。入力・出力・診断コードが混在し、zvo_var.dat のような
+# 数十 MB のファイルを含むのでリポジトリには入れない(REPORT の再現手順が参照する
+# 診断コードの置き場をどうするかは別途判断する)。
+/playground_nozomi/
