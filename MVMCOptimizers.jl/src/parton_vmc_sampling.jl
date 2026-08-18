@@ -107,7 +107,19 @@ function parton_make_initial_sample!(
             place_particle!(cfg, f, m, sites[m])
         end
         parton_recompute_amplitude_all!(amp, mfham, cfg, data, ws)
-        abs(parton_calculate_ip(amp, qp_weight)) > 1e-12 && return nothing
+        # 合否は upstream `make_initial_sample!` と同じ粒度で判定する。upstream は
+        # `calculate_m_all_fcmp!` が返す分解の info(特異検出)だけを見て |Pf| の
+        # 大きさは一切見ない。パートン側も `parton_recompute_amplitude_all!` が
+        # 特異ブロックに det = 0 を書くので、ip が非ゼロなら「全ブロックが非特異、
+        # かつ QP 和が打ち消していない」ことが確かめられる。
+        #
+        # 絶対値の閾値を置くと Ne 依存で壊れる: Φ は H_MF の**正規直交**固有
+        # ベクトルなので |det A| は α のスケールに依らず Ne に対して指数的に
+        # 小さくなる(実測 Ne=8 で 7e-4 / Ne=18 で 1e-8 / Ne=32 で 4e-16、
+        # F = 2 では ip がこの二乗)。旧実装の `> 1e-12` は Ne ≳ 16 の健全な配置を
+        # すべて棄却し、100 試行を使い切って error になっていた。
+        ip = parton_calculate_ip(amp, qp_weight)
+        (isfinite(ip) && !iszero(ip)) && return nothing
     end
     error(
         "Could not find an initial configuration with non-zero amplitude in " *
