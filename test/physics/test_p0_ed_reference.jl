@@ -72,6 +72,40 @@ end
     @test gap > 0                                               # 4 番目は多様体の外
 end
 
+if !isdir(ED_CASE_FERMION_NU13_6X3)
+    @warn "6×3 の ED データが無いので P0-d をスキップします: $ED_CASE_FERMION_NU13_6X3"
+else
+    @testset "P0-d ν=1/3 フェルミオン(6×3 ユニットセル・36 サイト・6 粒子)" begin
+        ref = read_ed_reference(ED_CASE_FERMION_NU13_6X3)
+        print(ed_ledger(ref))
+
+        @test ref.nx == 6
+        @test ref.ny == 3
+        @test ref.nsite == 36
+        @test ref.nsite == 2 * ref.nx * ref.ny
+        @test ref.nelec == 6
+        @test ref.statistics == "Fermion"
+        @test ref.boundary == "periodic"
+        @test ref.nelec // (ref.nx * ref.ny) == 1 // 3
+
+        @test ref.t == 1.0
+        @test isapprox(ref.t1, 0.2928932188134525; atol = 1e-15)
+        @test isapprox(ref.t2, -0.2928932188134525; atol = 1e-15)
+        @test isapprox(ref.t3, 0.20710678118654754; atol = 1e-15)
+        @test isapprox(ref.psi, 0.7853981633974483; atol = 1e-15)
+        @test ref.phi == 0.0 && ref.xi == 0.0 && ref.eta == 0.0
+        @test ref.u == 1.0 && ref.v == 0.0                          # NN 斥力のみ
+
+        # 乱雑ポテンシャルなし(4×4 ボゾン参照と同じ条件)
+        @test ref.random_potential_max == 0.0
+
+        e_min, spread, gap = ed_ground_manifold(ref, 3)             # 3 重準縮退
+        @test isapprox(e_min, -12.126195092720709; atol = 1e-12)
+        @test isapprox(spread, 0.025446002588616068; atol = 1e-12)
+        @test gap > spread                                          # 多様体の外が離れている
+    end
+end
+
 @testset "P0-c パーサの頑健性" begin
     ref = read_ed_reference(ED_CASE_FERMION_NU13)
     # ディレクトリ指定とファイル直接指定で同じ結果

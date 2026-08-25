@@ -26,6 +26,16 @@ include(joinpath(PHYSICS_DIR, "parton_fixture.jl"))
         include(joinpath(PHYSICS_DIR, "test_p2_qp_translation.jl"))
     end
 
+    # fixture の向き正準化(2026-08-18)。ED 非依存なので常に走らせる。
+    @testset "fixture orientation" begin
+        include(joinpath(PHYSICS_DIR, "test_fixture_orientation.jl"))
+    end
+
+    # アンザッツ変種(flavor_groups / graph = :full)。ED 非依存。
+    @testset "ansatz variants" begin
+        include(joinpath(PHYSICS_DIR, "test_ansatz_variants.jl"))
+    end
+
     if !isdir(ED_CASE_BOSON_NU12) || !isdir(ED_CASE_FERMION_NU13)
         @warn """外部 ED データが見つからないので P0/P1 をスキップします。
                  boson:   $ED_CASE_BOSON_NU12
