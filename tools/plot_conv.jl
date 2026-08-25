@@ -5,7 +5,7 @@ zvo_conv.dat から収束の 4 パネル図を PNG で出す薄いスクリプ�
 本体パッケージからは独立していて、依存は tools/Project.toml に隔離してある。
 ローカル実行を想定:
 
-    julia --project=tools tools/plot_conv.jl <zvo_conv.dat> [出力.png]
+    julia --project=tools tools/plot_conv.jl <zvo_conv.dat> [出力.pdf]
 
 パネル:
   1. E vs step(線形)
@@ -24,7 +24,7 @@ gr()
 
 length(ARGS) >= 1 || error("usage: julia --project=tools tools/plot_conv.jl <zvo_conv.dat> [out.png]")
 src = ARGS[1]
-out = length(ARGS) >= 2 ? ARGS[2] : replace(src, r"\.dat$" => "") * ".png"
+out = length(ARGS) >= 2 ? ARGS[2] : replace(src, r"\.dat$" => "") * ".pdf"
 
 e_tail = NaN
 n_smp = 0

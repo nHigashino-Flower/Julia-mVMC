@@ -901,6 +901,26 @@ stochastic_opt!(案 B 後は MF ブロックも解く)/ weight_average / paralle
 
 ## 11. 決定ログ(要約)
 
+- v3.14 (2026-08-18, fixture の向き正準化): **`parton_fixture` のボンド係数の向きを
+  idx クラス代表に揃えた**(バグ修正)。`bond_class` は無向ボンド(`i < j` 正規化)の
+  クラス代表を `min(ki, kj)` で選ぶが、pmftrans の係数 t はリスト向きのまま書かれて
+  いた。並進コピーで端点の大小が入れ替わるボンド(8×8 ef4 で 1536 行中 624 行)は
+  t が共役側で載り、組み立て規約「リスト向きで α·t + h.c.」の下で同一 idx に α·t と
+  α·conj(t) が同居 — **α が複素だと拡大セル並進が破れる**(8×8 ef4 の実 run で
+  y 方向残差 0.6〜0.8、スペクトル差 0.33 を実測)。α = 1(実数)では h.c. と合流して
+  同一の H になるため初期ハミルトニアンの検査では発見できず、SR が α を複素平面へ
+  動かして初めて発症する。**変分多様体そのものが意図した ef4/xexet2(並進共変)と
+  違っていた**ことになる。修正は fixture 側のみ(本体 `parton_build_mf_templates!` の
+  契約は無罪)。回帰テスト `test/physics/test_fixture_orientation.jl`(複素 α で
+  拡大セル並進の厳密不変性 + α=1 で cb 模型の再現 + 破っている並進の検出力)。
+  P2-5 は修正で H_MF が保存並進を厳密に保つようになり空 k セクター(重み 0)が
+  現れるため、e の検査を w > 0 のセクターに限定するよう適応した。
+  **同族バグの前例**: 参照VMC の Jastrow idx(2026-08-08 発見、
+  `symmetrize_jastrow_idx` で修正済み)。「端点の大小で決まる量」は並進共変性を
+  壊す、という教訓の 2 例目。参照VMC の orbital(f_ij)は全順序対リスト + 固定係数
+  なしなので構造的に免疫、upstream にも波及しない(pmftrans/pmfpara は fork 追加)。
+  発見の経緯と解析ツール(`tools/parton_bands.jl` / `tools/parton_band_chern.jl`)は
+  `playground_nozomi/cb_nu12_boson/PROJECT.md` の 2026-08-18 メモを参照
 - v3.13 (2026-08-14, 占有の読み戻し): **`InPmfOcc`** を実装(§2.3.1 / §3.3.1 / §8-18)。
   v3.12 の終端検査が `occ_selfcontained = 0` を返した(REPORT §16-5)ため、
   `PartonOccMode = 1` の run は α\* 単独では状態を再現できない。これを埋める。

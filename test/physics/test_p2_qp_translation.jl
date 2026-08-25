@@ -231,13 +231,20 @@ end
             push!(ws, nrm / (n_trans^2 * norm_ref))
         end
 
-        @test all(abs(imag(e)) < 1e-8 for e in es)   # 各セクターのエネルギーは実
         @test all(w > -1e-12 for w in ws)            # 重みは非負
         @test sum(ws) ≈ 1 rtol = 1e-9                # 完全性 Σ_k P_k = 1
-        @test sum(w * e for (w, e) in zip(ws, es)) ≈ e_ref rtol = 1e-8   # 凸結合
-        @test minimum(real, es) <= real(e_ref) + 1e-10                    # 変分的に得
+        # 重みが実質ゼロのセクターは e_k = 0/0 で無意味なので、e の検査は
+        # w > 0 のセクターに限る。fixture の向き正準化(2026-08-18)で H_MF が
+        # 拡大セル並進を厳密に保つようになり、|φ⟩ が保存並進の固有状態になった
+        # ため、非整合な k の重みが機械精度で 0 になる(修正前は向きの破れが
+        # 全セクターに漏れていたので空セクターが無く、この場合分けが不要だった)
+        live = [k for k in eachindex(ws) if ws[k] > 1e-10]
+        @test 2 <= length(live)                      # 凸結合の検出力に 2 セクター以上要る
+        @test all(abs(imag(es[k])) < 1e-8 for k in live)   # 生きたセクターの e は実
+        @test sum(ws[k] * es[k] for k in live) ≈ e_ref rtol = 1e-8       # 凸結合
+        @test minimum(real(es[k]) for k in live) <= real(e_ref) + 1e-10  # 変分的に得
         # 等号しか出ないなら射影が自明ということ(テストの検出力の確認)
-        @test minimum(real, es) < real(e_ref) - 1e-6
+        @test minimum(real(es[k]) for k in live) < real(e_ref) - 1e-6
     end
 end
 
