@@ -17,11 +17,13 @@ const PHYSICS_DIR = @__DIR__
 
 include(joinpath(PHYSICS_DIR, "ed_reference.jl"))
 include(joinpath(PHYSICS_DIR, "checkerboard_model.jl"))
+include(joinpath(PHYSICS_DIR, "lattice_model.jl"))
 include(joinpath(PHYSICS_DIR, "parton_fixture.jl"))
 
 @testset "Parton physics validation (P layer)" begin
     # P2 は外部 ED データに依存しない(格子の対称性と射影の代数だけを見る)ので、
     # ED ダンプが無い環境でも走らせる。
+    @testset "K Kapit-Mueller" begin include(joinpath(PHYSICS_DIR, "test_km_model.jl")) end
     @testset "P2 QP construction" begin
         include(joinpath(PHYSICS_DIR, "test_p2_qp_translation.jl"))
     end

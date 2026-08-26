@@ -244,15 +244,14 @@ end
 ペアが該当し除外される。除外数は返り値の `n_swapped_dropped` で確認できる
 (`graph = :model` では常に 0)。
 """
-function parton_fixture(nx::Int, ny::Int, nflavor::Int, ex::Int, ey::Int;
+function parton_fixture(model::PartonLatticeModel, nflavor::Int, ex::Int, ey::Int;
                         u_mf::Float64 = 0.0,
                         u_bonds::Symbol = :nn,
                         idx_mode::Symbol = :orbit,
                         flavor_groups::Union{Nothing,Vector{Int}} = nothing,
                         psg_onsite::Bool = false,
                         psg_shells::Vector{Int} = Int[],
-                        graph::Symbol = :model,
-                        p::CheckerboardParams = CheckerboardParams())
+                        graph::Symbol = :model)
     psg_onsite && u_mf != 0.0 &&
         error("psg_onsite と u_mf != 0 は同じ (i,i) 行を二重に作るので併用不可")
     graph in (:model, :full) || error("graph は :model / :full。graph = $(graph)")
@@ -261,6 +260,8 @@ function parton_fixture(nx::Int, ny::Int, nflavor::Int, ex::Int, ey::Int;
             "graph = :full は全サイト対を自前で並べるので u_mf / psg_onsite / " *
             "psg_shells とは併用しません")
     end
+    isempty(psg_shells) || model isa CheckerboardLatticeModel || error(
+        "psg_shells は checkerboard 専用です(cb_psg_extra_bonds の d² 規約に依存)")
     if flavor_groups !== nothing
         length(flavor_groups) == nflavor || error(
             "flavor_groups の長さ $(length(flavor_groups)) が NFlavor = $(nflavor) と違います")
@@ -269,17 +270,19 @@ function parton_fixture(nx::Int, ny::Int, nflavor::Int, ex::Int, ey::Int;
         idx_mode === :bond_flavor && error(
             "flavor_groups と idx_mode = :bond_flavor は併用しません")
     end
-    nsite = 2 * nx * ny
-    bonds = cb_undirected_bonds(nx, ny)
-    # graph = :full は平均場のグラフだけを全サイト対へ広げる。物理 H(physhop)は
-    # 模型の t_ij のまま(下の physhop ループが `bonds` を使う)。ただし拡大セル
-    # 並進が端点を入れ替えるペアは α が実数でないと並進共変にできず、コアは
-    # その虚部を凍結しない(オンサイトしか見ない)ので**除外する**
-    # (`cb_translation_swapped_pairs` の docstring 参照)。
+    nsite = pl_nsite(model)
+    bonds = pl_bonds(model)
+    # 平均場が保つ並進の置換。idx クラスはこの群の**軌道そのもの**で定義する。
+    mf_perms = [pl_shift_perm(model, tx, ty) for (tx, ty) in pl_mf_shifts(model, ex, ey)]
+    # 平均場の並進が両端点を入れ替えるペア(`pl_swapped_pairs` の docstring 参照)。
+    # α が実数でないと並進共変にできないが、コアの虚部強制凍結はオンサイトしか
+    # 見ないので、**そのクラスの α を丸ごと凍結**して扱う(係数は正しい値のまま
+    # 残るので平均場は動かない)。graph = :full は係数が全部 1 なので、従来どおり
+    # ペアごと除外する方が変分空間を歪めない。
+    swapped = pl_swapped_pairs(model, ex, ey)
     n_swapped_dropped = 0
     mf_bonds = if graph === :full
-        swapped = cb_translation_swapped_pairs(nx, ny, ex, ey)
-        kept = [b for b in cb_all_pairs(nx, ny) if !(minmax(b[1], b[2]) in swapped)]
+        kept = [b for b in pl_all_pairs(model) if !(minmax(b[1], b[2]) in swapped)]
         n_swapped_dropped = length(swapped)
         kept
     else
@@ -290,41 +293,54 @@ function parton_fixture(nx::Int, ny::Int, nflavor::Int, ex::Int, ey::Int;
     class_of_idx = Dict{Any,Int}()
     pmftrans = NTuple{5,ComplexF64}[]
     pmfpara = Tuple{Int,Int,Int,Int,Int,ComplexF64}[]
+    frozen_idx = Set{Int}()      # 自己交換クラス(α を実数に縛る代わりに凍結する)
 
     for (i, j, dx, dy, d2) in mf_bonds
-        # --- 向きの正準化(2026-08-18 のバグ修正)---------------------------
-        # `bond_class` はクラス代表を min(ki, kj) で選ぶが、係数 t を i < j の
-        # リスト向きのまま書くと、並進コピーで端点の大小が入れ替わったボンド
-        # (8×8 ef4 で 1536 行中 624 行)が t の共役側で載る。組み立ては
-        # 「リストされた向きで α·t + h.c.」なので、同一 idx に α·t と α·conj(t)
-        # が同居し、**α が複素だと拡大セル並進が破れる**(y 方向残差 0.6〜0.8 を
-        # 実測)。α = 1(実数)では h.c. と合流して同一の H になるため、初期
-        # ハミルトニアンだけを見る検査では発見できない。
-        # 係数もクラス代表と同じ向き(min キーを供給する端点を始点)で書く。
-        ki = (enlarged_cell_class(i, nx, ny, ex, ey), dx, dy)
-        kj = (enlarged_cell_class(j, nx, ny, ex, ey), -dx, -dy)
-        if ki <= kj
+        # --- クラス代表と向きの正準化 ----------------------------------------
+        # クラス鍵は**有向ボンドの軌道**(平均場の並進群で写した先の集合)の最小元。
+        #
+        # 旧実装は `(拡大セルクラス, dx, dy)` を鍵にしていたが、トーラス上で同じ
+        # 端点対に複数の変位が落ちる場合(4×4 の (±2,±2) は四重縮退)、並進で
+        # 関係するペアに**別の代表変位が割り当たり**、同じ軌道が 2 つのクラスへ
+        # 割れて並進共変性が静かに破れる(4×4 KM で残差 0.0018 を実測)。
+        # 軌道そのものを鍵にすればこの縮退に依らない。cb の模型グラフでは
+        # 変位が一意なので分割は旧実装と同一(P 層テストがビット一致を守る)。
+        #
+        # 向きも代表に揃える(2026-08-18 のバグ修正)。係数 t を i < j のリスト
+        # 向きのまま書くと、並進コピーで端点の大小が入れ替わったボンドが t の
+        # 共役側で載り、同一 idx に α·t と α·conj(t) が同居して **α が複素だと
+        # 並進が破れる**。α = 1(実数)では h.c. と合流するので初期 H だけを見る
+        # 検査では発見できない。
+        orbit_ij = Set((p[i + 1], p[j + 1]) for p in mf_perms)
+        orbit_ji = Set((p[j + 1], p[i + 1]) for p in mf_perms)
+        rep_ij, rep_ji = minimum(orbit_ij), minimum(orbit_ji)
+        # 軌道が逆向きも含む = 並進がこのボンドを向き反転で自分自身へ写す
+        # → α·t = conj(α·t) が必要 = α は実数(`pl_swapped_pairs` の docstring)
+        self_conj = rep_ij in orbit_ji
+        if rep_ij <= rep_ji
             a, b, da, db = i, j, dx, dy      # ホップ a → b(向きは i → j のまま)
+            orbit_key = rep_ij
         else
             a, b, da, db = j, i, -dx, -dy    # 反転: j → i を正準に採る
+            orbit_key = rep_ji
         end
-        _, y0 = cb_site_to_xy(a, nx)
         if graph === :full
             coeff = ComplexF64(1)      # 全 1。t の距離制限を外し α に全部持たせる
         else
-            t = cb_hopping(p, da, db, y0)         # b†_b b_a の係数(a → b のホップ)
+            t = pl_mf_hopping(model, a, b, da, db, nflavor)   # b†_b b_a の係数
             # 内部検査: 反転はエルミート共役に一致するはず(モデル側の規約が
             # 破れたらここで気づく)
-            _, y0i = cb_site_to_xy(i, nx)
-            abs(t - (ki <= kj ? cb_hopping(p, dx, dy, y0i) :
-                                conj(cb_hopping(p, dx, dy, y0i)))) < 1e-13 ||
-                error("cb_hopping is not Hermitian for bond ($i, $j, $dx, $dy)")
-            # 非対角の平均場係数 = t_ij + U(支給仕様、係数 1)。U を載せるボンドは
+            tij = pl_mf_hopping(model, i, j, dx, dy, nflavor)
+            abs(t - (rep_ij <= rep_ji ? tij : conj(tij))) < 1e-12 ||
+                error("pl_mf_hopping is not Hermitian for bond ($i, $j, $dx, $dy)")
+            # 非対角の平均場係数 = t + U(支給仕様、係数 1)。U を載せるボンドは
             # `u_bonds` で選ぶ(:nn なら最近接のみ、:all なら全ボンド)。
-            add_u = (u_mf != 0.0) && (u_bonds === :all || d2 == 2)
+            nn_d2 = minimum(bb[5] for bb in bonds)
+            add_u = (u_mf != 0.0) && (u_bonds === :all || d2 == nn_d2)
             coeff = t + (add_u ? u_mf : 0.0)
         end
-        key = _idx_key(idx_mode, min(ki, kj), (i, j))
+        key = _idx_key(idx_mode, orbit_key, (i, j))
+        is_swapped = self_conj
         # pmftrans は `H[site1, site2] += α·value` と読まれる = c†_{site1} c_{site2}
         # の係数。こちらの t は c†_b c_a の係数なので (site1, site2) = (b, a) で出す。
         # physhop の (site1, site2, value) は b†_{site2} b_{site1} の係数なので
@@ -332,18 +348,26 @@ function parton_fixture(nx::Int, ny::Int, nflavor::Int, ex::Int, ey::Int;
         for f = 0:(nflavor - 1)
             idx = get!(class_of_idx, _flavor_key(idx_mode, key, f, flavor_groups),
                        length(class_of_idx))
+            is_swapped && push!(frozen_idx, idx)
             push!(pmftrans, (ComplexF64(b), ComplexF64(f), ComplexF64(a),
                              ComplexF64(f), coeff))
             push!(pmfpara, (b, f, a, f, idx, ComplexF64(1, 0)))
         end
     end
 
-    # --- 平均場: オンサイト。u_mf != 0(ν=1/3 の Hartree)か graph = :full ---
-    if u_mf != 0.0 || graph === :full
-        onsite_coeff = graph === :full ? ComplexF64(1) : ComplexF64(u_mf)
+    # --- 平均場: オンサイト。u_mf(ν=1/3 の Hartree)/ 模型由来(KM の自己像)/
+    #     graph = :full のいずれかがあるとき。
+    # オンサイトは並進対称群の軌道ごとに値が違いうる(KM の自己像は Landau 位相が
+    # x に依存するので x 周期 q で変わる)。全サイトを見て判定すること。
+    mf_onsites = [pl_mf_onsite(model, i, nflavor) for i = 0:(nsite - 1)]
+    all(abs(imag(v)) < 1e-12 for v in mf_onsites) || error(
+        "平均場のオンサイト項が複素です(pmftrans のオンサイトは実数必須)")
+    has_model_onsite = maximum(abs, mf_onsites; init = 0.0) > 1e-14
+    if u_mf != 0.0 || has_model_onsite || graph === :full
         for i = 0:(nsite - 1)
-            key = _idx_key(idx_mode, (enlarged_cell_class(i, nx, ny, ex, ey), 0, 0),
-                           (i, i))
+            onsite_coeff = graph === :full ? ComplexF64(1) :
+                           ComplexF64(u_mf + real(mf_onsites[i + 1]))
+            key = _idx_key(idx_mode, (:onsite, minimum(p[i + 1] for p in mf_perms)), (i, i))
             for f = 0:(nflavor - 1)
                 idx = get!(class_of_idx, _flavor_key(idx_mode, key, f, flavor_groups),
                            length(class_of_idx))
@@ -360,8 +384,7 @@ function parton_fixture(nx::Int, ny::Int, nflavor::Int, ex::Int, ey::Int;
     # (a) オンサイト(係数 1、α は乱数規約によりオンサイト群 = 実のみ)
     if psg_onsite
         for i = 0:(nsite - 1)
-            key = _idx_key(idx_mode, (enlarged_cell_class(i, nx, ny, ex, ey), 0, 0),
-                           (i, i))
+            key = _idx_key(idx_mode, (:onsite, minimum(p[i + 1] for p in mf_perms)), (i, i))
             for f = 0:(nflavor - 1)
                 idx = get!(class_of_idx, _flavor_key(idx_mode, key, f, flavor_groups),
                            length(class_of_idx))
@@ -375,50 +398,79 @@ function parton_fixture(nx::Int, ny::Int, nflavor::Int, ex::Int, ey::Int;
 
     # (b) 追加シェル(係数 1、α 複素)。正準化はメインのボンドループと同一
     #     (t = 1 は実なので係数の向きは効かないが、クラス代表との整合は保つ)
-    for (i, j, dx, dy, _) in cb_psg_extra_bonds(nx, ny, psg_shells)
-        ki = (enlarged_cell_class(i, nx, ny, ex, ey), dx, dy)
-        kj = (enlarged_cell_class(j, nx, ny, ex, ey), -dx, -dy)
-        a, b = ki <= kj ? (i, j) : (j, i)
-        key = _idx_key(idx_mode, min(ki, kj), (i, j))
-        for f = 0:(nflavor - 1)
-            idx = get!(class_of_idx, _flavor_key(idx_mode, key, f, flavor_groups),
-                       length(class_of_idx))
-            push!(psg_idx, idx)
-            push!(pmftrans, (ComplexF64(b), ComplexF64(f), ComplexF64(a),
-                             ComplexF64(f), ComplexF64(1)))
-            push!(pmfpara, (b, f, a, f, idx, ComplexF64(0, 0)))
+    if !isempty(psg_shells)
+        for (i, j, dx, dy, _) in cb_psg_extra_bonds(model.nx, model.ny, psg_shells)
+            orbit_ij = Set((p[i + 1], p[j + 1]) for p in mf_perms)
+            orbit_ji = Set((p[j + 1], p[i + 1]) for p in mf_perms)
+            rep_ij, rep_ji = minimum(orbit_ij), minimum(orbit_ji)
+            a, b = rep_ij <= rep_ji ? (i, j) : (j, i)
+            key = _idx_key(idx_mode, min(rep_ij, rep_ji), (i, j))
+            for f = 0:(nflavor - 1)
+                idx = get!(class_of_idx, _flavor_key(idx_mode, key, f, flavor_groups),
+                           length(class_of_idx))
+                push!(psg_idx, idx)
+                push!(pmftrans, (ComplexF64(b), ComplexF64(f), ComplexF64(a),
+                                 ComplexF64(f), ComplexF64(1)))
+                push!(pmfpara, (b, f, a, f, idx, ComplexF64(0, 0)))
+            end
         end
     end
 
     # --- 物理ハミルトニアンの合成ホップ: t_ij をそのまま(片方向) ---
     physhop = Tuple{Int,Int,ComplexF64}[]
     for (i, j, dx, dy, _) in bonds
-        _, y0 = cb_site_to_xy(i, nx)
-        push!(physhop, (i, j, cb_hopping(p, dx, dy, y0)))
+        push!(physhop, (i, j, pl_hopping(model, i, j, dx, dy)))
     end
+    # 物理のオンサイト項(KM のトーラス自己像)。physhop.def は site1 == site2 を
+    # 禁じている(暗黙 h.c. + 両向き評価で二重計上する)ので、DESIGN §2.4 のとおり
+    # **coulombinter の対角行**(硬芯なら V n_i² = V n_i)として渡す。
+    phys_onsite = [(i, real(pl_onsite(model, i))) for i = 0:(nsite - 1)]
+    all(abs(imag(pl_onsite(model, i))) < 1e-12 for i = 0:(nsite - 1)) ||
+        error("物理のオンサイト項が複素です(エルミート性が壊れています)")
 
     return (
         pmftrans = [(Int(real(a)), Int(real(b)), Int(real(c)), Int(real(d)), v)
                     for (a, b, c, d, v) in pmftrans],
         pmfpara = pmfpara,
         physhop = physhop,
+        phys_onsite = phys_onsite,
         n_idx = length(class_of_idx),
         nsite = nsite,
         psg_idx = psg_idx,
+        frozen_idx = frozen_idx,
         n_swapped_dropped = n_swapped_dropped,
+        model = model,
     )
 end
 
 """
-    physical_coulomb(nx, ny, u) -> Vector{Tuple{Int,Int,Float64}}
+    parton_fixture(nx, ny, nflavor, ex, ey; ...)
 
-物理ハミルトニアンの密度型: 最近接ボンド(d² = 2)に U。素の値を入れる
+checkerboard 向けの後方互換ラッパ。既存の呼び出しはこちらに落ちる。
+"""
+parton_fixture(nx::Int, ny::Int, nflavor::Int, ex::Int, ey::Int;
+               p::CheckerboardParams = CheckerboardParams(), kwargs...) =
+    parton_fixture(CheckerboardLatticeModel(nx, ny; p = p), nflavor, ex, ey; kwargs...)
+
+"""
+    physical_coulomb(model, u) -> Vector{Tuple{Int,Int,Float64}}
+
+物理ハミルトニアンの密度型: 模型の最近接ペアに U。素の値を入れる
 (上の「規格化について」を参照)。V = 0 なので 2 次近接は入れない。
 """
-function physical_coulomb(nx::Int, ny::Int, u::Float64)
-    u == 0.0 && return Tuple{Int,Int,Float64}[]
-    return [(i, j, u) for (i, j, _, _, d2) in cb_undirected_bonds(nx, ny) if d2 == 2]
+function physical_coulomb(model::PartonLatticeModel, u::Float64)
+    out = Tuple{Int,Int,Float64}[]
+    u == 0.0 || append!(out, [(i, j, u) for (i, j) in pl_nn_pairs(model)])
+    # 模型由来のオンサイト項は対角行 (i, i, ε₀) として載せる(DESIGN §2.4)
+    for i = 0:(pl_nsite(model) - 1)
+        e0 = real(pl_onsite(model, i))
+        abs(e0) > 1e-14 && push!(out, (i, i, e0))
+    end
+    return out
 end
+
+physical_coulomb(nx::Int, ny::Int, u::Float64) =
+    physical_coulomb(CheckerboardLatticeModel(nx, ny), u)
 
 """
     write_parton_def_files(dir, nx, ny, F, ex, ey; u_mf, u_phys, sr...)
@@ -433,7 +485,7 @@ end
 `Dict(idx => 0)` を渡せばその idx を凍結できる。ゲージ平坦方向は v3.2 以降
 `parton_project_gauge!` が潰すので、ゲージ目的でここを 0 にする必要はない。
 """
-function write_parton_def_files(dir::AbstractString, nx::Int, ny::Int, F::Int,
+function write_parton_def_files(dir::AbstractString, model::PartonLatticeModel, F::Int,
                                 ex::Int, ey::Int;
                                 u_mf::Float64 = 0.0,
                                 u_phys::Float64 = 0.0,
@@ -452,16 +504,18 @@ function write_parton_def_files(dir::AbstractString, nx::Int, ny::Int, F::Int,
                                 psg_onsite::Bool = false,
                                 psg_shells::Vector{Int} = Int[],
                                 graph::Symbol = :model,
+                                alpha_init::Symbol = :random,
                                 opt_flags::Union{Nothing,Dict{Int,Int}} = nothing,
                                 qp_momentum::Union{Nothing,Tuple{Int,Int}} = nothing,
                                 qp_xext::Union{Nothing,Tuple{Int,Int}} = nothing,
+                                qp_auto::Union{Nothing,Tuple{Float64,Float64}} = nothing,
                                 jastrow_full_trans::Bool = false)
     mkpath(dir)
-    fx = parton_fixture(nx, ny, F, ex, ey; u_mf = u_mf, idx_mode = idx_mode,
+    fx = parton_fixture(model, F, ex, ey; u_mf = u_mf, idx_mode = idx_mode,
                         flavor_groups = flavor_groups,
                         psg_onsite = psg_onsite, psg_shells = psg_shells,
                         graph = graph)
-    cb = physical_coulomb(nx, ny, u_phys)
+    cb = physical_coulomb(model, u_phys)
 
     open(joinpath(dir, "pmftrans.def"), "w") do io
         println(io, "===============================")
@@ -484,9 +538,16 @@ function write_parton_def_files(dir::AbstractString, nx::Int, ny::Int, F::Int,
         # PSG 拡張の idx は α = 0 を 7 列で明示する(初期状態 = 既存アンザッツ)。
         # 既存 idx は 5 列(未入力)のまま乱数初期化。同一 idx 内で presence が
         # 揃っていることはパーサが検証する(DESIGN §2.3.1)。
+        alpha_init in (:random, :one) ||
+            error("alpha_init は :random / :one。alpha_init = $(alpha_init)")
         for (a, b, c, d, i, _) in fx.pmfpara
             if i in fx.psg_idx
                 @printf(io, "%d %d %d %d %d % .18e % .18e\n", a, b, c, d, i, 0.0, 0.0)
+            elseif alpha_init === :one
+                # α = 1 明示。pmftrans が平均場 t をそのまま持つので、初期状態が
+                # そのまま「正しい位相の平均場」になる(KM のパートン構成では
+                # 最低 C=1 バンドがちょうど充填され、占有集合が一意に決まる)。
+                @printf(io, "%d %d %d %d %d % .18e % .18e\n", a, b, c, d, i, 1.0, 0.0)
             else
                 @printf(io, "%d %d %d %d %d\n", a, b, c, d, i)
             end
@@ -496,7 +557,14 @@ function write_parton_def_files(dir::AbstractString, nx::Int, ny::Int, F::Int,
         # (オンサイト群 Im の強制凍結。コード側が自動でやるのでここには書かない)と
         # ユーザーの明示的固定に限られる。値を省略せず並べておくことで、
         # 「何も固定していない」ことがファイル自身から読み取れるようにする。
-        flags = opt_flags === nothing ? Dict{Int,Int}() : opt_flags
+        # 自己交換クラス(平均場の並進が端点を入れ替えるペア)は α が実数でないと
+        # 並進共変にできない。コアはオンサイトしか虚部を凍結しないので、ここで
+        # **クラスごと凍結**する(係数は正しい値のままなので平均場は動かない)。
+        # 詳細は lattice_model.jl の `pl_swapped_pairs`。
+        flags = copy(opt_flags === nothing ? Dict{Int,Int}() : opt_flags)
+        for i in fx.frozen_idx
+            haskey(flags, i) || (flags[i] = 0)
+        end
         for i = 0:(fx.n_idx - 1)
             @printf(io, "%d %d\n", i, get(flags, i, 1))
         end
@@ -524,7 +592,10 @@ function write_parton_def_files(dir::AbstractString, nx::Int, ny::Int, F::Int,
     # かけても |ψ⟩ が運動量固有状態のままでいられる条件)。初期値 v = 0(明示の
     # InJastrow は書かない — v = 0 は Jastrow なしと同じ状態から SR が降下を始める)。
     if jastrow_full_trans
-        maps, _ = cb_translations(nx, ny)
+        # **物理 H を保つ並進**の軌道で類別する(P_J が物理の並進と可換 = 運動量
+        # 射影の外側にかけても |ψ⟩ が運動量固有状態のままでいられる条件)。
+        # checkerboard は正味フラックス 0 なので全並進、KM は磁気並進 ⟨T_x^q, T_y⟩。
+        maps = [pl_shift_perm(model, tx, ty) for (tx, ty) in pl_physical_shifts(model)]
         class_of = Dict{Tuple{Int,Int},Int}()
         pair_class = Dict{Tuple{Int,Int},Int}()
         for i = 0:(fx.nsite - 1), j = 0:(fx.nsite - 1)
@@ -566,16 +637,32 @@ function write_parton_def_files(dir::AbstractString, nx::Int, ny::Int, F::Int,
     # col3 が並進後**。NMPTrans は modpara 側にも書く: 別経路なので片方だけだと
     # 射影の項が黙って落ちる(門番 validate_parton_qp が捕まえる)。
     n_mp_trans = 1
-    if qp_momentum !== nothing || qp_xext !== nothing
-        qp_momentum === nothing || qp_xext === nothing ||
-            error("qp_momentum(全並進)と qp_xext(参照実装準拠)は同時に指定できない")
-        # `qp_xext = (kext, nkx)` が実運用の構成 — 参照実装 make_QNPidx と同じく
-        # x 方向 kext 本だけを張る。`qp_momentum` は全並進 nx·ny 本で、射影の
-        # 数学的性質(凸結合・完全性)を検証するための構成。
-        maps, ucs = qp_xext === nothing ? cb_translations(nx, ny) :
-                    cb_qp_translations(nx, ny, qp_xext[1])
-        nkx, nky = qp_xext === nothing ? qp_momentum : (qp_xext[2], 0)
-        n_kx, n_ky = qp_xext === nothing ? (nx, ny) : (qp_xext[1], 1)
+    if qp_momentum !== nothing || qp_xext !== nothing || qp_auto !== nothing
+        count(!isnothing, (qp_momentum, qp_xext, qp_auto)) == 1 ||
+            error("qp_momentum / qp_xext / qp_auto は同時に 1 つだけ指定すること")
+        # `qp_auto = (kx, ky)` が模型一般の構成 — 「物理の並進群 ÷ 平均場の並進群」の
+        # 剰余代表を張る(`pl_qp_shifts`)。重みは k·(セル座標)。
+        # `qp_xext = (kext, nkx)` は checkerboard の参照実装 make_QNPidx 準拠、
+        # `qp_momentum` は全並進 nx·ny 本(射影の数学的性質の検証用)。
+        sx, sy = pl_cell_step(model)
+        lx, ly = pl_grid(model)
+        if qp_auto !== nothing
+            shifts = pl_qp_shifts(model, ex, ey)
+            maps = [pl_shift_perm(model, tx, ty) for (tx, ty) in shifts]
+            ucs = [(div(tx, sx), div(ty, sy)) for (tx, ty) in shifts]
+            nkx, nky = qp_auto
+            n_kx, n_ky = div(lx, sx), div(ly, sy)
+        elseif qp_xext === nothing
+            shifts = pl_physical_shifts(model)
+            maps = [pl_shift_perm(model, tx, ty) for (tx, ty) in shifts]
+            ucs = [(div(tx, sx), div(ty, sy)) for (tx, ty) in shifts]
+            nkx, nky = qp_momentum
+            n_kx, n_ky = div(lx, sx), div(ly, sy)
+        else
+            maps, ucs = cb_qp_translations(model.nx, model.ny, qp_xext[1])
+            nkx, nky = (qp_xext[2], 0)
+            n_kx, n_ky = (qp_xext[1], 1)
+        end
         n_mp_trans = length(maps)
         open(joinpath(dir, "qptransidx.def"), "w") do io
             println(io, "===============================")
@@ -628,3 +715,12 @@ function write_parton_def_files(dir::AbstractString, nx::Int, ny::Int, F::Int,
     write(joinpath(dir, "namelist.def"), join(entries, "\n") * "\n")
     return joinpath(dir, "namelist.def"), fx
 end
+
+"""
+    write_parton_def_files(dir, nx, ny, F, ex, ey; ...)
+
+checkerboard 向けの後方互換ラッパ。既存の呼び出しはこちらに落ちる。
+"""
+write_parton_def_files(dir::AbstractString, nx::Int, ny::Int, F::Int, ex::Int, ey::Int;
+                       p::CheckerboardParams = CheckerboardParams(), kwargs...) =
+    write_parton_def_files(dir, CheckerboardLatticeModel(nx, ny; p = p), F, ex, ey; kwargs...)
