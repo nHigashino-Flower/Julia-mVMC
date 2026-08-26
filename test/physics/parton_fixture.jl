@@ -428,6 +428,15 @@ function parton_fixture(model::PartonLatticeModel, nflavor::Int, ex::Int, ey::In
     all(abs(imag(pl_onsite(model, i))) < 1e-12 for i = 0:(nsite - 1)) ||
         error("物理のオンサイト項が複素です(エルミート性が壊れています)")
 
+    # --- 図示・診断用の幾何メタ(コアは読まない。tools/plot_parton_lattice.jl 用)---
+    # サイトの EF クラス = 平均場の並進群の軌道。0..K-1 に詰め直す。
+    site_orbit_rep = [minimum(p[i + 1] for p in mf_perms) for i = 0:(nsite - 1)]
+    ef_of_rep = Dict{Int,Int}()
+    site_ef = Vector{Int}(undef, nsite)
+    for i = 0:(nsite - 1)
+        site_ef[i + 1] = get!(ef_of_rep, site_orbit_rep[i + 1], length(ef_of_rep))
+    end
+
     return (
         pmftrans = [(Int(real(a)), Int(real(b)), Int(real(c)), Int(real(d)), v)
                     for (a, b, c, d, v) in pmftrans],
@@ -440,6 +449,10 @@ function parton_fixture(model::PartonLatticeModel, nflavor::Int, ex::Int, ey::In
         frozen_idx = frozen_idx,
         n_swapped_dropped = n_swapped_dropped,
         model = model,
+        site_ef = site_ef,
+        n_ef = length(ef_of_rep),
+        ex = ex,
+        ey = ey,
     )
 end
 
@@ -713,7 +726,68 @@ function write_parton_def_files(dir::AbstractString, model::PartonLatticeModel, 
     end
 
     write(joinpath(dir, "namelist.def"), join(entries, "\n") * "\n")
+    write_parton_lattice_meta(joinpath(dir, "parton_lattice.dat"), model, fx, F, ex, ey)
     return joinpath(dir, "namelist.def"), fx
+end
+
+"""
+    write_parton_lattice_meta(path, model, fx, F, ex, ey)
+
+**アンザッツの幾何をそのまま書き出した副産物**。`namelist.def` に載せないので
+コアは一切読まない。`tools/plot_parton_lattice.jl` がこれだけを見て
+参照実装の `lattice_EF.pdf` 相当の図を描く(tools が playground や模型実装に
+依存しないようにするための橋渡し)。
+
+含めるもの:
+
+| キー | 意味 |
+|---|---|
+| `SITE isite x y ef` | サイトの格子座標と **EF クラス**(= 平均場の並進群の軌道) |
+| `PHYSSHIFT tx ty` | **物理 H** を保つ並進(グリッド変位) |
+| `MFSHIFT tx ty` | **平均場**を保つ並進 = 拡大セルの並進 |
+| `QPSHIFT tx ty` | QP 射影が張る並進(物理 ÷ 平均場 の剰余代表) |
+| `BOND s1 s2 idx d2` | 平均場のボンドと共有 idx(フレーバー 0 のみ、正準向き) |
+
+拡大セルが物理の磁気セルの何倍かは `PHYSSHIFT` と `MFSHIFT` の本数比で読める。
+"""
+function write_parton_lattice_meta(path::AbstractString, model::PartonLatticeModel,
+                                   fx, F::Int, ex::Int, ey::Int)
+    lx, ly = pl_grid(model)
+    sx, sy = pl_cell_step(model)
+    phys = pl_physical_shifts(model)
+    mfs = pl_mf_shifts(model, ex, ey)
+    qps = pl_qp_shifts(model, ex, ey)
+    open(path, "w") do io
+        println(io, "# パートン格子とアンザッツの幾何。**コアは読まない**(namelist.def に載せない)。")
+        println(io, "# tools/plot_parton_lattice.jl が読んで lattice_EF 相当の図を描く。")
+        @printf(io, "model %s\n", string(nameof(typeof(model))))
+        @printf(io, "nsite %d\n", fx.nsite)
+        @printf(io, "grid %d %d\n", lx, ly)
+        @printf(io, "cell_step %d %d\n", sx, sy)
+        @printf(io, "enlarged_cell %d %d\n", ex, ey)
+        @printf(io, "nflavor %d\n", F)
+        @printf(io, "n_idx %d\n", fx.n_idx)
+        @printf(io, "n_ef %d\n", fx.n_ef)
+        @printf(io, "n_frozen %d\n", length(fx.frozen_idx))
+        for i = 0:(fx.nsite - 1)
+            x, y = pl_site_to_xy(model, i)
+            @printf(io, "SITE %d %d %d %d\n", i, x, y, fx.site_ef[i + 1])
+        end
+        for (tx, ty) in phys; @printf(io, "PHYSSHIFT %d %d\n", tx, ty); end
+        for (tx, ty) in mfs;  @printf(io, "MFSHIFT %d %d\n", tx, ty);  end
+        for (tx, ty) in qps;  @printf(io, "QPSHIFT %d %d\n", tx, ty);  end
+        for k in sort(collect(fx.frozen_idx)); @printf(io, "FROZEN %d\n", k); end
+        for ((s1, f1, s2, _, _), (_, _, _, _, idx, _)) in zip(fx.pmftrans, fx.pmfpara)
+            f1 == 0 || continue
+            s1 == s2 && continue
+            x1, y1 = pl_site_to_xy(model, s1)
+            x2, y2 = pl_site_to_xy(model, s2)
+            dx = mod(x1 - x2 + lx ÷ 2, lx) - lx ÷ 2
+            dy = mod(y1 - y2 + ly ÷ 2, ly) - ly ÷ 2
+            @printf(io, "BOND %d %d %d %d\n", s2, s1, idx, dx^2 + dy^2)
+        end
+    end
+    return path
 end
 
 """
