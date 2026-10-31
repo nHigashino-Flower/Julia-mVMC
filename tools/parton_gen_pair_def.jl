@@ -12,7 +12,9 @@ Pfaffian パートンモード(PartonMode = 2)の対軌道 def を作る(DESIGN_
 使い方(Julia-mVMC-pf の環境で):
 
     julia --project=MVMCOptimizers.jl tools/parton_gen_pair_def.jl <out_def> cb <nx> <ny> <K> <ex> <ey> [<alpha_pmfpara_def>]
-    julia --project=MVMCOptimizers.jl tools/parton_gen_pair_def.jl <out_def> km <Lx> <Ly> <φ> <K> <ex> <ey> [<alpha_pmfpara_def>]
+    julia --project=MVMCOptimizers.jl tools/parton_gen_pair_def.jl <out_def> km <Lx> <Ly> <φ> <K> <ex> <ey> [<alpha_pmfpara_def>] [--flavor-sym]
+
+`--flavor-sym` を付けると、フレーバー対称・空間反対称の def を書く(`gen_pair_def_flavor_sym`)。
 
 最後の引数に α run の pmfpara.def を渡すと、使った並進が α の idx の写像を保つことを検査する。
 """
@@ -66,6 +68,11 @@ function gen_pair_def(path::AbstractString, model, n_flavor::Int, ex::Int, ey::I
         end
         n_idx += 1
     end
+    _write_pair_def(path, n_idx, rows)
+    return (n_idx = n_idx, n_rows = length(rows), n_forced_zero = n_forced_zero)
+end
+
+function _write_pair_def(path, n_idx, rows)
     open(path, "w") do io
         println(io, "=============================================")
         println(io, "NOrbitalIdx $n_idx")
@@ -76,6 +83,54 @@ function gen_pair_def(path::AbstractString, model, n_flavor::Int, ex::Int, ey::I
             println(io, "$s1 $f1 $s2 $f2 $k 1")
         end
     end
+end
+
+"""
+    gen_pair_def_flavor_sym(path, model, n_flavor, ex, ey) -> (n_idx, n_rows, n_forced_zero)
+
+**フレーバー対称・空間反対称**の def を書く: 異フレーバーの対はすべてのフレーバー組で同じ空間関数 g を共有し、
+f[(i,a),(j,b)] = 2·g_ij(a ≠ b)、g_ji = −g_ij。同じサイトの対(g_ii = 0)と同フレーバーの対は持たない。
+
+- 1 つの idx は、平均場を保つ並進で写り合う「向きつきの空間対 (i, j)」の軌道。軌道の各 (i, j) と
+  全ての a ≠ b について行 `i a j b idx +1` を書く。逆向き (j, i) は反対称性から自動で決まる
+- 並進で (i, j) が (j, i) に写る軌道は g = −g なので 0(行を書かない)
+- 空間部分を**対称**にすると、K が奇数のとき F(r) = A_K ⊗ G_r(A_K は奇数次の反対称行列で det 0)となり
+  全配置で Pf ≡ 0 になる。反対称なら F(r) = O_K ⊗ G_r(O_K は非対角が 1、det ≠ 0)で、N が偶数なら 0 にならない
+- PartonMode = 1 の sym アンザッツ(全フレーバー同じ軌道 Φ)の det^K 状態は J = O_K ⊗ B(B は反対称)で
+  この形に入る
+"""
+function gen_pair_def_flavor_sym(path::AbstractString, model, n_flavor::Int, ex::Int, ey::Int)
+    ns = pl_nsite(model)
+    perms = [pl_shift_perm(model, tx, ty) for (tx, ty) in pl_mf_shifts(model, ex, ey)]
+    seen = falses(ns, ns)
+    rows = NTuple{5,Int}[]
+    n_idx = 0
+    n_forced_zero = 0
+    for i = 0:(ns - 1), j = (i + 1):(ns - 1)
+        seen[i + 1, j + 1] && continue
+        orbit = Tuple{Int,Int}[]
+        forced_zero = false
+        for p in perms
+            ti, tj = p[i + 1], p[j + 1]
+            lo, hi = minmax(ti, tj)
+            seen[lo + 1, hi + 1] = true
+            if (tj, ti) in orbit
+                forced_zero = true
+            elseif !((ti, tj) in orbit)
+                push!(orbit, (ti, tj))
+            end
+        end
+        if forced_zero
+            n_forced_zero += 1
+            continue
+        end
+        for (si, sj) in orbit, a = 0:(n_flavor - 1), b = 0:(n_flavor - 1)
+            a == b && continue
+            push!(rows, (si, a, sj, b, n_idx))
+        end
+        n_idx += 1
+    end
+    _write_pair_def(path, n_idx, rows)
     return (n_idx = n_idx, n_rows = length(rows), n_forced_zero = n_forced_zero)
 end
 
@@ -113,7 +168,9 @@ if abspath(PROGRAM_FILE) == @__FILE__
     else
         error("格子は cb か km")
     end
-    r = gen_pair_def(out, model, K, ex, ey)
+    flavor_sym = "--flavor-sym" in rest
+    rest = filter(!=("--flavor-sym"), rest)
+    r = flavor_sym ? gen_pair_def_flavor_sym(out, model, K, ex, ey) : gen_pair_def(out, model, K, ex, ey)
     println("n_idx = $(r.n_idx)  rows = $(r.n_rows)  forced_zero_orbits = $(r.n_forced_zero)")
     if !isempty(rest)
         ok = check_against_alpha(model, ex, ey, rest[1])
