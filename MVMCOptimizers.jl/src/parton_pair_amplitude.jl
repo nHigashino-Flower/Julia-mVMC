@@ -48,14 +48,69 @@ function _parton_pair_gather!(F::AbstractMatrix{ComplexF64}, src::PartonPairOrbi
 end
 
 """
+    _parton_pair_pfaffian!(A, tau) -> ComplexF64
+
+反対称行列 A の Pf を Parlett–Reid(列ピボットつき)で計算する。A は壊す。`tau` は長さ n 以上の
+作業領域。割り当てなし。
+
+PfaPack の `julia_zsktf2!` は使わない: フレーバーごとのブロックが交互に並ぶ形の**正則な**行列で
+ゼロピボット(info > 0)を返すことを P1 で確かめた(DESIGN_parton_pf.md §3)。同フレーバーだけを
+組んだ f(F の行が粒子が主・フレーバーが従なので交互配置になる)や、契約 2 の X ≈ C⁻¹ がまさにこの形で、
+そのまま使うと正則な配置を Pf = 0 と誤り、受理すべき移動を黙って棄却する。
+"""
+function _parton_pair_pfaffian!(A::AbstractMatrix{ComplexF64}, tau::AbstractVector{ComplexF64})
+    n = size(A, 1)
+    isodd(n) && return zero(ComplexF64)
+    pf = one(ComplexF64)
+    @inbounds for k = 1:2:(n - 1)
+        # ピボット: 第 k 列の k+1 行目以降で絶対値が最大の行を k+1 へ(行と列を同時に入れ替える)
+        kp = k + 1
+        amax = abs(A[k + 1, k])
+        for i = (k + 2):n
+            v = abs(A[i, k])
+            if v > amax
+                amax = v
+                kp = i
+            end
+        end
+        if kp != k + 1
+            for j = 1:n
+                A[k + 1, j], A[kp, j] = A[kp, j], A[k + 1, j]
+            end
+            for i = 1:n
+                A[i, k + 1], A[i, kp] = A[i, kp], A[i, k + 1]
+            end
+            pf = -pf
+        end
+        piv = A[k, k + 1]
+        iszero(piv) && return zero(ComplexF64)
+        pf *= piv
+        k + 2 <= n || continue
+        # 反対称ランク 2 更新: A[i, j] += τ_i·A[j, k+1] − A[i, k+1]·τ_j(i, j ≥ k+2)、τ_i = A[k, i]/piv
+        for i = (k + 2):n
+            tau[i] = A[k, i] / piv
+        end
+        for j = (k + 2):n
+            tj = tau[j]
+            ajk = A[j, k + 1]
+            for i = (k + 2):n
+                A[i, j] += tau[i] * ajk - A[i, k + 1] * tj
+            end
+        end
+    end
+    return pf
+end
+
+"""
     parton_recompute_amplitude_all!(amp::PartonPairAmplitudeData, src::PartonPairOrbital, cfg, data, ws)
 
-契約 1(Pf 版): 全 qp の F を組み、LTL 分解 1 回で Pf と G = F⁻¹ を得る
-(上流の全再計算と同じ部品 `julia_zsktf2!` → `utu2pfa` → `utu2inv!`。
-`utu2inv!` の結果は F⁻¹ そのもの。上流が最後に符号を反転するのは row-major で読むためで、
-ここでは不要)。特異(分解の info ≠ 0、または Pf が 0 か非有限)なら Pf = 0・G = 0 とする
-(det モードの「特異 = det 0 = ノード」と同じ扱い。G を 0 にしておけば比が NaN にならない)。
-`row_site` もここで cfg から確定する。
+契約 1(Pf 版): 全 qp の F を組み、Pf(Parlett–Reid、`_parton_pair_pfaffian!`)と G = F⁻¹(LU)を
+得る。G は最後に厳密に反対称へ射影する(契約 3 の更新式の前提。`_parton_pair_antisymmetrize!`)。
+特異(Pf が 0 か非有限、または LU が特異)なら Pf = 0・G = 0 とする(det モードの「特異 = det 0 =
+ノード」と同じ扱い。G を 0 にしておけば比が NaN にならない)。`row_site` もここで cfg から確定する。
+
+PfaPack の LTL 部品(`julia_zsktf2!` → `utu2pfa` → `utu2inv!`)は、交互ブロック構造の正則行列で
+ゼロピボットを返すので使わない(`_parton_pair_pfaffian!` の docstring)。
 """
 function parton_recompute_amplitude_all!(
     amp::PartonPairAmplitudeData,
@@ -66,7 +121,6 @@ function parton_recompute_amplitude_all!(
 )
     K = amp.n_flavor
     N = amp.n_elec
-    M = K * N
     @inbounds for m = 1:N
         amp.row_site[m] = particle_site(cfg, 1, m)
     end
@@ -74,15 +128,16 @@ function parton_recompute_amplitude_all!(
     for qp = 1:amp.n_qp
         _parton_pair_gather!(F, src, amp.row_site, data.qp_trans[qp], data.qp_trans_sgn[qp], K, N)
         G = pair_inv_block(amp, qp)
-        info = julia_zsktf2!(F, ws.ipiv)
-        pf = info == 0 ? utu2pfa(M, F, M, ws.ipiv) : zero(ComplexF64)
-        if info != 0 || iszero(pf) || !isfinite(pf)
+        copyto!(ws.lu_scratch, F)                          # LU 用の写し(Pf の計算が F を壊す)
+        pf = _parton_pair_pfaffian!(F, ws.tau)
+        lu = (iszero(pf) || !isfinite(pf)) ? nothing : lu!(ws.lu_scratch; check = false)
+        if lu === nothing || !issuccess(lu)
             amp.pf_f[qp] = zero(ComplexF64)
             fill!(G, zero(ComplexF64))
             continue
         end
-        utu2inv!(M, F, M, ws.ipiv, ws.v_t, ws.m_work, M)
-        copyto!(G, F)
+        copyto!(G, LinearAlgebra.inv!(lu))
+        _parton_pair_antisymmetrize!(G)
         amp.pf_f[qp] = pf
     end
     return nothing
@@ -111,14 +166,11 @@ function _parton_pair_antisymmetrize!(A::AbstractMatrix{ComplexF64})
     return A
 end
 
-"2K×2K の反対称行列 X の Pf(作業領域で LTL 分解する。X は壊さない)。"
+"2K×2K の反対称行列 X の Pf(作業領域の写しで Parlett–Reid。X は壊さない)。"
 function _parton_pair_small_pfaffian!(ws::PartonPairSamplingWorkspace, X::Matrix{ComplexF64})
     A = ws.x_scratch
     copyto!(A, X)
-    n = size(A, 1)
-    info = julia_zsktf2!(A, ws.ipiv_small)
-    info == 0 || return zero(ComplexF64)
-    return utu2pfa(n, A, n, ws.ipiv_small)
+    return _parton_pair_pfaffian!(A, ws.tau_small)
 end
 
 """

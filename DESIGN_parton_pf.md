@@ -258,7 +258,8 @@ PartonPairOrbital 読み込み(OptFlag 行を含む)
 | `validate_parton_data` は orbital_terms が空でないことと NOrbitalIdx ≠ 0 を拒否する | `parton_unsupported_inputs.jl:239-246, 331-338` | 「既存スピン Orbital との同時指定」の門番としてそのまま使える |
 | PfaPack の LTL 分解(`julia_zsktf2!` / `julia_zsktf2_turbo!`)→ `utu2pfa`(Pf)→ `utu2inv!`(逆行列)が上流の全再計算の部品。上流は格納の都合で最後に符号を反転する | `calculate_m_all.jl:172-215` | 契約 1 で流用する。符号は T1 の G·F = I で機械的に確かめる |
 | 奇数次元の Pf・不対軌道は上流にも無い | `types.jl:120, 193`、`PfaPack.jl/src/pfaffian.jl:24` | KN 奇数は門番で拒否 |
-| PfaPack の部品の規約(P1 で実測): `julia_zsktf2!` は上三角だけを読む。特異なら info > 0。`utu2inv!` の結果は X⁻¹ そのもの(‖A·X − I‖ ~ 1e−15) | `check_pfapack.jl`(scratchpad) | 契約 1 はこの 3 つだけを使う |
+| PfaPack の部品の規約(P1 で実測): `julia_zsktf2!` は上三角だけを読む。特異なら info > 0。`utu2inv!` の結果は X⁻¹ そのもの(‖A·X − I‖ ~ 1e−15) | `check_pfapack.jl`(scratchpad) | 下の行の理由で、結局 Pf モードでは使わない |
+| **PfaPack の `julia_zsktf2!` は、消去すべき副列が全部 0 になるステップのある正則行列で info = 2 を返す**(P1 第 4 段で発見)。最小例: 2×2 ブロックの直和 [[0,a],[−a,0]] ⊕ [[0,b],[−b,0]]、その行と列を交互に並べたもの、C⁻¹ = [[0, −I], [I, 0]](K = 2)。いずれも正則なのに info = 2(本来は消去を飛ばせばよいだけ)。Pf モードでは、同フレーバーだけを組んだ f(adjacent ペアリング)で全配置が Pf = 0 と判定された。契約 2 の X = C⁻¹ + BᵀGB も BᵀGB が小さいとこの形に近づく | `debug_adjacent.jl`(scratchpad)、T1 の「交互ブロック構造」テスト | **契約 1・2 の Pf は自前の Parlett–Reid(列ピボットつき、割り当てなし)、G は LU** に差し替えた(§8)。§12 の報告候補 |
 | **PfaPack の `pfaffian_ltl!` は複素行列で n ≥ 4 のとき誤った値を返す**(実数行列と n = 2 では正しい)。本番経路は使っておらず、使うのは PfaPack 自身のテストだけ | `PfaPack.jl/src/pfaffian.jl:38`、P1 の実測(`utu2pfa` と独立な Parlett–Reid は一致し、`pfaffian_ltl!` だけがずれる) | Pf モードでは使わない。§12 の報告候補 |
 
 ## 4. アーキテクチャ
@@ -411,7 +412,9 @@ log₁₀|ip| の分布を測り、1e−30 の閾値にも、あふれにも当�
 
 本番の主な初期化は §2.3 の乱数で、このスクリプトは T3(PartonMode = 1 との一致)と T4 の継続最適化(E_Pf ≤ E_det の裏取り)のためにある。
 
-`tools/parton_alpha_to_pair.jl <alpha_stage_in> <alpha_stage_out> <pair_def> <new_dir> [--pairing interflavor|adjacent]`
+`tools/parton_alpha_to_pair.jl <alpha_stage_in> <alpha_stage_out> <new_dir> [interflavor|adjacent|auto] [<pair_def>]`
+
+(`<pair_def>` を省略すると全対・共有なしの def を書く。ログは `<new_dir>/parton_alpha_to_pair.log`)
 
 1. α\*(`zqp_pmfpara_opt.dat`)と占有(`zqp_pmfocc_opt.dat`)から H_MF を組み直し、各フレーバーの占有軌道 Φ^a から Ξ を作る
    (Φ 変換スクリプトと同じライブラリ関数を使う。MOM の run は占有ファイルが必須 — 本体 §12.1)
@@ -442,7 +445,7 @@ T3 用に、**全対(共有なし)の def を書く補助**もこのスクリプ
 | `zqp_parton_pair_init.dat` / `_opt.dat` | p(idx ごと) | InPartonPairOrbital そのもの(5 行ヘッダ `NOrbitalIdx`、`idx Re Im`、`%.18e`)。往復でビット一致 |
 | `zqp_parton_pair_sv_init.dat` / `_opt.dat` | 行ブロック SVD の全特異値 | `# flavor index sigma`(0-based)+ `# key value` で各フレーバーの σ_N/σ_{N+1} |
 | `zqp_parton_pair_orb_init.dat` / `_opt.dat` | 上位 N 本の左特異ベクトル U^a | **InPmfOrb と同じ形式**(`NPmfOrb`、平坦添字 ((f·Ns)+s)·Ne+n)。Φ モードの入力としてそのまま渡せ、射影子 P_a = U U† を使う下流(Chern など)の入力にもなる |
-| `zvo_parton_pairdiag.dat` | step、n_skipped、受理率、need_recompute、厳密再計算、再スケール前の max\|p\|、各フレーバーの σ_N/σ_{N+1}、log₁₀\|ip\| の最小と最大 | `#` 列名ヘッダ。step 0 で "w"、以降 "a" |
+| `zvo_parton_pairdiag.dat` | step、n_skipped、受理率、need_recompute、厳密再計算、再スケール前の max\|p\|、各フレーバーの σ_N/σ_{N+1}(log₁₀\|ip\| の最小と最大は、共有の `parton_main_cal!` を触らずには取れないので後回し) | `#` 列名ヘッダ。step 0 で "w"、以降 "a" |
 | `zvo_parton_runinfo.dat` | 既存の writer の後に `PartonMode 2`、n_pair_idx、M、D_AMP_MAX、PartonGaugeFix / FlavorSymFast は「該当なし」を "a" で追記 | `key value` |
 | `zvo_out` / `zvo_SRinfo` / `zvo_parton_time` / `zvo_conv` / `zvo_CalcTimer` / `zqp_opt`(Jastrow) | 既存どおり | |
 
@@ -469,6 +472,9 @@ T3 用に、**全対(共有なし)の def を書く補助**もこのスクリプ
 ## 8. 数値ポリシー
 
 - Pf は生の複素値で持つ(乗法更新 + 定期的な厳密再計算)。特異 = Pf 0 = ノード
+- **Pf は自前の Parlett–Reid(列ピボットつき、`_parton_pair_pfaffian!`)、G = F⁻¹ は LU(`lu!` + `inv!`)の後に
+  反対称へ射影する**。PfaPack の LTL 部品は交互ブロック構造の正則行列でゼロピボットを返すので使わない(§3)。
+  厳密再計算は O(M³) が 2 回(Pf と LU)になるが、錨と測定のサンプルごとにしか呼ばれない
 - 振幅の縮約は**転置積**で書き、`dot()` は使わない(本体 §7 と同じ罠)。2K×2K の Pf は小さいので専用の割り当てなしルーチンで計算する
 - ホットループでの確保はゼロにする。GB・X⁻¹ は ws に置く
 - **受理のたびに G を厳密に反対称へ射影する**(G ← (G − Gᵀ)/2、O(M²))。P1 で見つけた不安定性への対処:
@@ -570,3 +576,5 @@ T4 の対象系(ユーザー判断 2026-10-31: **4 系すべて**):
 - `sync_modified_parameter!` の docstring は「≤ D_AMP_MAX を保証」だが、実装は常に 4 にそろえる(`parameter_sync.jl:78, 88`)
 - **PfaPack の `pfaffian_ltl!` が複素行列で誤った値を返す**(n ≥ 4。実数と n = 2 は正しい。§3)。PfaPack のテストは
   実数か n = 2 の複素しか見ていないので通っている
+- **PfaPack の `julia_zsktf2!` が交互ブロック構造の正則行列でゼロピボット(info > 0)を返す**(§3)。上流の本番経路
+  (sz は `julia_zsktf2_turbo!`、fsz は `julia_zsktf2!` で info を捨てている)にも同じ形の行列が来うるかは未調査

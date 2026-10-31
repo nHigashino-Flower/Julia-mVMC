@@ -205,6 +205,38 @@ end
     @test MO.parton_update_amplitude!(amp0, src0, data, ws0, 1, 3) === :need_recompute
 end
 
+@testset "交互ブロック構造の正則行列でも Pf を取りこぼさない(契約 1 と 2K×2K の Pf)" begin
+    # PfaPack の julia_zsktf2! は、この形の正則行列でゼロピボット(info > 0)を返す
+    # (DESIGN_parton_pf.md §3)。同フレーバーだけを組んだ f や、X ≈ C⁻¹ の移動で起きる
+    a, b = 0.5 + 0.1im, -0.3 + 0.2im
+    X = ComplexF64[0 0 a 0; 0 0 0 b; -a 0 0 0; 0 -b 0 0]
+    @test _ref_pfaffian(X) ≈ -a * b
+    ws = MO.PartonPairSamplingWorkspace(1, 2, 2)
+    @test MO._parton_pair_small_pfaffian!(ws, X) ≈ -a * b rtol = 1e-14
+    for K = 1:4
+        Cinv = ComplexF64[zeros(K, K) -Matrix(I, K, K); Matrix(I, K, K) zeros(K, K)]
+        wsK = MO.PartonPairSamplingWorkspace(1, K, 2)
+        @test MO._parton_pair_small_pfaffian!(wsK, Cinv) == MO.parton_pair_pf_cinv(K)
+    end
+
+    # 同フレーバーだけを組んだ f(F がフレーバーごとのブロックの交互配置になる)
+    rng = MersenneTwister(31)
+    K, N, Ns = 2, 2, 5
+    data = pair_toy_data(n_site = Ns, n_elec = N, n_flavor = K)
+    qp_weight = set_identity_qp!(data)
+    terms = [t for t in full_pair_terms(Ns, K) if t.flavor1 == t.flavor2]
+    terms = [(site1 = t.site1, flavor1 = t.flavor1, site2 = t.site2, flavor2 = t.flavor2,
+              idx = k - 1, sign = 1) for (k, t) in enumerate(terms)]
+    src = build_pair_source(data, terms, randn(rng, ComplexF64, length(terms)))
+    for sites in ([1, 2], [2, 4], [3, 5])
+        ip, amp, ws2 = _pair_mode_ip(data, src, toy_config(data, sites), qp_weight)
+        x = [_pair_state(Ns, r, a) for r in sites for a = 1:K]
+        F = src.pair_matrix[x, x]
+        @test ip ≈ _ref_pfaffian(F) rtol = 1e-12
+        @test norm(reshape(amp.inv_f, 4, 4) * F - I) < 1e-12
+    end
+end
+
 @testset "テンプレートの検査" begin
     nt(s1, f1, s2, f2, idx, sgn) =
         (site1 = s1, flavor1 = f1, site2 = s2, flavor2 = f2, idx = idx, sign = sgn)

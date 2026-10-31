@@ -152,8 +152,10 @@ function parton_pair_vmc_para_opt!(
     # なりうるため)ので、専用ファイルに書く。最終 p は結果そのものなので診断の有無に関係なく残す
     out_rank && output_opt_data!(data; output_dir = output_dir)
     parton_pair_load!(src, data.parton_pair_params)  # 最終値(再スケール後)に合わせる
-    out_rank && output_dir !== nothing &&
+    if out_rank && output_dir !== nothing
         parton_pair_write_params(data, _parton_para_out(data, "_parton_pair_opt.dat", output_dir))
+        parton_pair_write_svd(data, src, output_dir, "opt")     # 行ブロック SVD(§6)
+    end
     if diag_dir !== nothing
         parton_write_conv(data, diag_dir)
         write_ctimer_para_opt(c_timer, String(diag_dir);
@@ -219,8 +221,10 @@ function parton_pair_run_from_namelist(
     pstate = parton_pair_build_state(data)
     mkpath(output_dir)
     out_dir = String(output_dir)
-    is_output_rank(ctx) &&
+    if is_output_rank(ctx)
         parton_pair_write_params(data, _parton_para_out(data, "_parton_pair_init.dat", out_dir))
+        parton_pair_write_svd(data, pstate.mfham, out_dir, "init")   # 行ブロック SVD(§6)
+    end
 
     init_source = in_path === nothing ? "random" : "InPartonPairOrbital"
     t_start = time()

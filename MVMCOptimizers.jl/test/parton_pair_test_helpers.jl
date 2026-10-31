@@ -98,13 +98,35 @@ function random_xi_j(rng, n_site::Int, n_elec::Int, n_flavor::Int)
     return Φ, J, Ξ * J * transpose(Ξ)
 end
 
-"PfaPack の LTL 分解による Pf(テストの参照用。本番と同じ部品)。"
+"""
+    _ref_pfaffian(X) -> ComplexF64
+
+テストの参照用の Pf。本番とは独立に書いた素朴な Parlett–Reid(列ピボットつき)で、
+pf² = det と包含定理で検算済み(DESIGN_parton_pf.md §1.5)。本番の部品を参照に使うと、
+部品の不具合(PfaPack の `julia_zsktf2!` が交互ブロック構造の正則行列でゼロピボットを返す。§3)を
+見逃すので、ここでは使わない。
+"""
 function _ref_pfaffian(X::AbstractMatrix)
-    n = size(X, 1)
     A = Matrix{ComplexF64}(X)
-    ipiv = zeros(Int, n)
-    MVMCOptimizers.julia_zsktf2!(A, ipiv)
-    return MVMCOptimizers.utu2pfa(n, A, n, ipiv)
+    n = size(A, 1)
+    isodd(n) && return zero(ComplexF64)
+    p = one(ComplexF64)
+    for k = 1:2:(n - 1)
+        kp = k + argmax(abs.(A[(k + 1):n, k]))
+        if kp != k + 1
+            A[[k + 1, kp], :] = A[[kp, k + 1], :]
+            A[:, [k + 1, kp]] = A[:, [kp, k + 1]]
+            p = -p
+        end
+        iszero(A[k + 1, k]) && return zero(ComplexF64)
+        p *= A[k, k + 1]
+        if k + 2 <= n
+            tau = A[k, (k + 2):n] ./ A[k, k + 1]
+            A[(k + 2):n, (k + 2):n] .+= tau * transpose(A[(k + 2):n, k + 1]) .-
+                                        A[(k + 2):n, k + 1] * transpose(tau)
+        end
+    end
+    return p
 end
 
 """

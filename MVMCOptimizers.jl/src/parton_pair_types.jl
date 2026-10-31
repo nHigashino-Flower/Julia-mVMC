@@ -154,16 +154,15 @@ end
 直後の契約 3 が読む(qp ごとの GB = [G[:, S], G·D]、X = C⁻¹ + BᵀGB、R_qp)。
 """
 mutable struct PartonPairSamplingWorkspace <: PartonWorkspaceStore
-    f_scratch::Matrix{ComplexF64}          # M×M: 厳密再計算の組立と LTL 分解
-    ipiv::Vector{Int}                      # M: LTL のピボット
-    v_t::Vector{ComplexF64}                # M: utu2inv! の作業領域
-    m_work::Matrix{ComplexF64}             # M×M: utu2inv! の作業領域
+    f_scratch::Matrix{ComplexF64}          # M×M: 厳密再計算の組立と Pf(Parlett–Reid が壊す)
+    lu_scratch::Matrix{ComplexF64}         # M×M: G = F⁻¹ の LU(F の写し)
+    tau::Vector{ComplexF64}                # M: Parlett–Reid の作業領域
     d_buf::Matrix{ComplexF64}              # M×K: 差分 D
     gb_blocks::Vector{Matrix{ComplexF64}}  # qp ごとの GB(M×2K)
     x_blocks::Vector{Matrix{ComplexF64}}   # qp ごとの X(2K×2K)
     ratio_blocks::Vector{ComplexF64}       # qp ごとの R_qp
-    x_scratch::Matrix{ComplexF64}          # 2K×2K: 小さい Pf の LTL 分解
-    ipiv_small::Vector{Int}                # 2K
+    x_scratch::Matrix{ComplexF64}          # 2K×2K: 小さい Pf の写し
+    tau_small::Vector{ComplexF64}          # 2K: 小さい Pf の作業領域
     y_buf::Matrix{ComplexF64}              # M×2K: GB·X⁻¹
 
     function PartonPairSamplingWorkspace(n_qp::Int, n_flavor::Int, n_elec::Int)
@@ -171,15 +170,14 @@ mutable struct PartonPairSamplingWorkspace <: PartonWorkspaceStore
         K2 = 2 * n_flavor
         new(
             zeros(ComplexF64, M, M),
-            zeros(Int, M),
-            zeros(ComplexF64, M),
             zeros(ComplexF64, M, M),
+            zeros(ComplexF64, M),
             zeros(ComplexF64, M, n_flavor),
             [zeros(ComplexF64, M, K2) for _ = 1:n_qp],
             [zeros(ComplexF64, K2, K2) for _ = 1:n_qp],
             zeros(ComplexF64, n_qp),
             zeros(ComplexF64, K2, K2),
-            zeros(Int, K2),
+            zeros(ComplexF64, K2),
             zeros(ComplexF64, M, K2),
         )
     end

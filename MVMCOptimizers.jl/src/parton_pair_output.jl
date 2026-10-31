@@ -85,3 +85,62 @@ function parton_pair_append_runinfo(data::ExpertModeData, dir; init_source::Abst
     end
     return nothing
 end
+
+"""
+    parton_pair_flavor_orbitals(src) -> Vector{Matrix{ComplexF64}}
+
+フレーバー a ごとに、行ブロック f_{a,:} の上位 N 本の左特異ベクトル U^a(Ns×N)を返す
+(DESIGN_parton_pf.md §1.4)。f = ΞJΞᵀ なら span U^a = span Φ^a。U^a の中のユニタリ回転は任意なので、
+物理量は射影子 P_a = U^a U^{a†} で扱うこと。
+"""
+function parton_pair_flavor_orbitals(src::PartonPairOrbital)
+    ns = src.n_site
+    N = src.n_elec
+    return [svd(src.pair_matrix[((a - 1) * ns + 1):(a * ns), :]).U[:, 1:N] for a = 1:src.n_flavor]
+end
+
+"""
+    parton_pair_write_svd(data, src, dir, tag) -> (sv_path, orb_path)
+
+行ブロック SVD を 2 つのファイルに書く(`tag` は `"init"` か `"opt"`。DESIGN_parton_pf.md §6):
+
+- `<CParaFileHead>_parton_pair_sv_<tag>.dat`: `# flavor index sigma`(0-based)の全特異値と、
+  `# sigma_ratio_<a> <σ_N/σ_{N+1}>`
+- `<CParaFileHead>_parton_pair_orb_<tag>.dat`: 上位 N 本の左特異ベクトルを **InPmfOrb と同じ形式**
+  (`NPmfOrb`、平坦添字 ((f·Ns)+s)·Ne+n、0-based)で書く。Φ モードの入力としてそのまま渡せ、
+  射影子 P_a を使う下流(Chern など)の入力にもなる
+"""
+function parton_pair_write_svd(data::ExpertModeData, src::PartonPairOrbital, dir, tag::AbstractString)
+    mp = data.modpara
+    ns, N, K = mp.nsite, mp.nelec, mp.nflavor
+    σs = parton_pair_flavor_singular_values(src)
+    U = parton_pair_flavor_orbitals(src)
+    sv_path = _parton_para_out(data, "_parton_pair_sv_$(tag).dat", dir)
+    open(sv_path, "w") do f
+        println(f, "# NFlavor $K")
+        println(f, "# NSite $ns")
+        println(f, "# NElec $N")
+        for a = 1:K
+            @printf(f, "# sigma_ratio_%d % .8e\n", a - 1, parton_pair_sigma_ratio(σs[a], N))
+        end
+        println(f, "# flavor index sigma")
+        for a = 1:K, (k, σ) in enumerate(σs[a])
+            @printf(f, "%d %d % .18e\n", a - 1, k - 1, σ)
+        end
+    end
+    orb_path = _parton_para_out(data, "_parton_pair_orb_$(tag).dat", dir)
+    n_orb = K * ns * N
+    open(orb_path, "w") do f
+        println(f, "===============================")
+        println(f, "NPmfOrb $n_orb")
+        println(f, "===============================")
+        println(f, "== idx RePhi ImPhi ==")
+        println(f, "===============================")
+        for a = 1:K, s = 1:ns, n = 1:N
+            idx = ((a - 1) * ns + (s - 1)) * N + (n - 1)
+            v = U[a][s, n]
+            @printf(f, "%d % .18e % .18e \n", idx, real(v), imag(v))
+        end
+    end
+    return sv_path, orb_path
+end
