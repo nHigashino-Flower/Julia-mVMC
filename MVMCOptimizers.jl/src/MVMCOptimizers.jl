@@ -85,6 +85,7 @@ include("parton_orbparam_types.jl")   # Φ 直接変分(DESIGN §12.11)
 include("parton_pair_types.jl")       # Pfaffian モード(PartonMode = 2、DESIGN_parton_pf.md)
 include("parton_unsupported_inputs.jl")
 include("parton_orbparam_inputs.jl")  # Φ 直接変分の入力・再スケール・門番
+include("parton_pair_inputs.jl")      # Pfaffian モードの入力・初期値・D_AmpMax・門番
 include("parton_orbital.jl")
 include("parton_initial_params.jl")
 include("parton_calculate_m_all.jl")

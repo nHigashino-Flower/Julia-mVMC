@@ -54,6 +54,7 @@ include("parsers/doublon_holon_parser.jl")
 include("parsers/pmftrans_parser.jl")
 include("parsers/pmfpara_parser.jl")
 include("parsers/physhop_parser.jl")
+include("parsers/parton_pair_orbital_parser.jl")   # Pfaffian モード(DESIGN_parton_pf.md)
 
 # Export main parsing function
 export parse_expert_mode_files
@@ -800,6 +801,18 @@ function parse_file_by_type!(data::ExpertModeData, file_type::String, file_path:
             data.physhop_terms = result.data
         else
             error("Failed to parse PhysHop file '$file_path': $(result.error_message)")
+        end
+    # --- parton-mode (fork addition) ---
+    # Pfaffian モードの対軌道(DESIGN_parton_pf.md §2.1)。p の値は 0 で確保し、
+    # 初期値(InPartonPairOrbital か乱数)はパートンドライバが入れる
+    elseif file_type == "PartonPairOrbital"
+        result, opt_flags, n_idx = parse_parton_pair_orbital_def(file_path)
+        if result.success
+            data.parton_pair_terms = result.data
+            data.parton_pair_opt_flags = opt_flags
+            data.parton_pair_params = zeros(ComplexF64, n_idx)
+        else
+            error("Failed to parse PartonPairOrbital file '$file_path': $(result.error_message)")
         end
     end
 end

@@ -169,7 +169,8 @@ function count_variational_parameters(data::ExpertModeData)::Int
            count_orbital_parameters(data) +
            count_opt_trans_parameters(data) +
            n_pmf +  # --- parton-mode (fork addition) ---
-           length(data.pmforb_params)   # --- parton-mode (fork addition) --- Φ 直接変分(末尾ブロック)
+           length(data.pmforb_params) +  # --- parton-mode (fork addition) --- Φ 直接変分(末尾ブロック)
+           length(data.parton_pair_params)   # --- parton-mode (fork addition) --- Pfaffian モード(Φ の直前)
 end
 
 function _set_rbm_terms_from_params!(terms, params::Dict{Int, ComplexF64})

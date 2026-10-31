@@ -92,7 +92,13 @@ Rejected or required:
 - `NOrbitalIdx = 0`, `NNeuron = 0`: the pair-orbital (f_ij) and RBM parameter
   blocks do not coexist with the parton mean-field parameter block.
 """
-function validate_parton_modpara(modpara::ModParaParameters)
+function validate_parton_modpara(
+    modpara::ModParaParameters;
+    # --- parton-mode (fork addition) ---
+    # 受け付ける PartonMode。既定は従来どおり 1 だけ(α・Φ の経路は無変更)。
+    # Pfaffian モード(DESIGN_parton_pf.md)の門番は (PARTON_MODE_PFAFFIAN,) を渡す。
+    allowed_modes::Tuple = (PARTON_MODE_MEAN_FIELD,),
+)
     # --- mode switch -------------------------------------------------------
     if modpara.parton_mode == PARTON_MODE_OFF
         error(
@@ -100,11 +106,12 @@ function validate_parton_modpara(modpara::ModParaParameters)
             "PartonMode = 0. Use run_para_opt_from_namelist for standard mVMC.",
         )
     end
-    if modpara.parton_mode != PARTON_MODE_MEAN_FIELD
+    if !(modpara.parton_mode in allowed_modes)   # --- parton-mode (fork addition) ---
         error(
-            "PartonMode = $(modpara.parton_mode) is not implemented: only " *
-            "PartonMode = 1 (parton mean-field VMC) exists. Values >= 2 are " *
-            "reserved for future parton ansatze.",
+            "PartonMode = $(modpara.parton_mode) is not accepted here: this path " *
+            "handles PartonMode = $(join(allowed_modes, ", ")). PartonMode = 1 is the " *
+            "parton mean-field VMC and PartonMode = 2 the Pfaffian parton mode; " *
+            "values >= 3 are reserved for future parton ansatze.",
         )
     end
 

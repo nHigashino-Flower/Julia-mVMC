@@ -68,6 +68,7 @@ end
     _PARAM_OPTTRANS
     _PARAM_PMF   # --- parton-mode (fork addition) ---
     _PARAM_PMFORB   # --- parton-mode (fork addition) --- Φ 直接変分(DESIGN §12.11)
+    _PARAM_PARTON_PAIR   # --- parton-mode (fork addition) --- Pfaffian モードの対軌道(DESIGN_parton_pf.md)
 end
 
 struct _ParameterLocation
@@ -142,6 +143,15 @@ function _foreach_parameter_location(f, data::ExpertModeData, counts)
     pmforb_start = n_para - length(data.pmforb_params) + 1
     for k in eachindex(data.pmforb_params)
         f(pmforb_start + k - 1, _ParameterLocation(_PARAM_PMFORB, 0, k))
+    end
+
+    # --- parton-mode (fork addition) ---
+    # Pfaffian モード(DESIGN_parton_pf.md)の対軌道 p は Φ ブロックの直前([… | α | p | Φ])。
+    # パートンモードでは α・p・Φ のどれか 1 つしか使わないので、Pf モードの実際の並びは
+    # [射影 | p]。idx の共有は def 側で解決済みで、item_idx は p の 1-based 位置そのもの
+    pair_start = n_para - length(data.pmforb_params) - length(data.parton_pair_params) + 1
+    for k in eachindex(data.parton_pair_params)
+        f(pair_start + k - 1, _ParameterLocation(_PARAM_PARTON_PAIR, 0, k))
     end
     return nothing
 end
@@ -222,6 +232,14 @@ function _foreach_parameter_location_at(f, data::ExpertModeData, counts, para_id
         f(_ParameterLocation(_PARAM_PMFORB, 0, para_idx - pmforb_start + 1))
     end
 
+    # --- parton-mode (fork addition) ---
+    # Pfaffian モードの対軌道(Φ の直前)。他のモードでは parton_pair_params が空なので範囲も空
+    n_pair = length(data.parton_pair_params)
+    pair_start = counts.n_para - length(data.pmforb_params) - n_pair + 1
+    if pair_start <= para_idx < pair_start + n_pair
+        f(_ParameterLocation(_PARAM_PARTON_PAIR, 0, para_idx - pair_start + 1))
+    end
+
     return nothing
 end
 
@@ -244,6 +262,8 @@ function _parameter_location_value(data::ExpertModeData, loc::_ParameterLocation
         return ComplexF64(data.pmfpara_terms[loc.item_idx].value)
     elseif loc.kind == _PARAM_PMFORB   # --- parton-mode (fork addition) ---
         return data.pmforb_params[loc.item_idx]
+    elseif loc.kind == _PARAM_PARTON_PAIR   # --- parton-mode (fork addition) ---
+        return data.parton_pair_params[loc.item_idx]
     end
 end
 
@@ -270,6 +290,8 @@ function _set_parameter_location_value!(
         data.pmfpara_terms[loc.item_idx].value = value
     elseif loc.kind == _PARAM_PMFORB   # --- parton-mode (fork addition) ---
         data.pmforb_params[loc.item_idx] = value
+    elseif loc.kind == _PARAM_PARTON_PAIR   # --- parton-mode (fork addition) ---
+        data.parton_pair_params[loc.item_idx] = value
     end
     return nothing
 end

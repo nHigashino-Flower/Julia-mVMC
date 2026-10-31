@@ -782,6 +782,27 @@ struct PhysHopTerm
     value::ComplexF64
     is_complex::Bool
 end
+
+# --- parton-mode (fork addition) ---
+"""
+    PartonPairOrbitalTerm
+
+Pfaffian パートンモード(PartonMode = 2)の対軌道 def の 1 行
+(DESIGN_parton_pf.md §2.1)。上流の orbitalidxgen.def と同じ列構成で、spin をフレーバーと読む:
+
+    site1 flavor1 site2 flavor2 idx [sign]
+
+f[(site1, flavor1), (site2, flavor2)] = 2·sign·p[idx]、逆向きは −2·sign·p[idx]。
+すべて 0-based のまま持つ(1-based への変換はテンプレート build だけで行う)。
+"""
+struct PartonPairOrbitalTerm
+    site1::Int
+    flavor1::Int
+    site2::Int
+    flavor2::Int
+    idx::Int
+    sign::Int
+end
 # --------------------------------------
 
 """
@@ -887,6 +908,13 @@ mutable struct ExpertModeData
     # Φ 直接変分(PartonOrbParam = 1)の軌道行列。平坦添字 ((f·Ns)+s)·Ne+n(0-based)の
     # 1-based 位置に Φ_f[s,n] を置く。標準モード・α モードでは空
     pmforb_params::Vector{ComplexF64}
+    # --- parton-mode (fork addition) ---
+    # Pfaffian モード(PartonMode = 2、DESIGN_parton_pf.md)の対軌道。
+    # parton_pair_terms は def の行、parton_pair_opt_flags は末尾の OptFlag 行(0-based idx -> flag)、
+    # parton_pair_params は idx ごとの p(SR が読み書きする値。長さ n_idx)。他のモードでは空
+    parton_pair_terms::Vector{PartonPairOrbitalTerm}
+    parton_pair_opt_flags::Dict{Int,Int}
+    parton_pair_params::Vector{ComplexF64}
 
     function ExpertModeData()
         new(
@@ -954,6 +982,10 @@ mutable struct ExpertModeData
             Dict{Int,Int}(),
             # --- parton-mode (fork addition) ---
             ComplexF64[],   # pmforb_params
+            # --- parton-mode (fork addition) ---
+            PartonPairOrbitalTerm[],   # parton_pair_terms
+            Dict{Int,Int}(),           # parton_pair_opt_flags
+            ComplexF64[],              # parton_pair_params
         )
     end
 end

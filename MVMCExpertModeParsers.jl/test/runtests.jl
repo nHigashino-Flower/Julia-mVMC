@@ -23,3 +23,4 @@ include("test_trans_parser_spin_indices.jl")
 include("test_parameter_init_complexflag_rbm.jl")
 include("test_parton_types_expert.jl")  # --- parton-mode (fork addition) ---
 include("test_parton_parsers.jl")  # --- parton-mode (fork addition) ---
+include("test_parton_pair_parser.jl")  # --- parton-mode (fork addition) --- Pfaffian モード
