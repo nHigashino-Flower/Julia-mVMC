@@ -38,8 +38,12 @@ min_gap の代わりに次を描く。PartonMode = 1 の図と標準出力は従
   2. log10|E_avg − E_tail|(τ_E の推定は Mode 1 と同じ)
   3. 変化率 |ΔE|/100step と 10·SE(stage_io.jl の条件 2)
   4. フレーバーごとの行ブロック特異値比 σ_N/σ_{N+1}(パートン形 f = ΞJΞᵀ なら ∞)と受理率
-  5. 判定 1 の推移: 各点でそれまでの 2·window step から求めた |dE/dτ| と 2·SE(|dE/dτ| < 2·SE で頭打ち)
-  6. 判定 1 の t 値(±2 の線)と判定 2: σ_N/σ_{N+1} の window 間の相対変化(5% の線、最大のフレーバー)
+  5. **dE/dτ vs step(符号つき・線形軸)と ±2·SE の帯**。各点はそれまでの 2·window step のブロック平均の
+     直線当てはめ。帯が 0 をまたいだら頭打ち。縦軸は後半 6 割の値に合わせる(序盤の大きな値は枠外)
+  6. 同じ量の対数版: |dE/dτ| と 2·SE(全体の桁の推移)
+  7. 判定 1 の t 値(±2 の線)
+  8. 判定 2: σ_N/σ_{N+1} の window 間の相対変化(5% の線、最大のフレーバー)
+  1 step の差分や 100 step 平均どうしの差は終盤で雑音に埋もれる(KM 4×4 の末尾で信号/雑音 3e−4 / 0.3)ので使わない
 **頭打ちの判定は虚時間あたりの傾きで行う**。τ = 2·dt·step(SR の更新 −dt·S⁻¹·2(HO − H·O) より)とし、
 末尾 2·window を 10 ブロックに分けた平均の直線当てはめで dE/dτ とその t 値を出す。|t| < 2 を頭打ちとする。
 step 単位の条件 2 は dt を絞った段ではまだ下がっていても通ってしまう(KM 4×4 の追い込みで実測)ので、
@@ -400,31 +404,44 @@ function main_pair(dir::AbstractString, png::AbstractString, window::Int, dt::Fl
                   ylabel = "accept ratio", legend = :topright)
         end
 
-        # 判定 1: |dE/dτ| と 2·SE(|dE/dτ| が 2·SE を割ったら頭打ち = |t| < 2)
+        # 判定 1(符号つき・線形軸): dE/dτ ± 2·SE。帯が 0 をまたいだら頭打ち。
+        # 1 step の差分や 100 step 平均どうしの差は終盤で雑音に埋もれる(KM 4×4 の末尾で信号/雑音 3e−4 / 0.3)ので、
+        # 区間内の全 step を使うブロック平均の直線当てはめ(block_slope)を使う。縦軸は後半 6 割の値に合わせる
         ulab = isfinite(dt) ? "dE/dτ" : "dE/dstep"
-        p5 = plot(j_steps, clean(abs.(j_slope) .* tau_scale); yscale = :log10, color = :crimson, lw = 1.5,
-                  marker = :circle, ms = 2, mc = :crimson, msw = 0, label = "|$(ulab)|  (last $(2window) steps)",
+        ys = j_slope .* tau_scale; band = 2 .* j_se .* tau_scale
+        late = j_steps .>= 0.4 * n
+        lim = any(late) ? 1.2 * maximum(abs.(ys[late]) .+ band[late]) : maximum(abs.(ys) .+ band)
+        p5 = plot(j_steps, ys; ribbon = band, fillalpha = 0.25, color = :crimson, lw = 1.5,
+                  marker = :circle, ms = 2, mc = :crimson, msw = 0,
+                  label = "$(ulab) ± 2·SE  (fit over last $(2window) steps)",
+                  xlabel = "step", ylabel = ulab, legend = :bottomright, ylims = (-lim, lim),
+                  title = "criterion 1: plateau when the band crosses 0")
+        hline!(p5, [0.0]; color = :black, lw = 1, label = "")
+
+        # 判定 1(対数軸): |dE/dτ| と 2·SE。全体の桁の推移を見る
+        p6 = plot(j_steps, clean(abs.(ys)); yscale = :log10, color = :crimson, lw = 1.5,
+                  marker = :circle, ms = 2, mc = :crimson, msw = 0, label = "|$(ulab)|",
                   xlabel = "step", ylabel = "|$(ulab)|", legend = :bottomleft,
-                  title = "criterion 1: plateau when |$(ulab)| < 2·SE")
-        plot!(p5, j_steps, clean(2 .* j_se .* tau_scale); color = :black, ls = :dash, lw = 1.2, label = "2·SE")
+                  title = "criterion 1 (log): plateau when |$(ulab)| < 2·SE")
+        plot!(p6, j_steps, clean(band); color = :black, ls = :dash, lw = 1.2, label = "2·SE")
         desc = j_slope .< 0
-        any(.!desc) && scatter!(p5, j_steps[.!desc], clean(abs.(j_slope[.!desc]) .* tau_scale);
-                                color = :steelblue, mc = :steelblue, ms = 3, msw = 0, label = "rising (dE/dτ > 0)")
+        any(.!desc) && scatter!(p6, j_steps[.!desc], clean(abs.(ys[.!desc]));
+                                color = :steelblue, mc = :steelblue, ms = 3, msw = 0, label = "rising ($(ulab) > 0)")
 
-        # 判定 1 の t 値と判定 2(構造)
-        p6 = plot(j_steps, j_t; color = :crimson, lw = 1.5, marker = :circle, ms = 2, mc = :crimson, msw = 0,
-                  label = "t = slope / SE",
-                  xlabel = "step", ylabel = "t", legend = :topleft,
-                  title = "criterion 1: |t| < 2   /   criterion 2: σ-ratio change < 5%")
-        hline!(p6, [-2.0, 2.0]; color = :crimson, ls = :dash, alpha = 0.7, label = "t = ±2")
-        if any(isfinite, j_sr)
-            ps = twinx(p6)
-            plot!(ps, j_steps, clean(j_sr); yscale = :log10, color = :darkgreen, lw = 1.5,
-                  label = "σ_N/σ_{N+1} change / window", ylabel = "relative change", legend = :bottomright)
-            hline!(ps, [0.05]; color = :darkgreen, ls = :dash, alpha = 0.7, label = "5%")
-        end
+        # 判定 1 の t 値
+        p7 = plot(j_steps, j_t; color = :crimson, lw = 1.5, marker = :circle, ms = 2, mc = :crimson, msw = 0,
+                  label = "t = slope / SE", xlabel = "step", ylabel = "t", legend = :bottomright,
+                  title = "criterion 1: |t| < 2")
+        hline!(p7, [-2.0, 2.0]; color = :black, ls = :dash, alpha = 0.7, label = "t = ±2")
 
-        plt = plot(p1, p2, p3, p4, p5, p6; layout = (3, 2), size = (1400, 1300),
+        # 判定 2(構造): σ_N/σ_{N+1} の window 間の相対変化
+        p8 = plot(; yscale = :log10, xlabel = "step", ylabel = "relative change / window", legend = :bottomleft,
+                  title = "criterion 2: σ_N/σ_{N+1} change < 5%")
+        any(isfinite, j_sr) && plot!(p8, j_steps, clean(j_sr); color = :darkgreen, lw = 1.5, marker = :circle,
+                                     ms = 2, mc = :darkgreen, msw = 0, label = "max over flavors")
+        hline!(p8, [0.05]; color = :black, ls = :dash, alpha = 0.7, label = "5%")
+
+        plt = plot(p1, p2, p3, p4, p5, p6, p7, p8; layout = (4, 2), size = (1400, 1700),
                    left_margin = 8Plots.mm, bottom_margin = 5Plots.mm, right_margin = 14Plots.mm)
         savefig(plt, png)
     end
