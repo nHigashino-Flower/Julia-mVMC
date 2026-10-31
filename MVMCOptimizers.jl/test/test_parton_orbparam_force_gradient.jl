@@ -207,3 +207,15 @@ end
     MVMCOptimizers.parton_finalize_oo_store!(phi, got, store, sr_opt_size, 0)
     @test all(iszero, got)
 end
+
+@testset "写像付き 力 = 勾配(store 経路、Jastrow 込み)" begin
+    data, map = orbparam_map_fixture(; jastrow = true)
+    pstate = MVMCOptimizers.parton_orbparam_build_state(data, map)
+    @test pstate.mfham.map === map
+    configs = [[i, j] for i = 1:6 for j = (i + 1):6]
+    _orb_enumerate(pstate, data, configs; conjugate = true, store = true)
+    _, g = _orb_s_and_g(pstate, data)
+    @test length(g) == 2 * (3 + map.n_idx)
+    @test maximum(abs, g) > 1e-4
+    @test _orb_force_max_rel(pstate, data, configs, g) < 1e-4
+end

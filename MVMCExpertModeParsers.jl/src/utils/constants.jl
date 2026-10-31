@@ -48,6 +48,7 @@ const MVMC_KEYWORDS = Dict{String,String}(
     "InPmfPara" => "InPmfPara.def",
     "InPmfOcc" => "InPmfOcc.def",
     "InPmfOrb" => "InPmfOrb.def",   # --- parton-mode (fork addition) ---
+    "PartonOrbIdx" => "pmforbidx.def",   # --- parton-mode (fork addition) --- Φ の制限(DESIGN §12.12)
     "PartonPairOrbital" => "partonpairorbital.def",       # --- parton-mode (fork addition) --- Pfaffian モード
     "InPartonPairOrbital" => "InPartonPairOrbital.def",   # --- parton-mode (fork addition) ---
     # Input parameter files (ReadInputParameters)

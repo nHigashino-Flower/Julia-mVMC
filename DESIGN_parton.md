@@ -1271,9 +1271,9 @@ CFL(c = f₁f₂f₃。f₁, f₂ に Chern バンド、f₃ にゼロ磁場の�
 | 名前 | α モードでの意味 | Φ モード | 判定 | 理由 |
 |---|---|---|---|---|
 | pmftrans.def / pmfpara.def | t と α | 使わない | (d) 門番 | Φ モードに α は存在しない |
-| `parton_init_alpha!`(専用 RNG) | 値の無い α を乱数で埋める | なし | (d) | Φ の初期化は乱数を使わない(サンプリング RNG を消費しない規律を保つ) |
+| `parton_init_alpha!`(専用 RNG) | 値の無い α を乱数で埋める | なし | (d) | Φ の初期化は乱数を使わない(サンプリング RNG を消費しない規律を保つ)。**§12.12 で変更**: θ を初期化専用の乱数列で初期化する(サンプリング RNG は消費しない) |
 | InPmfPara / InPmfOcc | α と占有の読み戻し | なし | (d) 門番 | |
-| — | — | **InPmfOrb.def**(必須)。平坦添字 ((f·Ns)+s)·Ne+n、5 行ヘッダ、`%.18e` | (c) 厳格な専用リーダ | 件数・範囲・有限性・列フルランク(σ_min/σ_max > tol)を error で検査する |
+| — | — | **InPmfOrb.def**(必須)。平坦添字 ((f·Ns)+s)·Ne+n、5 行ヘッダ、`%.18e` | (c) 厳格な専用リーダ | 件数・範囲・有限性・列フルランク(σ_min/σ_max > tol)を error で検査する。**§12.12 で変更**: InPmfOrb は任意で θ を持つ(idx は θ の番号)。列フルランクは組み立てた Φ について初期化後に検査 |
 | `validate_parton_data`(`parton_unsupported_inputs.jl:288-454`) | pmfpara/pmftrans/physhop の必須検査と共通検査 | 必須検査だけを外す | (b) kwarg `require_mf_inputs` | physhop・Jastrow・DH・CoulombIntra・OptTrans の検査は再利用する |
 | ドライバ(`parton_run_para_opt_from_namelist.jl:20-138`) | パース → α 初期化 → フラグ → 門番 → … | パース直後に Φ の入口へ分岐 | (b) 1 分岐 | α 初期化とフラグ実体化(:39-47)より前で分ける |
 | α 解からの変換 | — | tools の変換スクリプト | (c) | §12.1 |
@@ -1411,7 +1411,7 @@ end
 | `PartonOrbParam` の値が {0, 1, 2} の外 | エラー | 予約 |
 | namelist に PartonMFTrans / PartonMFPara / InPmfPara / InPmfOcc がある | エラー | α を混ぜない |
 | `parton_n_idx(data) ≠ 0` | エラー | 共役シムのオフセットの前提 |
-| InPmfOrb が無い、または件数・範囲・有限性・列フルランクのいずれかを満たさない | エラー | 緩いリーダの穴を塞ぐ |
+| InPmfOrb が無い、または件数・範囲・有限性・列フルランクのいずれかを満たさない | エラー | 緩いリーダの穴を塞ぐ。**§12.12 で変更**: InPmfOrb が無いのはエラーでなく乱数初期値。列フルランクは初期化後の Φ で検査 |
 | `PartonOccMode ≠ 0` | エラー | 占有の選択が存在しない |
 | 案 A で `DSROptStaDel ≤ 0` | エラー | S の厳密な零空間 |
 | `PartonOrbAmpMax ≤ 0` | エラー | |
@@ -1433,7 +1433,7 @@ end
 | Φ-2 | 力 = 勾配(解析式で立て直す) | 全配置を列挙し、上流の `calculate_oo!` と `build_s_matrix_and_g_vector!` を通した g/(−dt) を ∂E/∂ReΦ・∂E/∂ImΦ・∂E/∂Z の中心差分と比べる。共役を外すと崩れること、Jastrow 込みで S が不変なこと、store 経路と非 store 経路の両方 | 新 `test_parton_orbparam_force_gradient.jl` |
 | Φ-3(②) | S のゼロ固有値の数 | 厳密な共分散で、案 A = F·Ne² + (F−1)(Ns−1)、案 B = (F−1)(Ns−1)(複素次元)、階数が一致すること。コードの S(Im·Im 項なし)で非零になる方向も数値で確認して記録する | 同上 |
 | Φ-4 | 正準化と引き戻し | Löwdin と振幅スケールで E が不変、張る空間が不変。多数ステップ後も正規直交。案 B の補空間の直交性。続けて走った run と再起動した run がビット一致 | 新 `test_parton_orbparam_canonical.jl` |
-| Φ-5 | 入出力 | `zqp_pmforb_opt.dat` → InPmfOrb の往復がビット一致。異常入力(件数、範囲、NaN、ランク落ち)を拒否 | 新 `test_parton_orbparam_io.jl` |
+| Φ-5 | 入出力 | `zqp_pmforb_opt.dat` → InPmfOrb の往復がビット一致。異常入力(件数、範囲、NaN、ランク落ち)を拒否(§12.12 以降、ランク落ちは初期化後の検査で拒否) | 新 `test_parton_orbparam_io.jl` |
 | Φ-6 | 門番 | §12.8 の全行 | `test_parton_gatekeeper.jl` に追加 |
 | Φ-7 | ロケータ | count、pack/unpack、get/set/delta、`pmforb_start` | `test_parton_locator.jl` に追加 |
 | Φ-8 | 並列 | スレッド並列 = 逐次(ビット一致)。2 ランクでランクごとの Φ が一致 | `test_parton_threading.jl` に追加 + 手動 MPI |
@@ -1480,3 +1480,22 @@ end
 - cond(Φ_f) が step とともに単調に増える(SL(Ne) 方向の漂流)
 - SR が NaN で止まる、または ip ≈ 0 で捨てるサンプルが増え続ける
 - α の最良解から始めて、E が α より上がる。Φ モードの状態族は α モードの状態族を含む(同じ Jastrow・QP)ので、下がるか同じでなければならない
+### 12.12 制限付き Φ(PartonOrbIdx:Pfaffian 互換 + Bloch 形)(2026-10-31 決定)
+
+目的は**大規模系での変分パラメータの削減**。規約と機能は上流の Pfaffian(`orbitalidx.def` /
+`InOrbital` / 乱数初期化 / D_AmpMax)にそろえる。§12.11 の上流型は「制限なし」の特別な場合として残る。
+
+| 項目 | 決定 |
+|---|---|
+| 切り替え | `PartonOrbParam = 1` のまま、namelist に **`PartonOrbIdx`** があれば制限付き。無ければ恒等写像(各要素が独立)で、§12.11 の挙動とビット一致 |
+| 対応 | Φ_f[s,n] = c·θ_idx。SR が動かすのは θ(`data.pmforb_params`、長さ NPmfOrbIdx)。Φ は毎ステップ θ から組み立てる導出量 |
+| def の書式 | 5 行ヘッダ(2 行目 `NPmfOrbIdx N`、3 行目 `ComplexType`)のあと、全 F·Ns·Ne 要素について `site flavor orbital idx [c]`(0-based)。c は省略で 1、1 列なら符号 ±1(Pfaffian 互換)、2 列なら `Re Im`(\|c\| = 1 を要求)。続けて N 行の `idx OptFlag` |
+| 網羅 | **全要素の記載が必須**。欠け・重複・範囲外・どの要素からも使われない idx は error。ゼロ固定は「OptFlag 0・初期値 0 の idx」で書く(Pfaffian と同じ) |
+| 初期値 | OptFlag ≠ 0 の idx は乱数(Pfaffian と同じ (U[−1,1) + i·U[−1,1))/√2)、OptFlag = 0 は 0。乱数は**初期化専用の乱数列**(α の `parton_init_alpha!` と同じ base_seed の規律で、サンプリングの乱数列を消費しない)。`InPmfOrb`(`idx Re Im`、全 idx)があれば上書きする。**InPmfOrb は必須でなくなる** |
+| 再スケール | idx を共有するフレーバーを 1 つの組にまとめ(連結成分)、組ごとに θ の最大絶対値を `PartonOrbAmpMax` にそろえる。共有が無ければフレーバーごと(§12.11 と同じ)。\|c\| = 1 なので max\|Φ\| = max\|θ\| |
+| O | O_θ = Σ_{k ∈ idx} c_k·O_Φ,k。各寄与を写像経由で θ のスロットへ直接足す(作業領域を持たない)。恒等写像では従来の経路をそのまま通す |
+| 門番 | 組み立てた Φ_f の列フルランクを、初期化(乱数または InPmfOrb)の後に検査する |
+| Bloch def の生成 | `tools/parton_bloch_orbidx.jl`。`parton_lattice.dat`(`SITE i x y σ`・`MFSHIFT`・`grid`)と modpara(NElec・NFlavor)と占有指定から def を書く。Φ_f[s,(k,b)] = e^{ik·a(s)}·θ_{(f,σ,k,b)}(σ = 拡大セル内の位置、a(s) = 代表元から s へ移す MFSHIFT)。k は拡大セルの並進群の指標(N_cell 個)。既定の占有は全 k に Ne/N_cell 本(割り切れなければ error)。`flavor m1 m2 nbands` の占有ファイルで指定もできる(CFL のフェルミ海用)。physhop がその並進で不変でなければ警告 |
+| α 解からの変換 | 変換道具に Bloch def を渡すと、α の射影子 P = ΦΦ† を k ごとのブロック P(k)(N_σ × N_σ)に分けて対角化し、固有値 ≈ 1 の固有ベクトルを u_{k,b} とする(最小二乗の近似を使わない)。本数が占有指定と合わなければ error |
+| パラメータ数 | Bloch でフレーバーあたり Ns·Ne → Ns·Ne / N_cell。SR の ⟨O O†⟩ は n_para² で効く |
+| 第 1 版の対象外 | 磁気並進(ゲージ変換を伴う並進)/ パートン境界条件のひねり θ_f / \|c\| ≠ 1 の係数 |

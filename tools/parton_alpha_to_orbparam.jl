@@ -5,7 +5,7 @@
 使い方:
 
     julia --project=MVMCOptimizers.jl tools/parton_alpha_to_orbparam.jl \\
-        <alpha_stage_in> <alpha_stage_out> <new_dir>
+        <alpha_stage_in> <alpha_stage_out> <new_dir> [--bloch [occupation_file]]
 
 - `<alpha_stage_in>`: α run の入力ディレクトリ(namelist.def がある場所)
 - `<alpha_stage_out>`: その出力ディレクトリ(`<CParaFileHead>_pmfpara_opt.dat`、
@@ -23,10 +23,17 @@
    (汎用リーダは 5 行を読み飛ばすので、そのままだと idx 0 が落ちる。DESIGN §11)
 4. modpara は `PartonOrbParam 1`・`PartonOccMode 0` に置き換え、他の行はそのまま残す。
    `DSROptStaDel <= 0` なら error(Φ モードの門番と同じ条件)
+
+`--bloch` を付けると(DESIGN §12.12)、`<alpha_stage_in>/parton_lattice.dat` から拡大セルの
+Bloch 形の制限(`pmforbidx.def`、namelist の `PartonOrbIdx`)を作り、InPmfOrb には α の
+射影子を k ごとに対角化して得た θ を書く。占有ファイル(`flavor m1 m2 nbands`)を続けて
+渡せば k ごとの本数を指定できる(`tools/parton_bloch_orbidx.jl` と同じ書式)。
 """
 
 using MVMCExpertModeParsers
 using MVMCOptimizers
+
+include(joinpath(@__DIR__, "parton_bloch_orbidx.jl"))   # --bloch(DESIGN §12.12)
 
 const _ORBPARAM_DROPPED_KEYS = ("PartonMFTrans", "PartonMFPara", "InPmfPara", "InPmfOcc", "InJastrow")
 
@@ -58,7 +65,8 @@ end
 Φ モードの入力一式を `new_dir` に書き、namelist.def のパスを返す。
 """
 function parton_alpha_to_orbparam(alpha_in::AbstractString, alpha_out::AbstractString,
-                                  new_dir::AbstractString)
+                                  new_dir::AbstractString; bloch::Bool = false,
+                                  occupation_file = nothing)
     mkpath(new_dir)
     nl_in = joinpath(alpha_in, "namelist.def")
     data = MVMCExpertModeParsers.parse_expert_mode_files(nl_in)
@@ -79,7 +87,15 @@ function parton_alpha_to_orbparam(alpha_in::AbstractString, alpha_out::AbstractS
         MVMCOptimizers.parton_build_mf_templates!(mfham, data)
         MVMCOptimizers.parton_update_orbitals!(
             mfham, MVMCOptimizers.parton_alpha_from_terms(data), mp.nelec; forced_occ = occ)
-        data.pmforb_params = MVMCOptimizers.parton_orbparam_params_from_orbitals(mfham.orbitals)
+        if bloch
+            # Bloch 形: P を k ごとに対角化して θ を作り、制限の def も書く
+            bs = parton_bloch_structure(alpha_in; occupation_file = occupation_file)
+            data.pmforb_params = parton_bloch_theta_from_orbitals(bs, mfham.orbitals)
+            MVMCOptimizers.parton_orbparam_write_orbidx(
+                joinpath(new_dir, "pmforbidx.def"), bs.map, mp.nsite, mp.nelec, mp.nflavor)
+        else
+            data.pmforb_params = MVMCOptimizers.parton_orbparam_params_from_orbitals(mfham.orbitals)
+        end
     finally
         rm(tmp; force = true)
     end
@@ -97,6 +113,10 @@ function parton_alpha_to_orbparam(alpha_in::AbstractString, alpha_out::AbstractS
         push!(kept, (key, path))
     end
     push!(kept, ("InPmfOrb", "InPmfOrb.def"))
+    bloch && push!(kept, ("PartonOrbIdx", "pmforbidx.def"))
+    # 格子の幾何は namelist に載らないが、後で def を作り直したり図を描くのに使うので残す
+    lattice = joinpath(alpha_in, "parton_lattice.dat")
+    isfile(lattice) && cp(lattice, joinpath(new_dir, "parton_lattice.dat"); force = true)
 
     # 3. Jastrow の最終値
     jastrow_file = joinpath(alpha_out, head * "_jastrow_opt.dat")
@@ -123,8 +143,11 @@ function parton_alpha_to_orbparam(alpha_in::AbstractString, alpha_out::AbstractS
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__
-    length(ARGS) == 3 || error(
+    # 引数: <alpha_stage_in> <alpha_stage_out> <new_dir> [--bloch [occupation_file]]
+    (3 <= length(ARGS) <= 5 && (length(ARGS) == 3 || ARGS[4] == "--bloch")) || error(
         "使い方: julia --project=MVMCOptimizers.jl tools/parton_alpha_to_orbparam.jl " *
-        "<alpha_stage_in> <alpha_stage_out> <new_dir>")
-    println(parton_alpha_to_orbparam(ARGS[1], ARGS[2], ARGS[3]))
+        "<alpha_stage_in> <alpha_stage_out> <new_dir> [--bloch [occupation_file]]")
+    println(parton_alpha_to_orbparam(ARGS[1], ARGS[2], ARGS[3];
+                                     bloch = length(ARGS) >= 4,
+                                     occupation_file = length(ARGS) == 5 ? ARGS[5] : nothing))
 end

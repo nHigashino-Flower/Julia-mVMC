@@ -19,6 +19,8 @@ O 側を共役しておかないと力ベクトルが ⟨E_loc O⟩ になって
     O[f,s,n] = (1/ip) Σ_qp w_qp (Π_g det A_qp,g) Σ_m δ_{s, map_qp(r_m)} sgn_qp(r_m) (A_qp,f)⁻¹[n, m]
 
 を Re スロットに、i·O を Im スロットに書く(k = 平坦位置、p = n_proj + k)。
+制限付き(写像が恒等でない、DESIGN §12.12)なら O_θ = Σ_{k ∈ idx} c_k·O[k] を θ のスロット
+(p = n_proj + θ の位置)に書く。θ も正則なパラメータなので Im スロットは i·Re のまま。
 Φ ブロックのスロットは 0 で初期化済みであること(`parton_fill_sr_opt_o!` が保証する)。
 
 - `Π_g det == 0` の qp は飛ばす。特異ブロックの `inv_a` は更新されていないので、
@@ -43,6 +45,7 @@ function parton_orbparam_calculate_o!(
     inv_ip = inv(ip)
     Ne = amp.n_elec
     n_site = size(phi.orbitals[1], 1)
+    map = phi.map
     for qp = 1:amp.n_qp
         prodd = one(ComplexF64)
         for f = 1:amp.n_flavor
@@ -58,15 +61,23 @@ function parton_orbparam_calculate_o!(
                 r = particle_site(cfg, f, m)
                 s = qmap[r]
                 ws = w * qsgn[r]
-                @inbounds for n = 1:Ne
-                    k = parton_orbparam_flat_index(f, s, n, n_site, Ne)
-                    sr_opt_o[o_slot_re(n_proj + k)] += ws * Ainv[n, m]
+                if map.is_identity
+                    @inbounds for n = 1:Ne
+                        k = parton_orbparam_flat_index(f, s, n, n_site, Ne)
+                        sr_opt_o[o_slot_re(n_proj + k)] += ws * Ainv[n, m]
+                    end
+                else
+                    # 制限付き(DESIGN §12.12): O_θ = Σ_{k ∈ idx} c_k·O_Φ,k。
+                    # 各寄与を写像経由で θ のスロットへ直接足す(作業領域を持たない)
+                    @inbounds for n = 1:Ne
+                        k = parton_orbparam_flat_index(f, s, n, n_site, Ne)
+                        sr_opt_o[o_slot_re(n_proj + map.idx[k])] += map.coeff[k] * (ws * Ainv[n, m])
+                    end
                 end
             end
         end
     end
-    n_orb = amp.n_flavor * n_site * Ne
-    @inbounds for k = 1:n_orb
+    @inbounds for k = 1:map.n_idx
         p = n_proj + k
         sr_opt_o[o_slot_im(p)] = im * sr_opt_o[o_slot_re(p)]   # 正則: ∂/∂Im Φ = i·∂/∂Φ
     end
@@ -107,8 +118,7 @@ function parton_fill_sr_opt_o!(
         sr_opt_o[o_slot_re(p)] = ComplexF64(cfg.proj_cnt[p])
     end
     parton_orbparam_calculate_o!(sr_opt_o, amp, phi, cfg, data, qp_weight, ip, n_proj)
-    n_orb = amp.n_flavor * size(phi.orbitals[1], 1) * amp.n_elec
-    conjugate && _parton_conjugate_mf_slots!(sr_opt_o, n_proj, n_orb)
+    conjugate && _parton_conjugate_mf_slots!(sr_opt_o, n_proj, phi.map.n_idx)
     return sr_opt_o
 end
 
