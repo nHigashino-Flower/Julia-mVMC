@@ -86,7 +86,7 @@ end
 function parton_make_initial_sample!(
     cfg::PartonConfiguration,
     amp::PartonAmplitudeData,
-    mfham::PartonMFHamiltonian,
+    mfham::PartonOrbitalSource,
     data::ExpertModeData,
     ws::PartonSamplingWorkspace;
     rng,
@@ -475,7 +475,7 @@ end
 function parton_amplitude_ratio!(
     ws::PartonSamplingWorkspace,
     amp::PartonAmplitudeData,
-    mfham::PartonMFHamiltonian,
+    mfham::PartonOrbitalSource,
     data::ExpertModeData,
     qp_weight,
     m::Int,
@@ -525,7 +525,7 @@ end
 """
 function parton_update_amplitude!(
     amp::PartonAmplitudeData,
-    mfham::PartonMFHamiltonian,
+    mfham::PartonOrbitalSource,
     data::ExpertModeData,
     ws::PartonSamplingWorkspace,
     m::Int,

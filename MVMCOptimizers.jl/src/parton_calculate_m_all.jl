@@ -6,7 +6,7 @@ function parton_recompute_amplitude_all!(amp::PartonAmplitudeData,
     # (1) 特異ブロックはエラーにせずdet=0:波動関数のノードは物理なので、初期配置生成側が「非ゼロになるまで引き直す」責務を持ち、走行中に出たら再計算頻度の問題として@warn。
     # (2) detは生の複素数で保持(C版がPfMを生で持つのと同じ)。乗法的更新のドリフトは定期厳密再計算が錨になります。系が大きくなってオーバー/アンダーフローが見えたらlog空間化——§9に一行。
     # (3) lu!のピボット配列など小さな確保は放置:厳密再計算はもともとO(Ne³)なので誤差です(getrf!直叩きの完全ゼロアロケ化も§9)。ワークスペースに必要なのは現時点でa_scratch::Matrix{ComplexF64}(Ne×Ne)一枚だけ。
-        mfham::PartonMFHamiltonian, config::PartonConfiguration,
+        mfham::PartonOrbitalSource, config::PartonConfiguration,
         data::ExpertModeData, ws::PartonSamplingWorkspace)
     # 書き込みは保持ブロックだけ(対称なら f=1 のみ。DESIGN v3.9 det^F 高速路)
     for qp in 1:amp.n_qp, f in 1:amp.n_stored

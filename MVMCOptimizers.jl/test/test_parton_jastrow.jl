@@ -23,29 +23,6 @@ using LinearAlgebra
 using MVMCExpertModeParsers
 using MVMCOptimizers
 
-"""
-距離クラスの Jastrow を data に張る(環の距離 d = 1..L÷2 で類別)。
-jastrowidx.def を書かずにパーサ後の状態を直接作る(パーサ自体は上流の既存物)。
-"""
-function _add_ring_jastrow!(data, v::Vector{Float64})
-    L = data.modpara.nsite
-    n_class = L ÷ 2
-    length(v) == n_class || error("v must have length $n_class")
-    jidx = fill(-1, L, L)
-    for i = 1:L, j = 1:L
-        i == j && continue
-        d = min(mod(i - j, L), mod(j - i, L))
-        jidx[i, j] = d - 1                      # 0-based クラス
-    end
-    data.jastrow_idx = jidx
-    data.n_jastrow_idx = n_class
-    data.jastrow_terms = [
-        MVMCExpertModeParsers.JastrowTerm(0, k, ComplexF64(v[k + 1], 0), false)
-        for k = 0:(n_class - 1)
-    ]
-    return data
-end
-
 "データ一式(per_bond MF + 物理相互作用 + Jastrow + 任意 QP)。"
 function _jast_data(; F::Int = 2, L::Int = 6, Ne::Int = 3,
                     v::Union{Nothing,Vector{Float64}} = nothing,
@@ -66,18 +43,6 @@ function _jast_data(; F::Int = 2, L::Int = 6, Ne::Int = 3,
     return data
 end
 
-"全数計算の ln P_J(参照実装。プロダクションの式を使わない)。"
-function _ln_pj_ref(cfg, data)
-    L = cfg.n_site
-    z = 0.0
-    for i = 1:L, j = (i + 1):L
-        MVMCOptimizers.is_occupied(cfg, i) && MVMCOptimizers.is_occupied(cfg, j) || continue
-        idx = data.jastrow_idx[i, j]
-        z += real(data.jastrow_terms[idx + 1].value)
-    end
-    return z
-end
-
 "pstate 一式を組んで軌道まで更新する。"
 function _jast_state(data)
     pstate = MVMCOptimizers.parton_build_optimization_state(data)
@@ -86,21 +51,6 @@ function _jast_state(data)
         pstate.mfham, MVMCOptimizers.parton_alpha_from_terms(data), mp.nelec)
     MVMCOptimizers.parton_update_orbital_derivatives!(pstate.mfham, mp.nelec)
     return pstate
-end
-
-"配置を置いて proj_cnt も構築する。"
-function _jast_place!(pstate, data, sites)
-    mp = data.modpara
-    cfg = pstate.config
-    fill!(cfg.ele_cfg, -1)
-    fill!(cfg.ele_num, 0)
-    for f = 1:mp.nflavor, (m, r) in enumerate(sites)
-        MVMCOptimizers.place_particle!(cfg, f, m, r)
-    end
-    MVMCOptimizers.parton_make_proj_cnt!(cfg, data)
-    MVMCOptimizers.parton_recompute_amplitude_all!(
-        pstate.amp, pstate.mfham, cfg, data, pstate.workspace)
-    return cfg
 end
 
 @testset "§8-16-1 無効時: n_proj = 0 で恒等(フックの等価性)" begin

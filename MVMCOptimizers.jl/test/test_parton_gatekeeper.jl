@@ -203,3 +203,101 @@ end
         @test_throws Exception MVMCOptimizers.validate_parton_inputs(data, ctx)
     end
 end
+
+# =====================================================================
+# Φ 直接変分モード(PartonOrbParam = 1、DESIGN §12.11)の門番
+# =====================================================================
+
+"Φ モードの門番を素通りする最小の正常入力。"
+function _orb_gate_ok_data()
+    data = orbparam_toy_data()
+    mp = data.modpara
+    mp.ncond = -1
+    mp.nlocspin = 0
+    mp.vmc_calc_mode = 0
+    mp.nsrcg = 0
+    mp.lanczos_mode = 0
+    mp.nsp_gauss_leg = 1
+    mp.nsp_stot = 0
+    mp.n_orbital_idx = 0
+    mp.nneuron = 0
+    mp.nsplit_size = 1
+    MVMCOptimizers.parton_orbparam_materialize_flags!(data)
+    return data
+end
+
+@testset "Φ 門番: 正常入力は素通りする" begin
+    data = _orb_gate_ok_data()
+    @test length(data.optimization_flags) == 2 * length(data.pmforb_params)
+    @test all(data.optimization_flags)
+    @test MVMCOptimizers.validate_parton_orbparam_inputs(
+        data, MVMCOptimizers.serial_context()) === nothing
+end
+
+@testset "Φ 門番: OptFlag の実体化(Jastrow の Re は引き継ぎ・Im は凍結、Φ は全部可動)" begin
+    data = orbparam_toy_data()
+    _add_ring_jastrow!(data, [0.1, -0.2, 0.05])
+    data.optimization_flags = [false, true, true, true, true, true]  # Jastrow 1 の Re を凍結
+    flags = MVMCOptimizers.parton_orbparam_materialize_flags!(data)
+    n_proj = 3
+    n_orb = length(data.pmforb_params)
+    @test length(flags) == 2 * (n_proj + n_orb)
+    @test flags[1] == false && flags[3] == true && flags[5] == true
+    @test !any(flags[2:2:(2 * n_proj)])
+    @test all(flags[(2 * n_proj + 1):end])
+    @test data.optimization_flags === flags
+end
+
+@testset "Φ 門番: 違反を個別に検出($name)" for (name, mutate!) in [
+    "PartonOrbParam=2" => d -> (d.modpara.parton_orb_param = 2),
+    "PartonOrbParam=0" => d -> (d.modpara.parton_orb_param = 0),
+    "pmfpara あり" => d -> push!(d.pmfpara_terms, MVMCExpertModeParsers.PartonMFParaTerm(
+        0, 0, 1, 0, 0, ComplexF64(1, 0), true)),
+    "pmftrans あり" => d -> push!(d.pmftrans_terms, MVMCExpertModeParsers.PartonMFTransTerm(
+        0, 0, 1, 0, ComplexF64(-1, 0), false)),
+    "PartonOccMode=1" => d -> (d.modpara.parton_occ_mode = 1),
+    "DSROptStaDel=0" => d -> (d.modpara.dsr_opt_sta_del = 0.0),
+    "PartonOrbAmpMax=0" => d -> (d.modpara.parton_orb_amp_max = 0.0),
+    "PartonOrbAmpMax=Inf" => d -> (d.modpara.parton_orb_amp_max = Inf),
+    "Φ の件数" => d -> (d.pmforb_params = d.pmforb_params[1:(end - 1)]),
+    "Φ が非有限" => d -> (d.pmforb_params[3] = ComplexF64(NaN, 0)),
+    "OptFlag の長さ" => d -> (d.optimization_flags = d.optimization_flags[1:(end - 2)]),
+    "Φ 全凍結" => d -> (d.optimization_flags .= false),
+]
+    data = _orb_gate_ok_data()
+    mutate!(data)
+    @test_throws ErrorException MVMCOptimizers.validate_parton_orbparam_inputs(
+        data, MVMCOptimizers.serial_context())
+end
+
+@testset "α 門番: PartonOrbParam ≠ 0 を拒否し、値域外は modpara で拒否" begin
+    data = _parton_ok_data()
+    data.modpara.parton_orb_param = 1
+    @test_throws ErrorException MVMCOptimizers.validate_parton_inputs(
+        data, MVMCOptimizers.serial_context())
+    data.modpara.parton_orb_param = 3
+    @test_throws ErrorException MVMCOptimizers.validate_parton_modpara(data.modpara)
+end
+
+@testset "α 門番: pmfpara が空なら PartonOrbParam のつづりを案内する" begin
+    data = _parton_ok_data()
+    empty!(data.pmfpara_terms)
+    err = try
+        MVMCOptimizers.validate_parton_data(data)
+        nothing
+    catch e
+        e
+    end
+    @test err isa ErrorException
+    @test err !== nothing && occursin("PartonOrbParam", err.msg)
+end
+
+@testset "Φ 門番: namelist に α の入力があれば拒否($key)" for key in
+        ("PartonMFTrans", "PartonMFPara", "InPmfPara", "InPmfOcc")
+    dir = mktempdir()
+    nl = joinpath(dir, "namelist.def")
+    write(nl, "$key x.def\nInPmfOrb InPmfOrb.def\n")
+    @test_throws ErrorException MVMCOptimizers.parton_orbparam_reject_alpha_files(nl)
+    write(nl, "PhysHop physhop.def\nInPmfOrb InPmfOrb.def\n")
+    @test MVMCOptimizers.parton_orbparam_reject_alpha_files(nl) === nothing
+end

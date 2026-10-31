@@ -165,3 +165,22 @@ end
         @test data.modpara.nflavor == 2
     end
 end
+
+@testset "modpara: Φ 直接変分のキー" begin
+    r = MVMCExpertModeParsers.parse_modpara_content(
+        "Nsite 4\nPartonOrbParam 1\nPartonOrbAmpMax 2.5\n")
+    @test r.success
+    @test r.data.parton_orb_param == 1
+    @test r.data.parton_orb_amp_max == 2.5
+    p = MVMCExpertModeParsers.ModParaParameters()
+    @test p.parton_orb_param == 0
+    @test p.parton_orb_amp_max == 4.0
+end
+
+@testset "count_variational_parameters が Φ の要素数を数える" begin
+    data = MVMCExpertModeParsers.ExpertModeData()
+    @test isempty(data.pmforb_params)
+    @test MVMCExpertModeParsers.count_variational_parameters(data) == 0
+    data.pmforb_params = zeros(ComplexF64, 2 * 4 * 2)
+    @test MVMCExpertModeParsers.count_variational_parameters(data) == 16
+end

@@ -55,6 +55,20 @@ struct PartonMFTemplateEntry
 end
 
 """
+    PartonOrbitalSource
+
+振幅系(契約 1〜4)に軌道 Φ を渡す器の抽象型(DESIGN §12.5)。
+
+契約: すべての具象型は `orbitals::Vector{Matrix{ComplexF64}}`(フレーバーごとに
+Ns×Ne)を持つ。振幅系はこのフィールドしか読まないので、型注釈をこの抽象型に
+広げても本体は変わらない(Julia は具象型ごとに特殊化するので α モードの演算列も同一)。
+
+- `PartonMFHamiltonian`: α モード。Φ は H_MF(α) の固有ベクトル(導出量)
+- `PartonDirectPhi`: Φ 直接変分モード(PartonOrbParam = 1)。Φ は SR の値そのもの
+"""
+abstract type PartonOrbitalSource end   # --- parton-mode (fork addition) ---
+
+"""
     PartonMFHamiltonian
 
 平均場ハミルトニアンと、そこから作られる軌道・軌道微分。
@@ -71,7 +85,7 @@ end
 - `dh_uo_scratch`: 契約 0′ の作業行列(n_site × n_elec)
 - `min_gap`: HOMO-LUMO ギャップ(縮退検知)
 """
-mutable struct PartonMFHamiltonian
+mutable struct PartonMFHamiltonian <: PartonOrbitalSource
     n_idx::Int
     template::Vector{Vector{PartonMFTemplateEntry}}
     is_onsite_group::Vector{Bool}
@@ -422,13 +436,18 @@ end
 既存機構への窓口(`state`)とパートン固有の 4 部品をまとめた外箱。
 `state` は EnergyData / SROptData だけを実使用し、スレーター行列や
 電子配置のフィールドは触らない(パートン側が自前で持つ)。
+
+型パラメータ `O` は軌道の出どころ(DESIGN §12.5)。α モードでは
+`PartonMFHamiltonian`、Φ 直接変分モードでは `PartonDirectPhi`。フィールド名は
+どちらでも `mfham` のまま(既存テストを変えずに済ませるため。Φ モードでは
+「平均場ハミルトニアン」ではない点に注意)。
 """
-mutable struct PartonOptimizationState
+mutable struct PartonOptimizationState{O<:PartonOrbitalSource}
     state::VMCOptimizationState
     amp::PartonAmplitudeData
     config::PartonConfiguration
     workspace::PartonSamplingWorkspace
-    mfham::PartonMFHamiltonian
+    mfham::O
     physham::PartonPhysHamiltonian
 
     # §4 層 2 のスレッド別ワークスペース(遅延確保。逐次経路では nothing のまま)
@@ -441,7 +460,7 @@ PartonOptimizationState(
     amp::PartonAmplitudeData,
     config::PartonConfiguration,
     workspace::PartonSamplingWorkspace,
-    mfham::PartonMFHamiltonian,
+    mfham::PartonOrbitalSource,
     physham::PartonPhysHamiltonian,
 ) = PartonOptimizationState(state, amp, config, workspace, mfham, physham, nothing)
 

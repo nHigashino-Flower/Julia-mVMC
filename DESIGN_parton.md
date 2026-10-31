@@ -3,6 +3,7 @@
 - ステータス: **M2 完了**(§8 の 0〜18 と P 層 P0〜P2 全緑・既存回帰全緑。
   SR の gap 崩壊漂流は **v3.12 で根治**(占有追跡 `PartonOccMode`。既定は従来と
   ビット一致の opt-in)。機構は REPORT §15、実装の記録は §11)
+- 改訂: v3.15 草案 (2026-10-23) — Φ 直接変分モード(案 A・案 B)の構造設計。**実装前**(§12)
 - 改訂: v3.13 (2026-08-14) — 占有の読み戻し InPmfOcc(§2.3.1 / §3.3.1 / §8-18)
 - 改訂: v3.12 (2026-08-14) — SR 漂流の根治: 占有追跡 PartonOccMode(§1.1 / §2.1 / §2.5 / §3.3.1 / §8-17)
 - 改訂: v3.11 (2026-08-13) — M2 完了: 物理密度 Jastrow(§1.1 / §2.3.2 / §8-16)+ SR 応急処置(§7 / §8-17)
@@ -1153,3 +1154,329 @@ stochastic_opt!(案 B 後は MF ブロックも解く)/ weight_average / paralle
     書いていないのに統計が F の偶奇で出る。SR は F=3 でフェルミオン基底エネルギーに厳密収束
   - **ゲージ平坦方向の実測**: 一様ホッピング + 一様オンサイトだけの MF は全自由度がゲージ平坦で
     S が全ゼロになり SR が解けない。テストは強弱 2 群(またはボンドごと)に分けた入力を使う
+
+## 12. Φ 直接変分モード(v3.15 草案。実装前)
+
+> **第 1 段は §12.11 の上流型の簡素版で実装する**(2026-10-31 決定)。正準化と案 B は後回し。
+
+### 12.0 目的と位置づけ
+
+CFL(c = f₁f₂f₃。f₁, f₂ に Chern バンド、f₃ にゼロ磁場のフェルミ海)を開殻のまま扱いたい。
+α モードは H_MF(α) の固有ベクトルを Φ とし、∂Φ/∂α を一次摂動 `U_unocc·(W ./ D)` で出す(§1.5)。
+開殻では D → 0 となり、`gap_tol` によって勾配が黙って 0 になる(`parton_orbital.jl:603-606`)。
+
+そこで Slater 行列式の軌道行列 Φ_f そのものを変分するモードを足す。数式と数値検算は
+設計メモ「Φ 直接変分の二案」(claude.ai アーティファクト、2026-10-23)の §1〜§9 にある。
+
+- **案 A(direct)**: Φ_f の全要素(F·Ns·Ne 個の複素数)を変分する
+- **案 B(thouless)**: Φ = Φ_ref + U⊥Z とし、Z ∈ C^{(Ns−Ne)×Ne} を変分する。Z は毎ステップ 0 に戻す。
+  α モードの式から W と 1/D を外した形そのもので、GL(Ne) の冗長性を持たない
+
+制約(従来どおり):
+
+- **`PartonOrbParam = 0` の既定挙動はビット一致**
+- マルコフ連鎖の乱数消費順を変えない
+- 勾配等式テストは式が変わるので、解析式で立て直す
+
+### 12.1 決定事項(2026-10-23)
+
+| 項目 | 決定 | 理由 |
+|---|---|---|
+| modpara キー | **`PartonOrbParam`**(0 = alpha〔既定〕/ 1 = direct〔案 A〕/ 2 = thouless〔案 B〕) | 切り替えるのは行列式の計算法ではなく、軌道のパラメータ化だから(仮名 `PartonDetCalcMode` から改名) |
+| 案の位置づけ | **本番は案 B**。案 A は小さい系の検証と基準値用 | 案 A の S は GL(Ne) 方向に厳密な零空間を持ち、`DSROptStaDel = 0`(既定)では Cholesky が破綻する(§12.2) |
+| S 行列の定義 | **上流の規約のまま**(Im⟨O⟩Im⟨O⟩ の項なし) | g は正しく、収束先は変わらない。計量に全体位相への rank-1 の正のペナルティが足されるだけ。上流の f_ij と同じ前例。共通の SR に手を入れない |
+| α 解からの開始 | **tools の変換スクリプトだけ**。α モードの出力は一切変えない | pmftrans.def・zqp_pmfpara_opt.dat・**zqp_pmfocc_opt.dat**(MOM の run は aufbau で取り直すと Φ が変わる)から Φ を組み直して InPmfOrb.def を書く |
+| 状態のフィールド名 | `PartonOptimizationState` を型パラメータ化し、**フィールド名は `mfham` のまま** | テストの約 300 行を無変更で済ませる。Φ モードでも名前が `mfham` になる点は docstring で補う。**後で改名する可能性あり** |
+| Φ の大きさ | **D_AmpMax と同じ形**。毎ステップ、フレーバーごとに Φ_f ← (D / max_{s,n}\|Φ_f[s,n]\|)·Φ_f。D は modpara キー **`PartonOrbAmpMax`**(Φ の要素の最大振幅、既定 4.0 = 上流の D_AmpMax と同じ値) | §12.4。上流は Pfaffian が 1 つなので全体で 1 つのスケールだが、ここは det が F 個あり、それぞれに定数倍の自由度がある |
+| 最終平均 | 作らない。α と同じく**最終値**を出す | このコードは平均を実装していない(§12.2) |
+
+### 12.2 調査で確定した事実(設計の前提)
+
+| 事実 | 根拠 | 設計への影響 |
+|---|---|---|
+| **最終平均は実装されていない**。`store_opt_data!` の書き先 `state.opt_data` を読む箇所がなく、永続化は最終値 | `data_io.jl:46-50`、テスト `test_parton_initial_params.jl:207-214` | 射影子平均の専用経路は作らない。`parton_output.jl:348-351` と `parton_run_para_opt_from_namelist.jl:56-61` の「平均」というコメントは実態と食い違う |
+| **共役シムの理由は E_loc の規約差**。上流の e は `conj(z/ip)` で `HO += e·O` と蓄積するが、パートンの E_loc は比をそのまま足す。シム後のスロット (O*, (iO)*) で g_x, g_y が正しい勾配になることを導出して確認した | `vmc_main_cal.jl:422, 3410`、`parton_vmc_main_cal.jl:90, 98`、`stochastic_opt.jl:401-404` | **正則な Φ スロットにも共役シムが必要**。詰め方は (O, i·O)。§7 と `_parton_conjugate_mf_slots!` の docstring にある「非正則だから」という説明は、成り立つ範囲が限られる |
+| S = Re⟨O_iO_j*⟩ − Re⟨O_i⟩Re⟨O_j⟩(Im⟨O_i⟩Im⟨O_j⟩ の項なし) | `stochastic_opt.jl:386` | §12.1 で上流の規約のままと決定 |
+| 案 A の GL(Ne) 方向は O がサンプルごとに定数(恒等式 **Φᵀ·G = I**。転置で随伴ではない)なので S の厳密な零空間。RedCut は対角で判定するので検出できない。`DEFAULT_DSR_OPT_STA_DEL = 0.0` | パーサ `utils/constants.jl:132`、`stochastic_opt.jl:491-531` | 案 A は門番で `DSROptStaDel > 0` を必須にする |
+| 正規直交な Φ では \|det X_f\| が Ne とともに指数的に小さくなる。F=3 で 12×12 から `abs(ip) < 1e-30` の除外に全サンプルが掛かる | §12.4 の実測、`parton_vmc_main_cal.jl:494, 591` | Φ の大きさの規約(§12.4) |
+| modpara の未知キーは**何も言わずに無視される** | パーサ `parsers/modpara_parser.jl:228`(warnings は表示されない) | キー名を打ち間違えると mode 0 に落ちる。α の門番で打ち間違いを案内し、runinfo にモードを記録する |
+| 範囲外の OptFlag は**黙って「凍結」**と読まれる | `stochastic_opt.jl:21-26` | Φ 用のフラグ実体化が必須。流用すると Φ ブロックが丸ごと最適化されない |
+| `parse_input_parameter_file` は読めない値を 0.0 にし、NaN を通し、件数の不一致を警告で済ませる | パーサ `utils/read_input_parameters.jl:20-71` | InPmfOrb は厳格な専用リーダで読む |
+| スレッド並列の測定経路は、6 引数コンストラクタで状態の外箱を作り直す | `parton_vmc_main_cal.jl:488-489` | 外箱に Union フィールドを足すと、そこで Φ が落ちる。型パラメータ化する(§12.5) |
+| 錨(各ステップ冒頭の厳密再計算)の後に ip ≠ 0 の検査がない | `parton_vmc_sampling.jl:370` | Φ モードは更新幅が大きいので、Φ ループ側で検査を足す |
+
+### 12.3 棚卸し表
+
+「流用はできるが物理的な意味が違う」箇所の一覧。判定の記号:
+
+- (a) そのまま流用
+- (b) アクセサや型の拡大で流用
+- (c) 新しい型・変数・ファイル
+- (d) Φ モードでは使わない、または門番で拒否
+
+#### 12.3.1 状態
+
+| 名前 | α モードでの意味(書き手 ← 何から決まるか) | 案 A | 案 B | 判定 | 理由 |
+|---|---|---|---|---|---|
+| `PartonMFHamiltonian`(`parton_types.jl:74-134`) | H_MF・固有系・占有・∂Φ・ゲージ群の器 | 存在しない | 存在しない | (c) 別の型 | ゼロ埋めのダミーは使わない |
+| `.orbitals[f]` | H_MF(α) の固有ベクトルのうち占有 Ne 本。**導出量**(契約 0 `parton_orbital.jl:451` ← α, occ) | 正準化した Φ_f。主状態から毎ステップ導出 | 正準化した c_f·Φ_ref,f | **(b)** 3 つの型が共通に持つフィールドとし、振幅系の契約にする | 振幅系(契約 1・2・3・E_loc)は `.orbitals[f]` しか読まない |
+| — | — | raw Φ = SR 値そのもの(data 側) | raw Φ(状態側。δZ を足した結果) | (c) | **永続化するのは raw Φ だけ**。毎ステップ先頭で正準化する。ランク間の一致とリスタートのビット再現のため |
+| `h_mf / eig_vals / eig_vecs` | H_MF の固有系 | なし | なし | (d) | |
+| — | — | — | U⊥,f(Φ_ref の正規直交補空間) | (c) `PartonThoulessPhi.u_perp` | α の `eig_vecs[:, unocc]` は H の固有ベクトルで、U⊥ は任意の補空間。名前を共有しない。毎ステップ決定論的に作り直し、永続化しない |
+| `dorbitals / dh_uo_scratch` | ∂Φ/∂θ(契約 0′) | 不要 | 不要 | (d) | O は直接計算する |
+| `min_gap / occ / occ_mode` | gap と占有(aufbau/MOM) | 定義なし | 定義なし | (d) | |
+| `flavor_symmetric` → `amp.n_stored` | det^F 高速路(`parton_vmc_sampling.jl:62`) | n_stored = F に固定 | 同左 | (c) Φ の構築関数が F を渡す | 高速路は Φ^(f) が全 f で同一と仮定する(`parton_vmc_main_cal.jl:184-201`) |
+| `gauge_scale/shift_groups / gauge_target_norm` | α のゲージ平坦方向 | 該当なし | 該当なし | (d) | ゲージの種類が違う(Φ モードでは GL(Ne) とパートンゲージ) |
+| `PartonAmplitudeData / SamplingWorkspace / Configuration` | det・逆行列・配置のキャッシュ | 同じ | 同じ | (a) | |
+| `PartonMainCalThreadContext` | スレッド別の amp と O バッファ。再利用条件は len_o と n_proj | 同じ | 同じ | (a) | 1 run の中で len_o は固定。ただし案 A では `o_all`(len_o × NVMCSample)が大きくなる |
+| `PartonOptimizationState.mfham`(`parton_types.jl:431`) | α の状態 | Φ 状態 | Φ 状態 | (c) 型パラメータ化。フィールド名は据え置き | §12.5 |
+
+#### 12.3.2 振幅・E_loc・O
+
+| 名前 | α モードでの意味 | Φ モード | 判定 | 理由 |
+|---|---|---|---|---|
+| 契約 1 `parton_recompute_amplitude_all!`(`parton_calculate_m_all.jl:9`)/ 契約 2 `parton_amplitude_ratio!`(`parton_vmc_sampling.jl:478`)/ 契約 3 `parton_update_amplitude!`(:528)/ 初期配置(:89) | `.orbitals[f]` から det・比・更新 | 同じ計算 | **(b)** シグネチャ 4 本の型注釈を `PartonOrbitalSource` に広げる。本体は無変更 | Julia は具体型で特殊化するので、mode 0 の演算列は同一 |
+| 契約 4 `parton_local_energy`(`parton_vmc_main_cal.jl:69-103`) | E_loc = Σ t·比 | 同じ | (a) | |
+| 契約 5 `parton_calculate_o!`(:135-212) | α の各方向について Σ dPhi·A⁻¹。Re と Im を別々に計算 | 案 A: O^A[s,n] に δ_{s,π(r_m)}·sgn·A⁻¹[n,m] を散らし書き / 案 B: O^B = **transpose(U⊥)**·G | (c) 新しいメソッド | 案 B を `U⊥'*G`(随伴)で書くのは誤り。§7 の「転置積、dot 禁止」と同じ罠 |
+| Re/Im の詰め方 | 独立に計算(非正則) | (O, i·O)(正則) | (c) | |
+| `_parton_conjugate_mf_slots!`(:351-362) | MF スロットを共役にする | **Φ スロットにも必要** | (b) 範囲を n_orb にして流用し、docstring の理由を直す | オフセットが n_proj 固定なので、門番で `parton_n_idx(data) == 0` を確認する |
+| `_parton_project_gauge_from_o!`(:273-309) | α のゲージ方向を O から除く | 呼ばない | (d) | |
+| `parton_fill_sr_opt_o!`(:227-254) | Jastrow → MF → 共役 → ゲージ射影 | Jastrow → Φ ブロック → 共役 | (c) 状態型でディスパッチする Φ メソッド | 呼び出し元(:502-505, :601-603)は `project_gauge`/`alpha` を渡すので、受け取って無視する。作業領域を共有の状態に置かず(スレッド競合)、`sr_opt_o` に直接書く |
+| `abs(ip) < 1e-30` の除外(:494, :591) | 節上のサンプルを捨てる | 同じ | (a) | Φ の大きさの規約で桁落ちを防ぐ(§12.4) |
+| 錨(`parton_vmc_sampling.jl:370`) | 各ステップ冒頭の厳密再計算 | 同じ | (a) | Φ ループ側で ip ≠ 0 の検査を足す |
+
+#### 12.3.3 SR とパラメータの受け渡し
+
+| 名前 | α モードでの意味 | 案 A | 案 B | 判定 | 理由 |
+|---|---|---|---|---|---|
+| 並び [射影 \| MF] | MF = α(idx 共有あり) | [射影 \| raw Φ] | [射影 \| Z] | (c) | |
+| `_PARAM_PMF` ロケータ(`stochastic_opt.jl:69, 128, 195, 227, 251`) | `pmfpara_terms[].value` | — | — | (c) 新種別 `_PARAM_PMFORB` を**1 つ**足す | SR は数を読み書きするだけ。A と B の意味の差(絶対値か相対値か)は SR の後で扱う。種別を分けても振る舞いは変わらず、登録ハンクが倍になる |
+| — | — | raw Φ の平坦ベクトル | Z の平坦ベクトル(毎ステップ 0) | (c) パーサ `ExpertModeData.pmforb_params::Vector{ComplexF64}` | SR から見えるのは data だけ。長さは状態を組む前に確定させ、以後は変えない |
+| 開始位置 | `pmf_start = n_proj+n_rbm+n_orb+n_opttrans+1` | `pmforb_start = n_para − n_orb + 1` | 同左 | (c) | 末尾ブロックを前提にし、式の三重実装を避ける |
+| `count_variational_parameters`(パーサ `utils/read_input_parameters.jl:163-171`) | + n_pmf | + length(pmforb_params) | 同左 | (b) | |
+| `pack/unpack_parameters`(`parameter_sync.jl:229-254`) | 全ロケータ | 同じ | 同じ | (a) | |
+| `parton_materialize_flags!`(`parton_vmc_para_opt.jl:121-150`) | 長さ 2(n_proj+n_idx)、オンサイトの Im を凍結 | Jastrow の Re は引き継ぎ・Im は凍結、Φ は全部可動 | 同左 | (c) Φ 版 | 範囲外のフラグは黙って凍結される |
+| `validate_parton_opt_flags`(`parton_unsupported_inputs.jl:492-526`) | 長さと MF 全凍結の検査 | n_orb で検査 | 同左 | (c) Φ 版 | |
+| `stochastic_opt!`(直接法) | S_ii *= 1+StaDel、RedCut、Phase 6 で `+= r_re + i·r_im` | 同じ | 同じ | (a) | |
+| `parton_sync_parameters!`(`parton_vmc_para_opt.jl:24-40`) | bcast → α のゲージ射影 | bcast だけ使う | 同左 | (b) `mfham` を渡さない形で呼ぶ | |
+| 正準化と引き戻し | — | 毎ステップ先頭で Φ = Löwdin(raw) → **data に書き戻す**(SR の δ が正準化した Φ に足されるように)→ 振幅スケール。SR 後は raw = data | 毎ステップ先頭で Φ_ref = Löwdin(raw)、U⊥ = 補空間、data の Z ← 0 → 振幅スケール。SR 後に raw ← Φ_ref + U⊥δZ | (c) `parton_orbparam_canonicalize!` | 案 B の閉じた式 (Φ_ref+U⊥δZ)(I+δZ†δZ)^{-1/2} と厳密演算では同じ。実際のグラム行列から作るので誤差が溜まらない |
+| ランク間の一致 | α は毎ステップ同期するので一致する | 正準化は rank 0 で計算して bcast | 同左(Φ_ref と U⊥) | (c) | 「全ランクが同じ計算をすれば同じ結果」には頼らない(BLAS のカーネル差で ulp がずれうる) |
+| NaN ゲート(`parton_vmc_para_opt.jl:257, 280-284`) | 同期とゲージ射影の後に判定して復元 | raw を更新する**前**に判定。Löwdin の λ_min/λ_max < tol でも棄却 | 同左 | (c) | 判断は bcast で揃える |
+| `store_opt_data!` / `output_data!` / `output_opt_data!` の α ハンク(`data_io.jl:36, 138, 187, 195`) | α を zvo_var・zqp_opt・pmfpara_opt に出す | Φ は登録しない | 同左 | (d) | 案 A は列が巨大(CFL 8×8 で 1 行に 3072 複素)、案 B は常に 0。Φ は専用ファイルに出す |
+| `output_opt_data!` 自体 | Jastrow を zqp_jastrow_opt.dat に永続化 | **Φ ループでも必ず呼ぶ** | 同左 | (a) | 呼ばないと Jastrow の最適値が残らない |
+| `_duplicate_checked_sections`(`parameter_sync.jl:206`) | pmfpara の共有 idx の診断 | 該当なし | 同左 | (d) | |
+
+#### 12.3.4 初期化と入力
+
+| 名前 | α モードでの意味 | Φ モード | 判定 | 理由 |
+|---|---|---|---|---|
+| pmftrans.def / pmfpara.def | t と α | 使わない | (d) 門番 | Φ モードに α は存在しない |
+| `parton_init_alpha!`(専用 RNG) | 値の無い α を乱数で埋める | なし | (d) | Φ の初期化は乱数を使わない(サンプリング RNG を消費しない規律を保つ) |
+| InPmfPara / InPmfOcc | α と占有の読み戻し | なし | (d) 門番 | |
+| — | — | **InPmfOrb.def**(必須)。平坦添字 ((f·Ns)+s)·Ne+n、5 行ヘッダ、`%.18e` | (c) 厳格な専用リーダ | 件数・範囲・有限性・列フルランク(σ_min/σ_max > tol)を error で検査する |
+| `validate_parton_data`(`parton_unsupported_inputs.jl:288-454`) | pmfpara/pmftrans/physhop の必須検査と共通検査 | 必須検査だけを外す | (b) kwarg `require_mf_inputs` | physhop・Jastrow・DH・CoulombIntra・OptTrans の検査は再利用する |
+| ドライバ(`parton_run_para_opt_from_namelist.jl:20-138`) | パース → α 初期化 → フラグ → 門番 → … | パース直後に Φ の入口へ分岐 | (b) 1 分岐 | α 初期化とフラグ実体化(:39-47)より前で分ける |
+| α 解からの変換 | — | tools の変換スクリプト | (c) | §12.1 |
+
+#### 12.3.5 出力・診断・タイマー・tools
+
+| 名前 | α モード | Φ モード | 判定 |
+|---|---|---|---|
+| `zqp_pmfpara_*` / `zqp_pmfocc_*` / `zqp_pmfham_opt` / `zqp_pmfband_opt` / `zqp_pmfvec_opt` | α・占有・H_MF・固有系 | 書かない | (d) |
+| — | — | `zqp_pmforb_{init,opt}.dat` = raw Φ(InPmfOrb としてそのまま読み戻せる) | (c) |
+| `zvo_parton_diag.dat`(列 2 min_gap、列 10 occ dev) | 毎ステップ | 書かない | (d) |
+| — | — | `zvo_parton_orbdiag.dat`: MC 健全性の列(受理率、試行数、need_recompute、厳密再計算)、ゲージ不変な Φ 指標(主角の最大値、‖P⊥δΦ‖、raw Φ の σ_min、‖raw†raw − I‖、パートンゲージの偏り)、log₁₀\|ip\| の最小と最大 | (c) 列の意味が違うのでファイルを分ける |
+| `zvo_parton_runinfo.dat` | 開始時と終了時に "w" で書く(ドライバ :99, :132) | 既存 writer の後に Φ の項目(`PartonOrbParam`、`PartonOrbAmpMax`、n_orb、入力 Φ の正規直交からのずれ、PartonGaugeFix / FlavorSymFast は「該当なし」)を "a" で追記する。occ_* と n_idx は書かない | (c) |
+| `zvo_parton_time` / `zvo_conv` / `zvo_SRinfo` / `zvo_out` | α に依存しない | 同じ | (a) |
+| CalcTimer 801(契約 0)/ 802(契約 0′) | H 構築と ∂Φ | 存在しない | (d) |
+| CalcTimer 803–813 | 共有関数の中で計測される | 同じ意味(809 = Φ 版の O) | (a) |
+| — | — | **820 番台**: 820 正準化、821 状態の bcast、822 orbdiag。固定リスト(`parton_output.jl:402-417`)は 801/802 に 0 を出すので、Φ 用の writer を新規ファイルに置く | (c) |
+| `tools/plot_parton_conv.jl`(diag の列 2・10 を読む。:105-109) | 動く | diag が無いと error になる | (b) orbdiag へのフォールバックを足す |
+| tools の Chern・バンド道具 | pmfham・pmfband・pmfocc を読む | 入力が存在しない | 対象外。射影子 P = ΦΦ† から Chern を出す経路(`fhs_chern_projector`、`bott_index` は P 経由)は後日 |
+
+### 12.4 Φ の大きさ(D_AmpMax と同じ形)
+
+Φ_f → c_f Φ_f は GL(Ne) の一部で、det X_f が c_f^{Ne} 倍になるだけなので状態は変わらない。
+上流の `sync_modified_parameter!`(`parameter_sync.jl:138-150`)は、SR 更新のたびに Slater の f_ij 全体を定数倍し、
+max\|f\| = D_AMP_MAX = 4.0 にそろえる(Pf の全体スケールの固定)。Φ モードでも同じ位置(SR 更新のあと、次のサンプリングの前)で、
+**フレーバーごとに** Φ_f ← (D / max_{s,n}\|Φ_f[s,n]\|)·Φ_f とする。D は modpara キー `PartonOrbAmpMax`(既定 4.0)。
+
+なぜ要るか。正規直交な Φ では \|det X_f\| が Ne とともに指数的に小さくなる。フェルミ海(平面波)の軌道でランダムな 2 万配置を測った結果:
+
+| 格子 | Ns | Ne | log₁₀\|det X\|、Φ†Φ=I(\|det\|² 重みの平均) | det が平均 1 前後になる D | D = 4 での 1 フレーバーの log₁₀\|det\| | D = 4 での F=3 の積 |
+|---|---|---|---|---|---|---|
+| 4×4 | 16 | 4 | −1.5 | 0.59 | +3.3 | 10¹⁰ |
+| 8×8 | 64 | 16 | −6.7 | 0.33 | +17 | 10⁵² |
+| 12×12 | 144 | 36 | −16.1 | 0.23 | +44 | 10¹³³ |
+| 16×16 | 256 | 64 | −29.4 | 0.18 | +86 | 10²⁵⁹ |
+
+- Φ†Φ = I のままだと、F=3 の積は 12×12 で約 10⁻⁴⁸ になり、`abs(ip) < 1e-30` の除外に全サンプルが掛かる(α モードも同じ規約なので、同じ潜在的な問題がある。ビット一致を守るため今回は触らない)
+- D = 4(上流と同じ値)は 16×16 まで閾値にもあふれ(10³⁰⁸)にも当たらない。ただし 16×16 では余裕が小さく、それより大きい系では D を下げる
+- 目安は **D ≈ 3/√Ns**。このとき \|det\| は系のサイズによらず 1 前後になる
+- 上の表はフェルミ海の値。Chern バンドの軌道は局在しているので max\|Φ\| が大きく、同じ D でも det はもう少し小さくなる
+- orbdiag に log₁₀\|ip\| の最小と最大を毎ステップ書き、閾値かあふれに 10 桁以内まで近づいたら警告する
+- O と SR 更新は c_f に依存しない(案 B の O^B は定数倍で不変。案 A は毎ステップ正準化するので整合する)
+
+### 12.5 型
+
+```julia
+abstract type PartonOrbitalSource end
+# 契約: すべての具象型は orbitals::Vector{Matrix{ComplexF64}}(Ns×Ne、振幅系が読む Φ)を持つ
+
+mutable struct PartonMFHamiltonian <: PartonOrbitalSource       # 既存。supertype を足すだけ
+
+mutable struct PartonDirectPhi <: PartonOrbitalSource            # 案 A
+    orbitals::Vector{Matrix{ComplexF64}}   # c_f·Löwdin(raw)。raw は data.pmforb_params にある
+end
+
+mutable struct PartonThoulessPhi <: PartonOrbitalSource          # 案 B
+    orbitals::Vector{Matrix{ComplexF64}}   # c_f·Φ_ref
+    phi_ref::Vector{Matrix{ComplexF64}}    # Löwdin(raw_phi)、正規直交
+    u_perp::Vector{Matrix{ComplexF64}}     # Φ_ref の補空間。毎ステップ作り直し、永続化しない
+    raw_phi::Vector{Matrix{ComplexF64}}    # 主状態(Z は data 側で毎ステップ 0)
+end
+
+mutable struct PartonOptimizationState{O<:PartonOrbitalSource}
+    ...; mfham::O; ...   # フィールド名は据え置き。Φ モードでも mfham という名前になる(後で改名の可能性あり)
+end
+```
+
+- **モードは状態型で表す**。整数キーは構築時に 1 回だけ状態型に変換し、以後は多重ディスパッチで分ける。
+  シングルトン型は作らない(状態型と 1 対 1 で冗長)。if 分岐にすると分岐点が 6 箇所(準備・O・引き戻し・出力・終端検査・初期化)に散る。
+  ディスパッチなら 1 モード 1 メソッドにまとまり、α の関数本体を触らずに済む
+- **型パラメータ化を採る理由**(Union フィールド案との比較):
+  - スレッド経路の `PartonOptimizationState(pstate.state, amp_t, …, pstate.mfham, …)` が O を推論するので、Φ が自動で伝わる
+  - 「α と Φ のどちらか一方だけが存在する」ことが型で保証される
+  - 型が安定する
+  - 6 引数コンストラクタ(`parton_types.jl:446`)は注釈を広げるだけで済む
+- α 専用のコードは `mfham.n_idx`・`.min_gap`・`.gauge_*` を読む。Φ 型にはこれらが無いので、Φ モードで誤って通ればエラーで止まる(安全側)
+- 名前は上流の Slater(f_ij)と紛れないようにする(`slater_orbitals` は使わない)。接頭辞は `parton_` / `Parton`
+
+### 12.6 ファイル構成
+
+**新規ファイル**(`MVMCOptimizers.jl/src/`。抽象型だけは `parton_types.jl` の先頭に置く):
+
+| ファイル | 責務 |
+|---|---|
+| `parton_orbparam_types.jl` | `PartonDirectPhi`・`PartonThoulessPhi`、モード定数、平坦添字 ⇄ (f, s, n) |
+| `parton_orbparam_inputs.jl` | InPmfOrb の厳格な読み書き、Φ の門番、Φ 用のフラグ実体化と長さ検査、案 A の `DSROptStaDel > 0`、SROptData のメモリ見積もり |
+| `parton_orbparam_o.jl` | O の共通カーネル((qp, f) ごとの w·Πdet/ip と A⁻¹)、案 A の散らし書き、案 B の transpose(U⊥)·G、`parton_fill_sr_opt_o!` の Φ メソッド、Φᵀ·G = I の検査 |
+| `parton_orbparam_canonical.jl` | 正準化(Löwdin、U⊥、振幅スケール)、data と状態の同期、raw の更新、引き戻しの妥当性判定、rank 0 からの bcast、パートンゲージの監視量 |
+| `parton_orbparam_output.jl` | `zqp_pmforb_*`、orbdiag、runinfo の追記、CalcTimer の Φ セクション |
+| `parton_vmc_para_opt_orbparam.jl` | Φ 状態の構築(n_stored = F)、SR ループ、ドライバ本体 |
+
+**Φ ループの 1 ステップ**:
+
+1. 正準化(rank 0 で計算 → bcast)
+2. サンプリング → main_cal → weight_average → `output_data!`
+3. `stochastic_opt!` → info を bcast
+4. `parton_sync_parameters!(data, ctx)`
+5. NaN と妥当性のゲート(判断は bcast で揃える)
+6. raw を更新
+7. orbdiag を書く
+
+ループの後に `output_opt_data!`(Jastrow)、`zqp_pmforb_opt.dat`、conv、CalcTimer を書く。
+
+**既存ファイルへの変更**(すべてマーカー付き。転送・分岐・型注釈の範囲に収める):
+
+| ファイル | 変更 |
+|---|---|
+| `parton_types.jl` | 抽象型、`PartonMFHamiltonian <: …`、状態の型パラメータ化、6 引数コンストラクタの注釈を広げる |
+| `parton_calculate_m_all.jl`、`parton_vmc_sampling.jl` | シグネチャ 4 本の型注釈 |
+| `parton_unsupported_inputs.jl` | α の門番で `PartonOrbParam ≠ 0` を拒否し、キー名の打ち間違いを案内する(pmfpara が空で namelist に InPmfOrb がある場合)。`require_mf_inputs` kwarg |
+| `parton_run_para_opt_from_namelist.jl` | パース直後の 1 分岐 |
+| `stochastic_opt.jl` | enum 1 行、foreach 2 本、get/set 2 本 |
+| `MVMCOptimizers.jl` | include |
+| パーサ `utils/constants.jl`、`types/expert_types.jl`(ModPara に 3 箇所)、`parsers/modpara_parser.jl` | 新キー `PartonOrbParam`・`PartonOrbAmpMax`(§3.1 の 3 登録点) |
+| パーサ `utils/constants.jl` | `"InPmfOrb"` |
+| パーサ `types/expert_types.jl`(ExpertModeData に 2 箇所) | `pmforb_params` |
+| パーサ `utils/read_input_parameters.jl` | count に 1 行 |
+| `tools/plot_parton_conv.jl` | orbdiag へのフォールバック |
+| `tools/`(新規) | α 解 → InPmfOrb の変換スクリプト |
+
+### 12.7 案 A と案 B で共有するもの / しないもの
+
+- **共有する**: InPmfOrb の読み書き(どちらも raw Φ)、Löwdin、振幅スケール、振幅系、O の共通カーネル、共役シム、Jastrow の詰め方、正準化の bcast、NaN と妥当性のゲート、orbdiag の大半、ループとドライバの骨格
+- **共有しない**:
+  - SR 値の意味: 案 A は raw Φ そのもの、案 B は Z(毎ステップ 0)
+  - raw の置き場: 案 A は data 側、案 B は状態側
+  - U⊥ の有無
+  - O の最終段: 散らし書きか transpose(U⊥)·G か
+  - S の性質: 案 A は零空間を持つので StaDel が必須、案 B は持たない
+
+### 12.8 門番(`PartonOrbParam` が 1 または 2 のとき)
+
+| 対象 | 動作 | 理由 |
+|---|---|---|
+| `PartonOrbParam` の値が {0, 1, 2} の外 | エラー | 予約 |
+| namelist に PartonMFTrans / PartonMFPara / InPmfPara / InPmfOcc がある | エラー | α を混ぜない |
+| `parton_n_idx(data) ≠ 0` | エラー | 共役シムのオフセットの前提 |
+| InPmfOrb が無い、または件数・範囲・有限性・列フルランクのいずれかを満たさない | エラー | 緩いリーダの穴を塞ぐ |
+| `PartonOccMode ≠ 0` | エラー | 占有の選択が存在しない |
+| 案 A で `DSROptStaDel ≤ 0` | エラー | S の厳密な零空間 |
+| `PartonOrbAmpMax ≤ 0` | エラー | |
+| OptFlag の長さ ≠ 2(n_proj + n_orb) | エラー | 範囲外のフラグは黙って凍結される |
+| SROptData のメモリ見積もり((2(1+n_para))² 複素)が閾値を超える | エラー | 案 A の 8×8 で約 270 MB。蓄積はサンプルごとに O(n²) の単スレッドループ |
+| `PartonGaugeFix` / `PartonFlavorSymFast` | 拒否しない。runinfo に「該当なし」と記録する | どちらも既定値が 1 なので、明示的な 0 を要求すると全入力に 2 行を強制することになり脆い。Φ モードでは常に n_stored = F |
+| 既存の共通検査(NSRCG = 0、NVMCCalMode = 0、ComplexType = 1 など) | 流用 | |
+| α 側(mode 0)の門番 | `PartonOrbParam ≠ 0` で `parton_vmc_para_opt!` が直接呼ばれたらエラー | 誤解を招く「No mean-field parameter terms」を避ける |
+
+### 12.9 テスト計画
+
+設計メモ §8 の ①〜④ をもとにする。
+
+| 番号 | 内容 | 方法 | 置き場 |
+|---|---|---|---|
+| Φ-0 | mode 0 のビット一致 | 既存スイートが全緑 + 変更前 worktree と E2E 出力(zvo_out・var・SRinfo・pmfpara_opt ほか全部)をバイト比較(REPORT_nu12_stuck.md:1064-1080 の手順) | 手動 + 既存 |
+| Φ-0b | 型の拡大で振幅系が変わらない | α の orbitals から Φ 状態を作り、ip・比・更新・E_loc がビット一致 | 新 `test_parton_orbparam_types.jl` |
+| Φ-1(①) | O と有限差分(案 A・B、QP と Jastrow 込み) | ln ip の中心差分。案 B は Φ_ref ± εU⊥[:,u]e_nᵀ。共役前に Im スロット = i·Re スロット。O^B = transpose(U⊥)·O^A、Φᵀ·G = I | 新 `test_parton_orbparam_o.jl` |
+| Φ-2 | 力 = 勾配(解析式で立て直す) | 全配置を列挙し、上流の `calculate_oo!` と `build_s_matrix_and_g_vector!` を通した g/(−dt) を ∂E/∂ReΦ・∂E/∂ImΦ・∂E/∂Z の中心差分と比べる。共役を外すと崩れること、Jastrow 込みで S が不変なこと、store 経路と非 store 経路の両方 | 新 `test_parton_orbparam_force_gradient.jl` |
+| Φ-3(②) | S のゼロ固有値の数 | 厳密な共分散で、案 A = F·Ne² + (F−1)(Ns−1)、案 B = (F−1)(Ns−1)(複素次元)、階数が一致すること。コードの S(Im·Im 項なし)で非零になる方向も数値で確認して記録する | 同上 |
+| Φ-4 | 正準化と引き戻し | Löwdin と振幅スケールで E が不変、張る空間が不変。多数ステップ後も正規直交。案 B の補空間の直交性。続けて走った run と再起動した run がビット一致 | 新 `test_parton_orbparam_canonical.jl` |
+| Φ-5 | 入出力 | `zqp_pmforb_opt.dat` → InPmfOrb の往復がビット一致。異常入力(件数、範囲、NaN、ランク落ち)を拒否 | 新 `test_parton_orbparam_io.jl` |
+| Φ-6 | 門番 | §12.8 の全行 | `test_parton_gatekeeper.jl` に追加 |
+| Φ-7 | ロケータ | count、pack/unpack、get/set/delta、`pmforb_start` | `test_parton_locator.jl` に追加 |
+| Φ-8 | 並列 | スレッド並列 = 逐次(ビット一致)。2 ランクでランクごとの Φ が一致 | `test_parton_threading.jl` に追加 + 手動 MPI |
+| Φ-9(③) | 既存の厳密解を保つ | KM ν=1/2 4×4 を α 最適解から(変換スクリプト経由で)開始し、E = −4.0000・分散 ~0 のまま | `test/physics`(P 層) |
+| Φ-10(④) | α より下がる | KM ν=1/3 9×4 を α の最良(−3.93989)から開始 | 物理検証 run(CI 外) |
+
+実装の順番(TDD):
+
+1. Φ-0b → Φ-7 → Φ-5
+2. Φ-1 → Φ-2/3
+3. Φ-4 → Φ-6 → Φ-8
+4. Φ-0
+5. Φ-9 → Φ-10
+
+Φ-0 は、マージ前に毎回、変更前 worktree との全出力バイト比較で確認する。
+
+### 12.10 未決・後回し
+
+- **SR の蓄積コスト**: SROptData は (2(1+n_para))² の複素数を持つ。`calculate_oo!` はサンプルごとに O(n²) の単スレッドループ、`finalize_oo_store!` は素朴な三重ループ。8×8・F=2 で n_orb は案 A が 2048、案 B が 1536 で、大きい系では SR の蓄積が支配的になる見込み(推測)。必要になったら、Φ 専用の BLAS 版 finalize をディスパッチ経由で呼ぶ(mode 0 は従来のまま)
+- **パートンゲージ**(Φ_f → D_fΦ_f、D_f は対角で Π_f D_f(i) = 1)は、案 A・B 共通で (F−1)(Ns−1) 個の冗長な方向になる。サンプルごとに O·G ≡ 0 が厳密に成り立つので、一次の SR 更新はこの方向に動かない。最初は orbdiag で監視するだけにし、偏りが育つのを観測したら SR 更新からゲージ方向を射影で除く
+- **α モードの \|det\| の桁落ち**(§12.4)は既存の潜在的な問題。ビット一致を守るため今回は触らない
+- **`mfham` フィールドの改名**(§12.5)
+- **射影子 P = ΦΦ† による Chern・フラックス・バンドの道具**
+
+### 12.11 第 1 段: 上流型の簡素版(2026-10-31 決定)
+
+ユーザーの判断:「とりあえず Pfaffian と同じ設計でやってみて、致命的な問題が出たら変える」。
+上流 mVMC が f_ij をそのまま変分し、D_AmpMax で全体スケールだけをそろえているのと同じ形で、
+行列式の成分 Φ_f[s,n] をそのまま変分する。**§12.0〜12.10 と食い違う点はこの節が優先する**。
+
+| 項目 | 決定 | §12 本体との差 |
+|---|---|---|
+| 実装するモード | `PartonOrbParam = 1`(案 A)だけ。値 2(案 B)は予約で、門番がエラーにする | 案 B は後回し |
+| SR が動かす値 | raw Φ そのもの(`data.pmforb_params`)。振幅系は毎ステップ data から Φ を写すだけ | Löwdin による正準化をしない |
+| 冗長性の処理 | 上流と同じく、SR のあとにフレーバーごとに Φ_f ← (D / max_{s,n}\|Φ_f[s,n]\|)·Φ_f とする。**上限で切るのではなく、毎回そろえる**(縮めるだけでなく拡大もする。`parameter_init.jl:274-276` の上流の規約)。D = `PartonOrbAmpMax`(既定 4.0)。倍率は正の実数なので全体位相は固定しない。GL(Ne) のうちスケール以外の方向(SL(Ne))は SR の正則化(`DSROptStaDel`)任せにする | §12.4 の正準化を外し、スケールだけ残す |
+| 適用する時点 | 初期化(InPmfOrb を読んだ直後)と、毎ステップの SR 更新の後(bcast → NaN ゲート → 再スケール) | 上流の `sync_modified_parameter!` と同じ位置 |
+| ランク間の一致 | bcast のあと全ランクが同じ再スケールを行う(上流と同じ。要素の絶対値と積だけなので決定的) | rank 0 で計算して bcast する正準化は不要 |
+| 監視 | `zvo_parton_orbdiag.dat`: step、フレーバーごとの再スケール前の max\|Φ_f\|、log₁₀ cond(Φ_f)(σ_max/σ_min)、捨てたサンプル数 | 「致命的な問題」の判定材料。SL(Ne) 方向の漂流は cond に出る |
+| 門番 | §12.8 のうち案 A に関わる行。`DSROptStaDel > 0` を必須とする(GL(Ne) の零空間) | |
+| 後回し | Löwdin による正準化、案 B、パートンゲージの射影、BLAS 版 finalize、`tools/plot_parton_conv.jl` の orbdiag 対応 | |
+
+**致命的な問題の目安**(観測したら §12 本体の正準化へ進む):
+
+- cond(Φ_f) が step とともに単調に増える(SL(Ne) 方向の漂流)
+- SR が NaN で止まる、または ip ≈ 0 で捨てるサンプルが増え続ける
+- α の最良解から始めて、E が α より上がる。Φ モードの状態族は α モードの状態族を含む(同じ Jastrow・QP)ので、下がるか同じでなければならない

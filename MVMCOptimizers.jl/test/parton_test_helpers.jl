@@ -6,6 +6,7 @@
 見えないので、実数だけのフィクスチャは検証にならない。
 """
 
+using Random
 using MVMCExpertModeParsers
 using MVMCOptimizers
 
@@ -397,3 +398,112 @@ function build_crossing_mfham(data; occ_mode::Int = 0)
     mfham.occ_mode = occ_mode
     return mfham
 end
+
+
+# --- 以下 3 関数は test_parton_jastrow.jl から移した(Φ 直接変分のテストでも使うため。本体は不変) ---
+
+"""
+距離クラスの Jastrow を data に張る(環の距離 d = 1..L÷2 で類別)。
+jastrowidx.def を書かずにパーサ後の状態を直接作る(パーサ自体は上流の既存物)。
+"""
+function _add_ring_jastrow!(data, v::Vector{Float64})
+    L = data.modpara.nsite
+    n_class = L ÷ 2
+    length(v) == n_class || error("v must have length $n_class")
+    jidx = fill(-1, L, L)
+    for i = 1:L, j = 1:L
+        i == j && continue
+        d = min(mod(i - j, L), mod(j - i, L))
+        jidx[i, j] = d - 1                      # 0-based クラス
+    end
+    data.jastrow_idx = jidx
+    data.n_jastrow_idx = n_class
+    data.jastrow_terms = [
+        MVMCExpertModeParsers.JastrowTerm(0, k, ComplexF64(v[k + 1], 0), false)
+        for k = 0:(n_class - 1)
+    ]
+    return data
+end
+
+"全数計算の ln P_J(参照実装。プロダクションの式を使わない)。"
+function _ln_pj_ref(cfg, data)
+    L = cfg.n_site
+    z = 0.0
+    for i = 1:L, j = (i + 1):L
+        MVMCOptimizers.is_occupied(cfg, i) && MVMCOptimizers.is_occupied(cfg, j) || continue
+        idx = data.jastrow_idx[i, j]
+        z += real(data.jastrow_terms[idx + 1].value)
+    end
+    return z
+end
+
+"配置を置いて proj_cnt も構築する。"
+function _jast_place!(pstate, data, sites)
+    mp = data.modpara
+    cfg = pstate.config
+    fill!(cfg.ele_cfg, -1)
+    fill!(cfg.ele_num, 0)
+    for f = 1:mp.nflavor, (m, r) in enumerate(sites)
+        MVMCOptimizers.place_particle!(cfg, f, m, r)
+    end
+    MVMCOptimizers.parton_make_proj_cnt!(cfg, data)
+    MVMCOptimizers.parton_recompute_amplitude_all!(
+        pstate.amp, pstate.mfham, cfg, data, pstate.workspace)
+    return cfg
+end
+
+"""
+    orbparam_toy_data(; n_site=6, n_elec=2, n_flavor=2, seed=7)
+
+Φ 直接変分(PartonOrbParam = 1、DESIGN §12.11)のトイ入力。物理項は
+`dimerized_mf_data` と同じ形(環の最近接ホップ・最近接クーロン)で、ホップには
+複素位相を入れる(転置積と随伴の取り違えを見逃さないため)。pmftrans / pmfpara は空、
+Φ は複素乱数(列フルランク)。modpara の値も `dimerized_mf_data` にそろえる。
+"""
+function orbparam_toy_data(;
+    n_site::Int = 6,
+    n_elec::Int = 2,
+    n_flavor::Int = 2,
+    seed::Int = 7,
+    t_phys::ComplexF64 = ComplexF64(-1.0, 0.3),
+    v_phys::Float64 = 0.5,
+)
+    data = MVMCExpertModeParsers.ExpertModeData()
+    mp = data.modpara
+    mp.nsite = n_site
+    mp.nelec = n_elec
+    mp.nflavor = n_flavor
+    mp.parton_mode = 1
+    mp.parton_orb_param = 1
+    mp.two_sz = 0
+    mp.complex_flag = 1
+    mp.nex_update_path = 6
+
+    for i = 0:(n_site - 1)
+        j = mod(i + 1, n_site)
+        push!(
+            data.physhop_terms,
+            MVMCExpertModeParsers.PhysHopTerm(i, j, t_phys, imag(t_phys) != 0),
+        )
+        push!(data.coulomb_inter_terms, MVMCExpertModeParsers.CoulombInterTerm(i, j, v_phys))
+    end
+
+    set_identity_qp!(data)
+    mp.nvmc_warmup = 50
+    mp.nvmc_interval = 1
+    mp.nvmc_sample = 300
+    mp.parton_block_update_size = 8
+    mp.nsr_opt_itr_step = 3
+    mp.nsr_opt_itr_smp = 1
+    mp.nstore_o = 1
+    mp.dsr_opt_step_dt = 0.02
+    mp.dsr_opt_red_cut = 1e-8
+    mp.dsr_opt_sta_del = 0.02
+
+    data.pmforb_params = randn(Random.MersenneTwister(seed), ComplexF64,
+                               n_flavor * n_site * n_elec)
+    return data
+end
+
+"Φ モードの状態一式(本番の構築関数をそのまま使う。Φ は data.pmforb_params から写す)。"
+_orb_pstate(data) = MVMCOptimizers.parton_orbparam_build_state(data)

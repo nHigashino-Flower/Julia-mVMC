@@ -631,12 +631,14 @@ function parton_main_cal!(pstate::PartonOptimizationState, data::ExpertModeData;
     # これを落とすと直接ソルバが全ゼロの S を受け取り、SR が NaN を返す。
     if use_store
         ctimer_start!(c_timer, 810)
-        finalize_oo_store!(
+        # 軌道の器でディスパッチする。α は上流の finalize_oo_store! そのもの(ビット一致)、
+        # Φ 直接変分は BLAS 版(DESIGN §12.10)。門番が NSRCG = 0 を保証している
+        parton_finalize_oo_store!(
+            mfham,
             sr.sr_opt_oo,
             sr.sr_opt_o_store,
             sr.sr_opt_size,
             n_stored,               # 実際に詰めた個数。wc の母数と揃える
-            nsrcg = false,          # 門番が NSRCG = 0 を保証している
         )
         ctimer_stop!(c_timer, 810)
     end

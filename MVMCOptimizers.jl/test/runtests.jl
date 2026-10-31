@@ -81,6 +81,12 @@ end
     include("test_parton_gauge.jl")
     include("test_parton_initial_params.jl")
     include("test_parton_output.jl")
+    # Φ 直接変分(DESIGN §12.11)
+    include("test_parton_orbparam_types.jl")
+    include("test_parton_orbparam_o.jl")
+    include("test_parton_orbparam_force_gradient.jl")
+    include("test_parton_orbparam_io.jl")
+    include("test_parton_orbparam_run.jl")
 end
 
 @testset "Unit Tests" begin

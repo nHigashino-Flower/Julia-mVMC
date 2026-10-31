@@ -118,6 +118,15 @@ function validate_parton_modpara(modpara::ModParaParameters)
         )
     end
 
+    # --- orbital parametrization (DESIGN §12.11) ---------------------------
+    if !(modpara.parton_orb_param in (PARTON_ORB_PARAM_ALPHA, PARTON_ORB_PARAM_DIRECT,
+                                      PARTON_ORB_PARAM_THOULESS))
+        error(
+            "PartonOrbParam = $(modpara.parton_orb_param) is not defined: 0 (alpha, " *
+            "default), 1 (direct orbitals) and 2 (Thouless, reserved) exist.",
+        )
+    end
+
     # --- flavors -----------------------------------------------------------
     if modpara.nflavor <= 0
         error(
@@ -285,20 +294,24 @@ M1: the parton local-energy path does not compute their logarithmic
 derivatives, so SR would silently leave them frozen (see the NProj check
 below).
 """
-function validate_parton_data(data::ExpertModeData)
+function validate_parton_data(data::ExpertModeData; require_mf_inputs::Bool = true)
     n_site = data.modpara.nsite
     n_flavor = data.modpara.nflavor
 
     # --- required inputs ---------------------------------------------------
-    if isempty(data.pmfpara_terms)
+    # Φ 直接変分モード(PartonOrbParam = 1)には α の入力が存在しないので、
+    # その門番は require_mf_inputs = false で呼ぶ(DESIGN §12.11)。
+    if require_mf_inputs && isempty(data.pmfpara_terms)
         error(
             "No mean-field parameter terms were parsed: pmfpara.def is missing, " *
             "empty, or failed to parse. Parse failures of individual .def files " *
             "are not fatal (C-compatible behaviour), so check the parser " *
-            "warnings and the PartonMFPara entry in namelist.def.",
+            "warnings and the PartonMFPara entry in namelist.def. If you meant " *
+            "the direct-orbital mode, check the spelling of `PartonOrbParam 1` in " *
+            "modpara.def: unknown modpara keywords are ignored silently.",
         )
     end
-    if isempty(data.pmftrans_terms)
+    if require_mf_inputs && isempty(data.pmftrans_terms)
         error(
             "No mean-field transfer terms were parsed: pmftrans.def is missing, " *
             "empty, or failed to parse. Check the parser warnings and the " *
@@ -631,6 +644,12 @@ Convenience aggregator: run every parton-mode validator. Non-mutating -- no
 input is derived or rewritten here, so calling it twice is harmless.
 """
 function validate_parton_inputs(data::ExpertModeData, ctx::ParallelContext)
+    data.modpara.parton_orb_param == PARTON_ORB_PARAM_ALPHA || error(
+        "PartonOrbParam = $(data.modpara.parton_orb_param): this is the alpha " *
+        "(mean-field Hamiltonian) path. The direct-orbital mode runs through " *
+        "parton_orbparam_run_from_namelist, which parton_run_para_opt_from_namelist " *
+        "selects automatically.",
+    )
     validate_parton_modpara(data.modpara)
     validate_parton_flavor_consistency(data)
     validate_parton_data(data)

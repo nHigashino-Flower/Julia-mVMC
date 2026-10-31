@@ -74,3 +74,29 @@ end
     @test MVMCOptimizers.pack_parameters(data) == ComplexF64[]
     @test MVMCOptimizers.get_parameter_value(data, 1) == ComplexF64(0)
 end
+
+@testset "Φ ブロック: pack/unpack/get/set/δ が往復する" begin
+    data = MVMCExpertModeParsers.ExpertModeData()
+    data.pmforb_params = ComplexF64[1+2im, 3, 4im, 5, 6, 7]
+    para = MVMCOptimizers.pack_parameters(data)
+    @test para == data.pmforb_params
+    para[4] = -1 + 0.5im
+    MVMCOptimizers.unpack_parameters!(data, para)
+    @test data.pmforb_params[4] == -1 + 0.5im
+    @test MVMCOptimizers.get_parameter_value(data, 6) == 7
+    MVMCOptimizers.set_parameter_value!(data, 1, ComplexF64(9))
+    @test data.pmforb_params[1] == 9
+    MVMCOptimizers._add_parameter_delta_direct!(data, 2, ComplexF64(0.5, 0.5))
+    @test data.pmforb_params[2] == ComplexF64(3.5, 0.5)
+end
+
+@testset "Φ ブロックは射影(Jastrow)ブロックの後ろ" begin
+    data = MVMCExpertModeParsers.ExpertModeData()
+    data.modpara.nsite = 4
+    _add_ring_jastrow!(data, [0.1, 0.2])          # 環 L=4 → 距離クラス 2 個
+    data.pmforb_params = ComplexF64[10, 20, 30, 40]
+    para = MVMCOptimizers.pack_parameters(data)
+    @test length(para) == 6
+    @test para[1:2] == ComplexF64[0.1, 0.2]
+    @test para[3:6] == data.pmforb_params
+end

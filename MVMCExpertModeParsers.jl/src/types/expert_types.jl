@@ -142,6 +142,9 @@ mutable struct ModParaParameters
     parton_gauge_fix::Int     # PartonGaugeFix: 0=無効 / 1=有効(既定)。α のゲージ射影
     parton_flavor_sym_fast::Int   # PartonFlavorSymFast: 1=対称検出+det^F 高速路(既定) / 0=強制無効
     parton_occ_mode::Int      # PartonOccMode: 0=aufbau(既定、現行と同一) / 1=mom(占有追跡)
+    # --- parton-mode (fork addition) ---
+    parton_orb_param::Int         # PartonOrbParam: 0=α(既定) / 1=Φ の全要素を直接変分(DESIGN §12.11)
+    parton_orb_amp_max::Float64   # PartonOrbAmpMax: SR 後に max|Φ_f| をこの値へそろえる(上流 D_AmpMax 相当)
 
     function ModParaParameters(;
         nsite::Int = 0,
@@ -195,6 +198,9 @@ mutable struct ModParaParameters
         parton_gauge_fix::Int = DEFAULT_PARTON_GAUGE_FIX,
         parton_flavor_sym_fast::Int = DEFAULT_PARTON_FLAVOR_SYM_FAST,
         parton_occ_mode::Int = DEFAULT_PARTON_OCC_MODE,
+        # --- parton-mode (fork addition) ---
+        parton_orb_param::Int = DEFAULT_PARTON_ORB_PARAM,
+        parton_orb_amp_max::Float64 = DEFAULT_PARTON_ORB_AMP_MAX,
     )
         new(
             nsite,
@@ -247,6 +253,9 @@ mutable struct ModParaParameters
             parton_gauge_fix,
             parton_flavor_sym_fast,
             parton_occ_mode,
+            # --- parton-mode (fork addition) ---
+            parton_orb_param,
+            parton_orb_amp_max,
         )
     end
 end
@@ -874,6 +883,10 @@ mutable struct ExpertModeData
     pmfpara_terms::Vector{PartonMFParaTerm}
     physhop_terms::Vector{PhysHopTerm}
     pmfpara_opt_flags::Dict{Int,Int}  # 0-based idx -> OptFlag (pmfpara.def の末尾フラグ行)
+    # --- parton-mode (fork addition) ---
+    # Φ 直接変分(PartonOrbParam = 1)の軌道行列。平坦添字 ((f·Ns)+s)·Ne+n(0-based)の
+    # 1-based 位置に Φ_f[s,n] を置く。標準モード・α モードでは空
+    pmforb_params::Vector{ComplexF64}
 
     function ExpertModeData()
         new(
@@ -939,6 +952,8 @@ mutable struct ExpertModeData
             PartonMFParaTerm[],
             PhysHopTerm[],
             Dict{Int,Int}(),
+            # --- parton-mode (fork addition) ---
+            ComplexF64[],   # pmforb_params
         )
     end
 end

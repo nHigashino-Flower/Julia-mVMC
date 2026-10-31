@@ -67,6 +67,7 @@ end
     _PARAM_ORBITAL
     _PARAM_OPTTRANS
     _PARAM_PMF   # --- parton-mode (fork addition) ---
+    _PARAM_PMFORB   # --- parton-mode (fork addition) --- Φ 直接変分(DESIGN §12.11)
 end
 
 struct _ParameterLocation
@@ -133,6 +134,14 @@ function _foreach_parameter_location(f, data::ExpertModeData, counts)
         para_idx = pmf_start + data.pmfpara_terms[term_idx].idx   # idx は 0-based
         pmf_start <= para_idx <= n_para &&
             f(para_idx, _ParameterLocation(_PARAM_PMF, 0, term_idx))
+    end
+
+    # --- parton-mode (fork addition) ---
+    # Φ 直接変分(PartonOrbParam = 1)の軌道行列は並びの末尾。共有 idx はなく、
+    # item_idx は pmforb_params の 1-based 位置そのもの。
+    pmforb_start = n_para - length(data.pmforb_params) + 1
+    for k in eachindex(data.pmforb_params)
+        f(pmforb_start + k - 1, _ParameterLocation(_PARAM_PMFORB, 0, k))
     end
     return nothing
 end
@@ -206,6 +215,13 @@ function _foreach_parameter_location_at(f, data::ExpertModeData, counts, para_id
         end
     end
 
+    # --- parton-mode (fork addition) ---
+    # Φ 直接変分のブロック(末尾)。α モードでは pmforb_params が空なので範囲も空
+    pmforb_start = counts.n_para - length(data.pmforb_params) + 1
+    if pmforb_start <= para_idx <= counts.n_para
+        f(_ParameterLocation(_PARAM_PMFORB, 0, para_idx - pmforb_start + 1))
+    end
+
     return nothing
 end
 
@@ -226,6 +242,8 @@ function _parameter_location_value(data::ExpertModeData, loc::_ParameterLocation
         return ComplexF64(data.opt_trans[loc.item_idx])
     elseif loc.kind == _PARAM_PMF   # --- parton-mode (fork addition) ---
         return ComplexF64(data.pmfpara_terms[loc.item_idx].value)
+    elseif loc.kind == _PARAM_PMFORB   # --- parton-mode (fork addition) ---
+        return data.pmforb_params[loc.item_idx]
     end
 end
 
@@ -250,6 +268,8 @@ function _set_parameter_location_value!(
         data.opt_trans[loc.item_idx] = value
     elseif loc.kind == _PARAM_PMF   # --- parton-mode (fork addition) ---
         data.pmfpara_terms[loc.item_idx].value = value
+    elseif loc.kind == _PARAM_PMFORB   # --- parton-mode (fork addition) ---
+        data.pmforb_params[loc.item_idx] = value
     end
     return nothing
 end
