@@ -59,14 +59,25 @@ end
 
 振幅系(契約 1〜4)に軌道 Φ を渡す器の抽象型(DESIGN §12.5)。
 
-契約: すべての具象型は `orbitals::Vector{Matrix{ComplexF64}}`(フレーバーごとに
+契約: **det 系の**具象型は `orbitals::Vector{Matrix{ComplexF64}}`(フレーバーごとに
 Ns×Ne)を持つ。振幅系はこのフィールドしか読まないので、型注釈をこの抽象型に
 広げても本体は変わらない(Julia は具象型ごとに特殊化するので α モードの演算列も同一)。
 
 - `PartonMFHamiltonian`: α モード。Φ は H_MF(α) の固有ベクトル(導出量)
 - `PartonDirectPhi`: Φ 直接変分モード(PartonOrbParam = 1)。Φ は SR の値そのもの
+- `PartonPairOrbital`: Pfaffian モード(PartonMode = 2、DESIGN_parton_pf.md)。Φ は持たず、
+  対軌道 f の行列を持つ。det の契約は `amp::PartonAmplitudeData` でディスパッチされるので、
+  この器が誤って det の契約に入ることはない(入ればメソッドが無いエラーになる)
 """
 abstract type PartonOrbitalSource end   # --- parton-mode (fork addition) ---
+
+# --- parton-mode (fork addition) ---
+# 配置ごとの振幅キャッシュと、ホットループの作業領域の抽象型(DESIGN_parton_pf.md §4.2)。
+# det 系(PartonAmplitudeData / PartonSamplingWorkspace)と Pfaffian 系
+# (PartonPairAmplitudeData / PartonPairSamplingWorkspace)が具象型。契約 1〜3 はこの型で
+# ディスパッチされ、骨格(parton_make_sample! ほか)は `pstate.amp` 経由で呼ぶだけなので無変更。
+abstract type PartonAmplitudeStore end
+abstract type PartonWorkspaceStore end
 
 """
     PartonMFHamiltonian
@@ -331,7 +342,7 @@ end
 ストライド計算は `block_index` と `inv_block` の 2 関数だけに封じ込める。
 `det_a` は生の複素値(乗法更新+定期的な厳密再計算が錨。DESIGN §7)。
 """
-mutable struct PartonAmplitudeData
+mutable struct PartonAmplitudeData <: PartonAmplitudeStore   # --- parton-mode (fork addition) ---
     inv_a::Vector{ComplexF64}
     det_a::Vector{ComplexF64}
 
@@ -382,7 +393,7 @@ end
 ホットループでの確保をゼロにするための作業領域。`ratio_blocks` は契約 2 が
 書き、直後の契約 3 が読む((qp, f) ブロックごとの R)。
 """
-mutable struct PartonSamplingWorkspace
+mutable struct PartonSamplingWorkspace <: PartonWorkspaceStore   # --- parton-mode (fork addition) ---
     a_scratch::Matrix{ComplexF64}
     ratio_blocks::Vector{ComplexF64}
     u_buf::Vector{ComplexF64}
@@ -438,15 +449,19 @@ end
 電子配置のフィールドは触らない(パートン側が自前で持つ)。
 
 型パラメータ `O` は軌道の出どころ(DESIGN §12.5)。α モードでは
-`PartonMFHamiltonian`、Φ 直接変分モードでは `PartonDirectPhi`。フィールド名は
-どちらでも `mfham` のまま(既存テストを変えずに済ませるため。Φ モードでは
-「平均場ハミルトニアン」ではない点に注意)。
+`PartonMFHamiltonian`、Φ 直接変分モードでは `PartonDirectPhi`、Pfaffian モードでは
+`PartonPairOrbital`。フィールド名はどれでも `mfham` のまま(既存テストを変えずに
+済ませるため。α 以外では「平均場ハミルトニアン」ではない点に注意)。
+
+`A` / `W` は振幅キャッシュと作業領域の型(det 系か Pfaffian 系か。DESIGN_parton_pf.md §4.2)。
+`PartonOptimizationState{PartonDirectPhi}` のような部分適用は従来どおり使える。
 """
-mutable struct PartonOptimizationState{O<:PartonOrbitalSource}
+mutable struct PartonOptimizationState{O<:PartonOrbitalSource,A<:PartonAmplitudeStore,
+                                       W<:PartonWorkspaceStore}   # --- parton-mode (fork addition) ---
     state::VMCOptimizationState
-    amp::PartonAmplitudeData
+    amp::A
     config::PartonConfiguration
-    workspace::PartonSamplingWorkspace
+    workspace::W
     mfham::O
     physham::PartonPhysHamiltonian
 
@@ -457,9 +472,9 @@ end
 # 既存の 6 引数構築(スレッド文脈なし)を維持する
 PartonOptimizationState(
     state::VMCOptimizationState,
-    amp::PartonAmplitudeData,
+    amp::PartonAmplitudeStore,          # --- parton-mode (fork addition) --- 抽象型へ拡大
     config::PartonConfiguration,
-    workspace::PartonSamplingWorkspace,
+    workspace::PartonWorkspaceStore,    # --- parton-mode (fork addition) --- 抽象型へ拡大
     mfham::PartonOrbitalSource,
     physham::PartonPhysHamiltonian,
 ) = PartonOptimizationState(state, amp, config, workspace, mfham, physham, nothing)

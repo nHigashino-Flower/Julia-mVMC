@@ -82,12 +82,14 @@ include("run_phys_cal_from_namelist.jl")
 # include はこの順(types が先頭必須)。
 include("parton_types.jl")
 include("parton_orbparam_types.jl")   # Φ 直接変分(DESIGN §12.11)
+include("parton_pair_types.jl")       # Pfaffian モード(PartonMode = 2、DESIGN_parton_pf.md)
 include("parton_unsupported_inputs.jl")
 include("parton_orbparam_inputs.jl")  # Φ 直接変分の入力・再スケール・門番
 include("parton_orbital.jl")
 include("parton_initial_params.jl")
 include("parton_calculate_m_all.jl")
 include("parton_vmc_sampling.jl")
+include("parton_pair_amplitude.jl")   # Pfaffian モードの契約 1〜3
 include("parton_vmc_main_cal.jl")
 include("parton_orbparam_o.jl")       # Φ 直接変分の O(DESIGN §12.11)
 include("parton_output.jl")

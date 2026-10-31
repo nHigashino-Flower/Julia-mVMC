@@ -85,10 +85,10 @@ end
 """
 function parton_make_initial_sample!(
     cfg::PartonConfiguration,
-    amp::PartonAmplitudeData,
+    amp::PartonAmplitudeStore,          # --- parton-mode (fork addition) --- det / Pfaffian 共通
     mfham::PartonOrbitalSource,
     data::ExpertModeData,
-    ws::PartonSamplingWorkspace;
+    ws::PartonWorkspaceStore;           # --- parton-mode (fork addition) --- det / Pfaffian 共通
     rng,
     max_trial::Int = 100,
 )
