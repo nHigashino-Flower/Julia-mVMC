@@ -189,7 +189,9 @@ end
 end
 
 @testset "門番: namelist に α・Φ・上流 Orbital の入力があれば拒否" begin
-    for key in ("PartonMFTrans", "PartonMFPara", "InPmfPara", "InPmfOcc", "InPmfOrb",
+    # PartonOrbIdx(Φ の制限、DESIGN_parton.md §12.12)は Φ のドライバだけが namelist から直接読むので、
+    # ここで弾かないと Pf モードでは黙って無視される(parton-mode との合流時に追加)
+    for key in ("PartonMFTrans", "PartonMFPara", "InPmfPara", "InPmfOcc", "InPmfOrb", "PartonOrbIdx",
                 "Orbital", "OrbitalAntiParallel", "OrbitalParallel", "OrbitalGeneral",
                 "InOrbital", "InOrbitalGeneral")
         mktempdir() do dir
@@ -202,6 +204,19 @@ end
         write(joinpath(dir, "namelist.def"), "PartonPairOrbital pair.def\nPhysHop h.def\n")
         @test MOI.parton_pair_reject_other_inputs(joinpath(dir, "namelist.def")) === nothing
     end
+end
+
+@testset "門番(逆向き): PartonMode ≠ 2 で Pf の入力があれば α・Φ の共通検査が拒否" begin
+    # α・Φ の経路は PartonPairOrbital を読まないので、ここで止めないと黙って無視される
+    # (合流時に追加。validate_parton_data は α・Φ・Pf の 3 経路が共通に通る)
+    data = pair_ok_data()
+    data.modpara.parton_mode = MOI.PARTON_MODE_MEAN_FIELD
+    err = try MOI.validate_parton_data(data; require_mf_inputs = false); nothing catch e; e end
+    @test err isa ErrorException && occursin("PartonMode = 2", err.msg)
+    # Pf モード自身はこの検査で止まらない
+    data2 = pair_ok_data()
+    err2 = try MOI.validate_parton_data(data2; require_mf_inputs = false); nothing catch e; e end
+    @test !(err2 isa ErrorException && occursin("only used in PartonMode = 2", err2.msg))
 end
 
 @testset "テンプレートの器を data から組む" begin

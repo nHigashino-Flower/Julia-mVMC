@@ -1,6 +1,6 @@
 # DESIGN: 多フレーバー Pfaffian パートンモード(PartonMode = 2)
 
-- ステータス: **P0〜P2 完了・運用開始(2026-11-01)**。2026-10-31 起草、ブランチ `parton-pf`(d7cc568 から分岐)。
+- ステータス: **P0〜P2 完了・運用開始・parton-mode へ合流済み(2026-11-01)**。2026-10-31 起草、ブランチ `parton-pf`(d7cc568 から分岐)で開発。
   使い方は `docs/parton_pair.md`、試走の結論は §13.6(乱数スタートは StaDel を下げると厳密解まで届く)
 - 位置づけ: `DESIGN_parton.md` の別冊。本体の §1〜§7 の規約(登録点・マーカー・命名・数値ポリシー)は
   すべてここでも有効で、**食い違う点だけをこの文書に書く**。Φ 直接変分(本体 §12)が落ち着いたら
@@ -462,7 +462,8 @@ T3 用に、**全対(共有なし)の def を書く補助**もこのスクリプ
 | NExUpdatePath ≠ 6 | エラー | 固縛移動のみ(§2.2。PartonMode = 1 と同じ検査を流用) |
 | `PartonOrbParam ≠ 0` / `PartonOccMode ≠ 0` | エラー | Pf モードに存在しない |
 | Orbital / OrbitalAntiParallel / OrbitalParallel / OrbitalGeneral / InOrbital 系がある(orbital_terms が空でない、または NOrbitalIdx ≠ 0) | エラー | 既存スピン Orbital との同時指定。`validate_parton_data` の既存の検査で落ちる |
-| PartonMFTrans / PartonMFPara / InPmfPara / InPmfOcc / InPmfOrb がある | エラー | α・Φ を混ぜない |
+| PartonMFTrans / PartonMFPara / InPmfPara / InPmfOcc / InPmfOrb / PartonOrbIdx がある | エラー | α・Φ を混ぜない。PartonOrbIdx(Φ の制限、本体 §12.12)は Φ のドライバが namelist から直接読むので、一覧に入れないと黙って無視される(parton-mode との合流時に追加、2026-11-01) |
+| (逆向き)PartonMode ≠ 2 なのに PartonPairOrbital / InPartonPairOrbital がある | エラー(`validate_parton_data`、α・Φ・Pf の共通検査) | α・Φ の経路は Pf の入力を読まないので黙って無視される(合流時に追加) |
 | PartonPairOrbital が無い、または §2.1 の検査に違反(InPartonPairOrbital は任意。あれば同じく厳格に検査し、全 idx を要求する) | エラー | 緩いリーダの穴を塞ぐ |
 | OptFlag の長さ ≠ 2(n_proj + n_pair_idx)、または f が全凍結 | エラー | 範囲外のフラグは黙って凍結される(本体 §2.5) |
 | `parton_n_idx(data) ≠ 0` または `length(pmforb_params) ≠ 0` | エラー | 共役シムのオフセットの前提(f ブロックは n_proj の直後) |
@@ -555,7 +556,7 @@ T4 の対象系(ユーザー判断 2026-10-31: **4 系すべて**):
 - KN 奇数のための不対軌道(拡張 Pf)
 - SROptData のメモリ見積もりの門番(本体 §12.8 の残件と共通)
 - 本体 DESIGN への統合(§13 化)と `docs/parton_run.md` への手順の追記(運用マニュアルは `docs/parton_pair.md` に書いた)
-- parton-pf ブランチの parton-mode への合流(本体ディレクトリで Φ の改装が未コミットのうちは保留)
+- ~~parton-pf ブランチの parton-mode への合流~~ → 2026-11-01 に合流(制限付き Φ `292d4db` を取り込み、門番 2 件を追加)
 - 実パラメータがサンプル数を超える系(KM 9×4)で、小さい StaDel が安定かの確認(§13.6)
 
 ## 11. 決定ログと残りの確認点

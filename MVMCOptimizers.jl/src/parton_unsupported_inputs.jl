@@ -305,6 +305,17 @@ function validate_parton_data(data::ExpertModeData; require_mf_inputs::Bool = tr
     n_site = data.modpara.nsite
     n_flavor = data.modpara.nflavor
 
+    # --- parton-mode (fork addition) --- Pf の入力は PartonMode = 2 でしか読まない。α・Φ の経路は
+    # PartonPairOrbital を使わないので、ここで止めないと黙って無視される(DESIGN_parton_pf.md §7、合流時に追加)
+    if data.modpara.parton_mode != PARTON_MODE_PFAFFIAN &&
+       (!isempty(data.parton_pair_terms) || !isempty(data.parton_pair_params))
+        error(
+            "PartonPairOrbital / InPartonPairOrbital are only used in PartonMode = 2 " *
+            "(Pfaffian parton mode), but PartonMode = $(data.modpara.parton_mode). Remove them " *
+            "from namelist.def, or set `PartonMode 2` in modpara.def.",
+        )
+    end
+
     # --- required inputs ---------------------------------------------------
     # Φ 直接変分モード(PartonOrbParam = 1)には α の入力が存在しないので、
     # その門番は require_mf_inputs = false で呼ぶ(DESIGN §12.11)。

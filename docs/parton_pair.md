@@ -14,7 +14,7 @@ f の要素は SR で直接変分する(上流 mVMC の Pfaffian の f_ij と同
 - K = 2 なら上流の一般スピン Pfaffian と同じ形(スピンをフレーバーと読み替える。f は上流と同じ ×2 規約)
 
 設計の正は `DESIGN_parton_pf.md`(決定ログは §11、実装と試走の記録は §13)。ベンチマークの run は
-本体側の `playground_nozomi/parton_pf/T4/`(git 管理外)にある。
+`playground_nozomi/parton_pf/T4/`(git 管理外)にある。
 
 ## 1. PartonMode = 1 との違い
 
@@ -56,7 +56,8 @@ PartonFlavorSymFast 0    # 同上
 
 新しい modpara キーは無い。`PartonMode 2` で切り替える。門番が拒否するもの: `NFlavor < 2`、K·N が奇数、
 `NExUpdatePath ≠ 6`、`PartonOrbParam ≠ 0`、`PartonOccMode ≠ 0`、既存スピン Orbital 系、α・Φ の入力
-(PartonMFTrans / PartonMFPara / InPmfPara / InPmfOcc / InPmfOrb)、`NVMCCalMode ≠ 0`(物理量測定は未対応)。
+(PartonMFTrans / PartonMFPara / InPmfPara / InPmfOcc / InPmfOrb / PartonOrbIdx)、`NVMCCalMode ≠ 0`(物理量測定は未対応)。
+逆に PartonMode ≠ 2 の run に PartonPairOrbital / InPartonPairOrbital を書くと、α・Φ 側の共通検査が止める。
 `DSROptStaDel = 0` は止めないが、S にゲージの零方向があるので必ず正の値を入れること(§9)。
 
 ### namelist.def
@@ -105,7 +106,7 @@ ComplexType          1
 2. **拡大ユニットセルの並進で共有する**: 平均場を保つ並進(`pl_mf_shifts(model, ex, ey)`)で写り合う対を同じ idx にする
 
 ```bash
-cd /home/nozomihigashino/Julia-mVMC-pf
+cd /home/nozomihigashino/Julia-mVMC
 # KM: <Lx> <Ly> <φ> <K> <ex> <ey>(拡大セル)。最後に α run の pmfpara.def を渡すと並進の整合を検査する
 julia --project=MVMCOptimizers.jl tools/parton_gen_pair_def.jl out.def km 4 4 1/2 2 4 1
 # checkerboard: <nx> <ny> <K> <ex> <ey>
@@ -238,7 +239,7 @@ E₀ = −3.836 と出て、Mode 1 の −3.940 より上 = 誤って「表現�
 ## 7. 実行
 
 ```bash
-cd /home/nozomihigashino/Julia-mVMC-pf/MVMCOptimizers.jl
+cd /home/nozomihigashino/Julia-mVMC/MVMCOptimizers.jl
 # 1 プロセス
 JULIA_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 julia --project=. -e \
   'using MVMCOptimizers; exit(parton_run_para_opt_from_namelist(ARGS[1]; output_dir = ARGS[2]))' \

@@ -217,7 +217,8 @@ end
 
 "PartonMode = 2 と混ぜてはいけない namelist のキーワード(α・Φ・上流の Orbital 系)。"
 const _PARTON_PAIR_FOREIGN_KEYS = (
-    "PartonMFTrans", "PartonMFPara", "InPmfPara", "InPmfOcc", "InPmfOrb",
+    # PartonOrbIdx(Φ の制限)は Φ のドライバが namelist から直接読むので、ここで弾かないと黙って無視される
+    "PartonMFTrans", "PartonMFPara", "InPmfPara", "InPmfOcc", "InPmfOrb", "PartonOrbIdx",
     "Orbital", "OrbitalAntiParallel", "OrbitalParallel", "OrbitalGeneral",
     "InOrbital", "InOrbitalAntiParallel", "InOrbitalParallel", "InOrbitalGeneral",
 )
