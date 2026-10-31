@@ -276,9 +276,10 @@ X を通って U·sym(X⁻¹)·Uᵀ として戻り、**受理のたびに等比
 約 10 倍、40 回で G の相対誤差 1e6・Pf が NaN)。射影すると 1e−14 前後で止まる(T1-d)。
 上流の 1 電子更新 `InvM[i][j] += v1[i]v2[j] − v1[j]v2[i]` が構造的に反対称な形をとるのと同じ理由。
 
-次のどちらかなら `:need_recompute` を返す(呼び出し側がコミット済みの配置から錨を打ち直すので、
+次のどれかなら `:need_recompute` を返す(呼び出し側がコミット済みの配置から錨を打ち直すので、
 途中まで更新したまま抜けても安全):
 - `|R_qp| < ratio_floor`(ノード踏み抜き。det モードと同じ)
+- X の LU が特異(|R_qp| が下限を超えていても、ほぼ特異な f では起きる。例外は投げない)
 - 錨で特異だった qp がある(Pf = 0)。乗法更新では 0 から戻れないので、移動後に正則に
   なっていても取りこぼさないよう、そのつど組み直す(det モードは 0 のまま進む)
 """
@@ -295,7 +296,11 @@ function parton_update_amplitude!(
         R = ws.ratio_blocks[qp]
         (iszero(amp.pf_f[qp]) || abs(R) < ratio_floor) && return :need_recompute
         X = ws.x_blocks[qp]
-        Xinv = LinearAlgebra.inv!(lu!(X))                     # 2K×2K(X は壊してよい)
+        # |R| が下限を超えていても X が数値的に特異になりうる(ほぼ特異な f の配置)。lu! の既定の
+        # 検査は SingularException を投げて run を止めるので、検査を外して再計算を求める
+        Xlu = lu!(X; check = false)                           # 2K×2K(X は壊してよい)
+        issuccess(Xlu) || return :need_recompute
+        Xinv = LinearAlgebra.inv!(Xlu)
         mul!(ws.y_buf, ws.gb_blocks[qp], Xinv)
         G = pair_inv_block(amp, qp)
         mul!(G, ws.y_buf, transpose(ws.gb_blocks[qp]), true, true)   # G += Y·GBᵀ

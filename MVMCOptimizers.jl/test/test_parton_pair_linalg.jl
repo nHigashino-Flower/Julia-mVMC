@@ -237,6 +237,24 @@ end
     end
 end
 
+@testset "契約 3: X が特異なら例外を投げずに再計算を求める" begin
+    # |R| が下限を超えていても X が数値的に特異になりうる(ほぼ特異な f の配置で実際に踏んだ)。
+    # lu! の既定の検査は SingularException を投げて run が止まるので、:need_recompute で返すこと
+    rng = MersenneTwister(5)
+    data = pair_toy_data(n_site = 5, n_elec = 2, n_flavor = 2)
+    qp_weight = set_identity_qp!(data)
+    terms = full_pair_terms(5, 2)
+    src = build_pair_source(data, terms, randn(rng, ComplexF64, length(terms)))
+    cfg = toy_config(data, [1, 3])
+    _, amp, ws = _pair_mode_ip(data, src, cfg, qp_weight)
+    MO.parton_amplitude_ratio!(ws, amp, src, data, qp_weight, 1, 2)
+    ws.x_blocks[1] .= 0                       # 厳密に特異な X
+    ws.ratio_blocks[1] = ComplexF64(1)        # 比は下限より大きいことにする
+    inv_before = copy(amp.inv_f)
+    @test MO.parton_update_amplitude!(amp, src, data, ws, 1, 2) === :need_recompute
+    @test amp.inv_f == inv_before             # 途中まで書き換えていない
+end
+
 @testset "テンプレートの検査" begin
     nt(s1, f1, s2, f2, idx, sgn) =
         (site1 = s1, flavor1 = f1, site2 = s2, flavor2 = f2, idx = idx, sign = sgn)
