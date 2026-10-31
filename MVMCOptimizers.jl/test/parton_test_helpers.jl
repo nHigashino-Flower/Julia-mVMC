@@ -507,3 +507,31 @@ end
 
 "Φ モードの状態一式(本番の構築関数をそのまま使う。Φ は data.pmforb_params から写す)。"
 _orb_pstate(data) = MVMCOptimizers.parton_orbparam_build_state(data)
+
+"""
+    orbparam_map_fixture(; qp2 = false, jastrow = false) -> (data, map)
+
+制限付き Φ(DESIGN §12.12)のトイ入力。6 サイト環・Ne 2・F 2 の `orbparam_toy_data` に、
+サイト 3〜5 がサイト 0〜2 の θ を位相 exp(2πi/3) で共有し、フレーバー 1 がフレーバー 0 の
+θ を符号 −1 で共有する写像を掛ける(θ は 6 個、全部可動)。`qp2` で並進 QP 2 本、
+`jastrow` で距離クラス Jastrow(3 個)を足す。
+"""
+function orbparam_map_fixture(; qp2::Bool = false, jastrow::Bool = false)
+    Ns, Ne, F = 6, 2, 2
+    data = orbparam_toy_data(; n_site = Ns, n_elec = Ne, n_flavor = F)
+    ω = cis(2π / 3)
+    idx = zeros(Int, F * Ns * Ne)
+    coeff = ones(ComplexF64, F * Ns * Ne)
+    for f = 1:F, s = 1:Ns, n = 1:Ne
+        k = MVMCOptimizers.parton_orbparam_flat_index(f, s, n, Ns, Ne)
+        base = s <= 3 ? s : s - 3
+        idx[k] = (base - 1) * Ne + n
+        coeff[k] = (s <= 3 ? 1 : ω) * (f == 2 ? -1 : 1)
+    end
+    map = MVMCOptimizers.PartonOrbIndexMap(idx, coeff, fill(true, 6), Ns, Ne, F)
+    data.pmforb_params = randn(Random.MersenneTwister(5), ComplexF64, 6)
+    qp2 && set_shift_qp!(data, [collect(1:Ns), [mod1(r + 1, Ns) for r = 1:Ns]],
+                         [ones(Int, Ns), ones(Int, Ns)], ComplexF64[1, 0.5 + 0.2im])
+    jastrow && _add_ring_jastrow!(data, [0.1, -0.2, 0.05])
+    return data, map
+end

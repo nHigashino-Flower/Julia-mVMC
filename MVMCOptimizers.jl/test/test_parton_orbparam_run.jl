@@ -329,3 +329,161 @@ _jastrow_values(data) = Dict(k - 1 => ComplexF64(t.value) for (k, t) in enumerat
     data_c = MVMCExpertModeParsers.parse_expert_mode_files(joinpath(ctrl, "namelist.def"))
     @test _jastrow_values(data_c) != expected
 end
+
+# =====================================================================
+# 制限付き Φ(PartonOrbIdx)と初期値(DESIGN §12.12)
+# =====================================================================
+
+@testset "乱数初期化: 同じ base_seed なら同じ θ、OptFlag 0 は 0(専用の乱数列)" begin
+    data, map0 = orbparam_map_fixture()
+    flags = fill(true, map0.n_idx)
+    flags[3] = false
+    map = MVMCOptimizers.PartonOrbIndexMap(map0.idx, map0.coeff, flags, 6, 2, 2)
+    d1, d2, d3 = deepcopy(data), deepcopy(data), deepcopy(data)
+    MVMCOptimizers.parton_orbparam_init_random!(d1, map, 1234)
+    MVMCOptimizers.parton_orbparam_init_random!(d2, map, 1234)
+    MVMCOptimizers.parton_orbparam_init_random!(d3, map, 1235)
+    @test length(d1.pmforb_params) == map.n_idx
+    @test d1.pmforb_params == d2.pmforb_params      # 全ランクが同じ θ を得る
+    @test d1.pmforb_params != d3.pmforb_params
+    @test d1.pmforb_params[3] == 0
+    @test all(abs(real(z)) <= 1 / sqrt(2) && abs(imag(z)) <= 1 / sqrt(2)
+              for z in d1.pmforb_params)
+end
+
+"namelist から InPmfOrb の行を外す。"
+_drop_inpmforb!(nl) = write(nl, join(filter(l -> !startswith(l, "InPmfOrb"), readlines(nl)), "\n") * "\n")
+
+@testset "InPmfOrb が無ければ乱数初期値で走る" begin
+    dir = mktempdir()
+    out = joinpath(dir, "out")
+    nl = _write_min_orbparam_input(dir; nsteps = 2, nsmp = 1)
+    _drop_inpmforb!(nl)
+    @test MVMCOptimizers.parton_run_para_opt_from_namelist(nl; output_dir = out) == 0
+    params = _read_pmforb_file(joinpath(out, "zqp_pmforb_init.dat"))
+    for f = 1:2
+        @test isapprox(maximum(abs, params[((f - 1) * 8 + 1):(f * 8)]), 4.0; rtol = 1e-15)
+    end
+end
+
+"4 サイト・Ne 2・F 2 で、フレーバー 1 がフレーバー 0 の θ をそのまま使う写像(θ は 8 個)。"
+function _flavor_shared_map()
+    idx = vcat(collect(1:8), collect(1:8))
+    return MVMCOptimizers.PartonOrbIndexMap(idx, ones(ComplexF64, 16), fill(true, 8), 4, 2, 2)
+end
+
+"namelist に PartonOrbIdx を足し、写像を def に書く。"
+function _add_orbidx!(dir, nl, map)
+    MVMCOptimizers.parton_orbparam_write_orbidx(joinpath(dir, "pmforbidx.def"), map, 4, 2, 2)
+    open(nl, "a") do io
+        println(io, "PartonOrbIdx   pmforbidx.def")
+    end
+end
+
+@testset "制限付き E2E: フレーバー共有の def で走り、θ の個数が減る" begin
+    dir1 = mktempdir()
+    out1 = joinpath(dir1, "out")
+    nl1 = _write_min_orbparam_input(dir1; nsteps = 3, nsmp = 1)
+    _drop_inpmforb!(nl1)
+    _add_orbidx!(dir1, nl1, _flavor_shared_map())
+    @test MVMCOptimizers.parton_run_para_opt_from_namelist(nl1; output_dir = out1) == 0
+    info = read(joinpath(out1, "zvo_parton_runinfo.dat"), String)
+    @test occursin("NPmfOrbIdx 8", info)
+    @test occursin("PartonOrbIdx", info)
+    opt1 = joinpath(out1, "zqp_pmforb_opt.dat")
+    @test count(l -> occursin(r"^\d", l), readlines(opt1)) == 8
+
+    # opt の θ を InPmfOrb にして同じ def で再開する
+    dir2 = mktempdir()
+    out2 = joinpath(dir2, "out")
+    nl2 = _write_min_orbparam_input(dir2; nsteps = 2, nsmp = 1, inpmforb_from = opt1)
+    _add_orbidx!(dir2, nl2, _flavor_shared_map())
+    @test MVMCOptimizers.parton_run_para_opt_from_namelist(nl2; output_dir = out2) == 0
+    read_theta(path) = [complex(parse(Float64, split(l)[2]), parse(Float64, split(l)[3]))
+                        for l in readlines(path) if occursin(r"^\d", l)]
+    @test isapprox(read_theta(joinpath(out2, "zqp_pmforb_init.dat")), read_theta(opt1);
+                   rtol = 1e-14)
+end
+
+@testset "共有しすぎてランク落ちすると止まる" begin
+    # 軌道ごとに全サイトが 1 つの θ を使う → 各列が定数ベクトルで 2 列が平行
+    idx = [((f - 1) * 2 + n) for f = 1:2 for s = 1:4 for n = 1:2]
+    map = MVMCOptimizers.PartonOrbIndexMap(idx, ones(ComplexF64, 16), fill(true, 4), 4, 2, 2)
+    dir = mktempdir()
+    nl = _write_min_orbparam_input(dir; nsteps = 2, nsmp = 1)
+    _drop_inpmforb!(nl)
+    _add_orbidx!(dir, nl, map)
+    err = try
+        MVMCOptimizers.parton_run_para_opt_from_namelist(nl; output_dir = joinpath(dir, "out"))
+        nothing
+    catch e
+        e
+    end
+    @test err isa ErrorException
+    @test err !== nothing && occursin("PartonOrbIdx", err.msg)
+end
+
+@testset "α → Bloch: 変換道具の E2E(--bloch)" begin
+    dir = mktempdir()
+    a_in = joinpath(dir, "alpha_in")
+    a_out = joinpath(dir, "alpha_out")
+    mkpath(a_in)
+    nl, _ = _write_min_parton_input(a_in)
+    open(joinpath(a_in, "parton_lattice.dat"), "w") do io
+        println(io, "grid 4 1")
+        for i = 0:3
+            println(io, "SITE $i $i 0 $(i % 2)")
+        end
+        println(io, "MFSHIFT 0 0")
+        println(io, "MFSHIFT 2 0")
+    end
+    @test MVMCOptimizers.parton_run_para_opt_from_namelist(nl; output_dir = a_out) == 0
+
+    new_dir = joinpath(dir, "phi_in")
+    parton_alpha_to_orbparam(a_in, a_out, new_dir; bloch = true)
+    new_nl = joinpath(new_dir, "namelist.def")
+    keys_new = first.(MVMCExpertModeParsers.parse_namelist_content(
+        MVMCExpertModeParsers.read_def_file(new_nl)))
+    @test "PartonOrbIdx" in keys_new
+
+    # α の最終状態と Bloch Φ 状態の E_loc が全配置で一致する
+    data_a = MVMCExpertModeParsers.parse_expert_mode_files(nl)
+    tmp = joinpath(dir, "_ref.def")
+    write(tmp, "InPmfPara $(joinpath(a_out, "zqp_pmfpara_opt.dat"))\n" *
+               "InPmfOcc $(joinpath(a_out, "zqp_pmfocc_opt.dat"))\n")
+    MVMCOptimizers.parton_read_in_pmfpara!(data_a, tmp)
+    occ = MVMCOptimizers.parton_read_in_pmfocc(data_a, tmp)
+    MVMCOptimizers.parton_ensure_qp!(data_a)
+    ps_a = MVMCOptimizers.parton_build_optimization_state(data_a)
+    MVMCOptimizers.parton_update_orbitals!(
+        ps_a.mfham, MVMCOptimizers.parton_alpha_from_terms(data_a), data_a.modpara.nelec;
+        forced_occ = occ)
+
+    data_p = MVMCExpertModeParsers.parse_expert_mode_files(new_nl)
+    map = MVMCOptimizers.parton_orbparam_read_orbidx(data_p, new_nl)
+    @test map.n_idx == 8                                # 全要素なら 16
+    MVMCOptimizers.parton_orbparam_read_in_pmforb!(data_p, new_nl, map)
+    MVMCOptimizers.parton_ensure_qp!(data_p)
+    ps_p = MVMCOptimizers.parton_orbparam_build_state(data_p, map)
+    @test isapprox(_all_eloc(ps_p, data_p), _all_eloc(ps_a, data_a); rtol = 1e-10)
+
+    @test MVMCOptimizers.parton_run_para_opt_from_namelist(
+        new_nl; output_dir = joinpath(dir, "phi_out"), nsteps = 2, nsmp = 1) == 0
+end
+
+@testset "フレーバー共有の def でも orbdiag のヘッダと列が揃い、runinfo のキーが重複しない" begin
+    dir = mktempdir()
+    out = joinpath(dir, "out")
+    nl = _write_min_orbparam_input(dir; nsteps = 2, nsmp = 1)
+    _drop_inpmforb!(nl)
+    _add_orbidx!(dir, nl, _flavor_shared_map())      # 2 フレーバーで再スケールの組は 1 つ
+    @test MVMCOptimizers.parton_run_para_opt_from_namelist(nl; output_dir = out) == 0
+    lines = readlines(joinpath(out, "zvo_parton_orbdiag.dat"))
+    labels = split(strip(lines[1]))[2:end]            # 先頭の "#" を除く
+    @test all(length(split(l)) == length(labels) for l in lines[2:end])
+    @test count(startswith("log10cond_"), labels) == 2   # フレーバー数
+    @test count(startswith("xmax_pre_"), labels) == 1    # 組の数
+    info = readlines(joinpath(out, "zvo_parton_runinfo.dat"))
+    @test count(l -> startswith(l, "n_idx "), info) == 1
+    @test "NPmfOrbIdx 8" in info
+end

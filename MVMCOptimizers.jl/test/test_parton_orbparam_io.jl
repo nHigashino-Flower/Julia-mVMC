@@ -51,20 +51,11 @@ end
 end
 
 @testset "InPmfOrb: 壊れた入力は error($case)" for case in
-        (:count, :idx_range, :duplicate, :nan, :rank_deficient, :missing_entry)
+        (:count, :idx_range, :duplicate, :nan)
     data = orbparam_toy_data()
     n = length(data.pmforb_params)
     dir = mktempdir()
     file = joinpath(dir, "InPmfOrb.def")
-    if case == :rank_deficient
-        # フレーバー 2 の第 2 列 = 2 × 第 1 列
-        mp = data.modpara
-        for s = 1:mp.nsite
-            k1 = MVMCOptimizers.parton_orbparam_flat_index(2, s, 1, mp.nsite, mp.nelec)
-            k2 = MVMCOptimizers.parton_orbparam_flat_index(2, s, 2, mp.nsite, mp.nelec)
-            data.pmforb_params[k2] = 2 * data.pmforb_params[k1]
-        end
-    end
     MVMCOptimizers.parton_orbparam_write_pmforb(data, file)
     lines = readlines(file)                    # 5 行ヘッダ + n 行
     if case == :count
@@ -77,11 +68,19 @@ end
         lines[8] = "2 NaN 0.0"
     end
     write(file, join(lines, "\n") * "\n")
-    nl = _io_namelist(dir; with_entry = case != :missing_entry)
+    nl = _io_namelist(dir)
     err = _io_error(() -> MVMCOptimizers.parton_orbparam_read_in_pmforb!(
         orbparam_toy_data(; seed = 99), nl))
     @test err isa ErrorException
     @test err !== nothing && occursin("InPmfOrb", err.msg)
+end
+
+@testset "InPmfOrb: namelist に無ければ nothing(乱数初期値のまま、DESIGN §12.12)" begin
+    data = orbparam_toy_data()
+    before = copy(data.pmforb_params)
+    @test MVMCOptimizers.parton_orbparam_read_in_pmforb!(
+        data, _io_namelist(mktempdir(); with_entry = false)) === nothing
+    @test data.pmforb_params == before
 end
 
 @testset "再スケール: フレーバーごとに max = D、拡大もする" begin

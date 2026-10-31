@@ -87,6 +87,9 @@ end
     include("test_parton_orbparam_force_gradient.jl")
     include("test_parton_orbparam_io.jl")
     include("test_parton_orbparam_run.jl")
+    include("test_parton_orbparam_map.jl")
+    include("test_parton_orbparam_map_o.jl")
+    include("test_parton_bloch.jl")
 end
 
 @testset "Unit Tests" begin

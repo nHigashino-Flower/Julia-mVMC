@@ -12,6 +12,7 @@
 **入口 = `playground_nozomi/km/REPORT_orbparam.md`**。設計 = `DESIGN_parton.md` §12.11(優先)、
 計画 = `docs/superpowers/plans/2026-10-31-parton-orbparam-direct.md`、実装中の判断と後回しの一覧 =
 `playground_nozomi/km/orbparam_ledger.md`(Ruling / minor (deferred) の行)。
+**コミット済み: `d7cc568`**(parton-mode)。再開手順と次の一手は TODO リストの先頭。
 
 - `PartonOrbParam = 1` で Slater 行列式の軌道行列 Φ_f[s,n] の全要素を SR で直接変分する。
   上流の Pfaffian f_ij と同じ形で、**SR 更新のたびにフレーバーごとに max|Φ_f| = `PartonOrbAmpMax`(既定 4.0)へそろえる**
@@ -20,7 +21,7 @@
   `julia --project=MVMCOptimizers.jl tools/parton_alpha_to_orbparam.jl <alpha_stage_in> <alpha_stage_out> <new_dir>`
 - 監視は `zvo_parton_orbdiag.dat`(捨てたサンプル数・受理率・need_recompute・再スケール前の max|Φ_f|・log10 cond(Φ_f))
 - **検証**: O の有限差分、Euler 恒等式、力 = 厳密勾配、S の冗長方向、**α モードの全数値出力がバイト一致**、
-  P 層 1292/1292、MVMCOptimizers の全テスト緑(パートン 2985 件)
+  P 層 1292/1292、MVMCOptimizers の全テスト緑(パートン 2988 件)
 - **試走(ユーザー推奨: dt 0.003・StaDel 0.1・RedCut 1e-8・2000 step・NVMCSample 2000・1 プロセス)**:
   - (a) KM ν=1/2 4×4 を乱数 Φ から: E +0.022 → **−3.9984**(厳密 −4、収束途中)、**cond は漂流しない**、捨てたサンプル 0
   - (b′) KM ν=1/3 9×4 indep を α 最良解から: E は α と**統計誤差の範囲で同じ**(−3.9399、ED −3.9411)。
@@ -30,6 +31,14 @@
 - **⟨O O†⟩ の組み立てを Φ モードだけ BLAS(ZHERK)に差し替えた**(`parton_finalize_oo_store!`)。
   上流 `finalize_oo_store!` は素朴な 3 重ループで、Φ モード(n_para 486)では実行時間の 91% を占めていた。
   1 step 4.3 s → 0.22 s。α は上流関数のまま(ビット一致)。上流の docstring は「行列積」と書くが実装はループ(upstream 報告候補)
+- **★制限付き Φ(PartonOrbIdx、DESIGN §12.12、2026-10-31 実装・コミット済み)**: Pfaffian の `orbitalidx.def` と
+  同じ規約で Φ_f[s,n] = c·θ_idx を課す(`site flavor orbital idx [±1 | Re Im]` + `idx OptFlag`、全要素の記載が必須)。
+  namelist に `PartonOrbIdx` があれば制限付き、無ければ従来どおり(α・def なし Φ とも `d7cc568` とバイト一致)。
+  θ は乱数初期化(初期化専用の乱数列)→ `InPmfOrb`(θ、任意)で上書き → 共有でつながるフレーバーの組ごとに再スケール
+  - **Bloch 形**: `tools/parton_bloch_orbidx.jl <stage_in> <out_def> [occupation_file]` が `parton_lattice.dat` から生成。
+    α 解からは `tools/parton_alpha_to_orbparam.jl ... --bloch`(射影子 P を k ごとに対角化、近似なし)
+  - **KM 9×4 の試走**: Φ のパラメータ 432 → 108、1 step 0.22 → 0.11 s、E は全要素・α と同じ(−3.9399)、cond の漂流は半分。
+    ⟨O O†⟩ は 8.1 倍速くなり、今は E_loc とサンプリング(n_para に依らない)が全体の 3/4
 - **サンプル数の注意**: Φ モードは n_para が大きい。4 サイトの toy(実パラメータ 32)で NVMCSample 60 だと E が上がり、2000 だと下がった
 - **ユーザーに諮る残件**: §12.8 の SROptData メモリ見積もり門番(閾値未定)/ runinfo の PartonGaugeFix・FlavorSymFast を「該当なし」と書くか(共有 writer を触る)
 
@@ -148,7 +157,7 @@ C_{kl} の rank / 2 体項の局所性 / サイズ依存(ED データなし)/ cb
 
 **入口 = `playground_nozomi/km/REPORT_cfl.md`**(§13 = ED、§14 = VMC 設計)。
 
-#### 2026-10-23 の到達点(★次セッションはここから)
+#### 2026-10-23 の到達点
 
 - **ED(n(k)・S(q)・U スキャン)完了**。4×4 / 4×6 / 6×4 / 4×8 / 8×4、U = 0.01〜20。
   - **S(q) は全サイズで q = (π/2, π) に最大**(2k_F = 1.128π の隣)。8×4 では最低励起も同じ波数に立つ。
@@ -712,6 +721,35 @@ git submodule update --init --recursive
 
 ## TODO リスト
 
+### Φ 直接変分モード(2026-10-31、★次セッションはここから)
+
+**再開手順**(試走はユーザー推奨の条件: dt 0.003・StaDel 0.1・RedCut 1e-8・2000 step・NVMCSample 2000・1 プロセス・小規模系):
+
+```bash
+cat playground_nozomi/km/REPORT_orbparam.md           # 試走の結果と判定
+# α 解 → Φ 入力 → modpara を編集 → 1 プロセスで実行
+julia --project=MVMCOptimizers.jl tools/parton_alpha_to_orbparam.jl <stage_in> <stage_out> <new_dir>
+JULIA_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 julia --project=MVMCOptimizers.jl -e \
+  'using MVMCOptimizers; exit(parton_run_para_opt_from_namelist(ARGS[1]; output_dir = ARGS[2]))' \
+  <new_dir>/namelist.def <out_dir>
+```
+
+- [x] 第 1 段(上流型、§12.11)の実装・検証・試走(`d7cc568`)
+- [x] 制限付き Φ(PartonOrbIdx)と Bloch 形の生成・α からの変換(§12.12、計画 `docs/superpowers/plans/2026-10-31-parton-orbparam-restricted.md`)。
+      判断の記録は `playground_nozomi/km/orbparam_ledger_restricted.md`
+- [~] **ボソン ν=1/2 KM 8×4 のホールドープスキャン(N = 8 → 1)を Φ モードで実行中に一時停止**
+      (2026-10-31、ユーザーが実装を変更するため。9 プロセスを SIGSTOP)。入口 =
+      `playground_nozomi/km_nu12_holedope_phi/README.md`(再開 / 破棄の手順、止めた時点の値)。
+      厳密 KM なので E = −N に縮退し、見ているのは「乱数 Φ から縮退多様体に降りられるか」
+- [ ] **★次: KM ν=1/3 9×4 で α(−3.9399)を下回るか**。2000 step で Φ の列空間が 0.9° しか動かなかったので、
+      dt を上げる / StaDel を下げる / step を延ばす。BLAS 化で 2000 step ≈ 8 分
+- [ ] (a) KM ν=1/2 4×4(乱数 Φ 開始)を −4 まで収束させきり、cond の長期挙動を見る
+- [ ] CFL(F=3、f₃ が開殻)への適用 — Φ モードの本来の目的(DESIGN §12.0)
+- [ ] ユーザー判断待ち: §12.8 の SROptData メモリ見積もり門番の閾値 / Φ モードの runinfo に残る PartonGaugeFix・FlavorSymFast の行
+- [ ] 後回しの Minor 5 件(`orbparam_ledger.md` の `minor (deferred)`)。DESIGN §2.1・§3.1・`docs/parton_run.md` への記載を含む
+- [ ] upstream 報告候補: `finalize_oo_store!` が素朴な 3 重ループ(docstring は「行列積」)
+- [ ] 致命的な問題(cond の漂流・NaN・α より E が上がる)が出たら §12 本体の Löwdin 正準化 / 案 B へ
+
 ### 構想: ν=1/2 ボソン KM の有限密度ホールドープと超流動(2026-10-23、未着手・保留)
 
 **やりたいこと(ユーザー)**: L = 8/12/16 でドープなしの Laughlin を確認し、ドープして超流動が出るかを見る。
@@ -730,7 +768,7 @@ git submodule update --init --recursive
   ODLRO は `NVMCCalMode = 1`(未実装)が要る
 - **コストは未実測**。L=8 は数時間級、L=16 は ohtaka が前提という見込み(25 step の試走で確かめる)
 
-### KM のドープ(エニオン)(2026-09-16、★次セッションはここから)
+### KM のドープ(エニオン)(2026-09-16)
 
 **状況**: ED・VMC とも一通り完了し、結論は上の「★新規: KM FCI への 1 粒子ドープ」節と
 `playground_nozomi/km/REPORT_doping.md` にある。**走行中のジョブはない**。

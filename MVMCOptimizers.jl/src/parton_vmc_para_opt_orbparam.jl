@@ -11,13 +11,13 @@ log10 cond(Φ_f) に出る。
 """
 
 """
-    parton_orbparam_build_state(data) -> PartonOptimizationState{PartonDirectPhi}
+    parton_orbparam_build_state(data, map) -> PartonOptimizationState{PartonDirectPhi}
 
 Φ モードの状態一式を確保する。寸法は `parton_build_optimization_state` と同じで、
 軌道の器だけが `PartonDirectPhi`。det^F 高速路は使わない(n_stored = NFlavor)。
 `data.pmforb_params` を読み込み済みで返す。
 """
-function parton_orbparam_build_state(data::ExpertModeData)
+function parton_orbparam_build_state(data::ExpertModeData, map::PartonOrbIndexMap)
     mp = data.modpara
     n_qp = get_n_qp_full(data)
     n_para = MVMCExpertModeParsers.count_variational_parameters(data)
@@ -27,7 +27,7 @@ function parton_orbparam_build_state(data::ExpertModeData)
         true,     # all_complex: パートンモードは ComplexType = 1 のみ
         false,    # use_fsz
     )
-    phi = PartonDirectPhi(mp.nsite, mp.nelec, mp.nflavor)
+    phi = PartonDirectPhi(mp.nsite, mp.nelec, mp.nflavor, map)
     parton_orbparam_load_orbitals!(phi, data)
     return PartonOptimizationState(
         state,
@@ -39,6 +39,11 @@ function parton_orbparam_build_state(data::ExpertModeData)
         parton_build_phys_hamiltonian(data),
     )
 end
+
+# def が無いとき(恒等写像)
+parton_orbparam_build_state(data::ExpertModeData) = parton_orbparam_build_state(
+    data, parton_orbparam_identity_map(data.modpara.nsite, data.modpara.nelec,
+                                       data.modpara.nflavor))
 
 """
     parton_orbparam_accept_update!(data, para_before) -> Bool
@@ -63,7 +68,8 @@ end
 - `n_skipped` — |ip| < 1e-30 で捨てたサンプル数(このランク)。増え続けたら桁落ち
 - `accept_ratio` / `n_need_recompute` / `n_exact_recompute` — MC の健康診断
   (α の `_parton_diag.dat` と同じ定義)
-- `xmax_pre_f` — 再スケール**前**の max|Φ_f|(= D·(1 + SR 更新の相対的な大きさ))
+- `xmax_pre_g` — 再スケールの組 g ごとの、再スケール**前**の max|θ|(= D·(1 + SR 更新の
+  相対的な大きさ))。PartonOrbIdx でフレーバー間の共有が無ければ組 g = フレーバー g
 - `log10cond_f` — そのステップで使った Φ_f の log10(σ_max/σ_min)。単調に増えたら
   GL(Ne) のスケール以外の方向へ漂流している
 """
@@ -82,11 +88,14 @@ function parton_orbparam_write_orbdiag(
     trials = counter[1]
     accepts = counter[2]
     acc = trials > 0 ? accepts / trials : 0.0
-    n_flavor = length(xmax_pre)
+    # xmax は再スケールの組ごと、cond はフレーバーごとに値がある。制限が無ければ
+    # 組 = フレーバーなので、ラベルは従来と同じ文字列になる
+    n_group = length(xmax_pre)
+    n_flavor = length(log10_cond)
     open(path, step == 0 ? "w" : "a") do f
         if step == 0
             println(f, "# step  n_skipped  accept_ratio  n_need_recompute  n_exact_recompute  " *
-                       join(("xmax_pre_$fl" for fl = 1:n_flavor), "  ") * "  " *
+                       join(("xmax_pre_$g" for g = 1:n_group), "  ") * "  " *
                        join(("log10cond_$fl" for fl = 1:n_flavor), "  "))
         end
         @printf(f, "%6d %8d % .6e %8d %8d", step, n_skipped, acc, counter[3], counter[4])
@@ -101,14 +110,23 @@ function parton_orbparam_write_orbdiag(
     return path
 end
 
-"`zvo_parton_runinfo.dat` の末尾に Φ モードの項目を追記する。"
-function parton_orbparam_append_runinfo(data::ExpertModeData, dir)
+"""
+`zvo_parton_runinfo.dat` の末尾に Φ モードの項目を追記する。`n_orb` は Φ の要素数、
+`NPmfOrbIdx` は変分パラメータ θ の個数(制限が無ければ n_orb と同じ)、`PartonOrbIdx` は
+制限の def のパス(無ければ none)。
+"""
+function parton_orbparam_append_runinfo(data::ExpertModeData, dir;
+                                        map::PartonOrbIndexMap, orbidx_path = nothing)
     dir === nothing && return nothing
     mp = data.modpara
     open(_parton_out(data, "_parton_runinfo.dat", dir), "a") do f
         @printf(f, "PartonOrbParam %d\n", mp.parton_orb_param)
         @printf(f, "PartonOrbAmpMax %.17g\n", mp.parton_orb_amp_max)
-        @printf(f, "n_orb %d\n", length(data.pmforb_params))
+        @printf(f, "n_orb %d\n", parton_orbparam_n_orb(mp))
+        # α の runinfo writer が同じファイルに "n_idx"(平均場の idx 数)を書くので、
+        # θ の個数は def のヘッダと同じ名前 NPmfOrbIdx で書く(キーを重複させない)
+        @printf(f, "NPmfOrbIdx %d\n", map.n_idx)
+        @printf(f, "PartonOrbIdx %s\n", orbidx_path === nothing ? "none" : orbidx_path)
     end
     return nothing
 end
@@ -136,7 +154,7 @@ function parton_orbparam_vmc_para_opt!(
     c_timer::CTimer = CTIMER_DISABLED,
     write_diagnostics::Bool = true,
 )::Int
-    validate_parton_orbparam_inputs(data, ctx)
+    validate_parton_orbparam_inputs(data, ctx, pstate.mfham.map)
 
     mp = data.modpara
     out_rank = is_output_rank(ctx)
@@ -196,7 +214,7 @@ function parton_orbparam_vmc_para_opt!(
         if !parton_orbparam_accept_update!(data, para_before)
             out_rank && @warn "Parton SR (direct orbitals): non-finite parameter update rejected" step
         end
-        xmax_pre = parton_orbparam_rescale!(data)   # 上流の D_AmpMax と同じ位置
+        xmax_pre = parton_orbparam_rescale!(data, phi.map)   # 上流の D_AmpMax と同じ位置
 
         ctimer_start!(c_timer, 813)
         if diag_dir !== nothing
@@ -237,9 +255,11 @@ end
 Φ モードのドライバ本体。`parton_run_para_opt_from_namelist` がパース直後に
 `PartonOrbParam ≠ 0` を見てここへ分岐する(α の初期化・フラグ・門番より前)。
 
-順序: InPmfOrb を読む → 再スケール(上流が初期化直後に sync_modified_parameter! を
-呼ぶのと同じ)→ α の入力が無いことの確認 → OptFlag の実体化 → 門番 →
-サンプリング RNG → QP → 状態 → `_pmforb_init.dat` → runinfo → SR ループ。
+順序(DESIGN §12.12): modpara の検査 → PartonOrbIdx を読む(無ければ恒等写像)→
+θ の乱数初期化(初期化専用の乱数列)→ InPmfOrb があれば上書き → 再スケール(上流が
+InitParameter → In* → SyncModifiedParameter と進むのと同じ)→ α の入力が無いことの確認 →
+OptFlag の実体化 → 門番 → サンプリング RNG → QP → 状態 → 列フルランクの検査 →
+`_pmforb_init.dat` → runinfo → SR ループ。
 """
 function parton_orbparam_run_from_namelist(
     data::ExpertModeData,
@@ -261,11 +281,22 @@ function parton_orbparam_run_from_namelist(
     (isfinite(mp.parton_orb_amp_max) && mp.parton_orb_amp_max > 0) || error(
         "PartonOrbAmpMax must be a positive finite number, got $(mp.parton_orb_amp_max).")
 
-    parton_orbparam_read_in_pmforb!(data, namelist_str)
-    parton_orbparam_rescale!(data)
+    # 制限の def(DESIGN §12.12)。無ければ恒等写像(各要素が独立、§12.11 と同じ)
+    map = parton_orbparam_read_orbidx(data, namelist_str)
+    orbidx_path = map === nothing ? nothing :
+        _parton_namelist_entry(namelist_str, "PartonOrbIdx")
+    map === nothing && (map = parton_orbparam_identity_map(mp.nsite, mp.nelec, mp.nflavor))
+
+    # 初期値: 乱数(初期化専用の乱数列)→ InPmfOrb があれば上書き → 再スケール
+    # (上流が InitParameter → In* → SyncModifiedParameter と進むのと同じ順)
+    sampling_seed = resolve_rnd_seed(ctx, mp.rnd_seed, seed)
+    base_seed = sampling_seed - ctx.group1
+    parton_orbparam_init_random!(data, map, base_seed)
+    parton_orbparam_read_in_pmforb!(data, namelist_str, map)
+    parton_orbparam_rescale!(data, map)
     parton_orbparam_reject_alpha_files(namelist_str)
-    parton_orbparam_materialize_flags!(data)
-    validate_parton_orbparam_inputs(data, ctx)
+    parton_orbparam_materialize_flags!(data, map)
+    validate_parton_orbparam_inputs(data, ctx, map)
     is_output_rank(ctx) && parton_warn_threading_config()
 
     nsteps !== nothing && (mp.nsr_opt_itr_step = Int(nsteps))
@@ -278,26 +309,25 @@ function parton_orbparam_run_from_namelist(
         ),
     )
 
-    # サンプリング用の乱数(α と同じ C 準拠の seed 解決)。Φ の初期化は乱数を使わない
-    sampling_seed = resolve_rnd_seed(ctx, mp.rnd_seed, seed)
+    # サンプリング用の乱数(α と同じ C 準拠の seed 解決)。θ の乱数初期化とは別の列
     rng = SFMT19937RNG()
     Random.seed!(rng, sampling_seed)
 
     parton_ensure_qp!(data)
-    pstate = parton_orbparam_build_state(data)
+    pstate = parton_orbparam_build_state(data, map)
+    parton_orbparam_check_rank(pstate.mfham)
     mkpath(output_dir)
     out_dir = String(output_dir)
     is_output_rank(ctx) &&
         parton_orbparam_write_pmforb(data, _parton_para_out(data, "_pmforb_init.dat", out_dir))
 
     t_start = time()
-    base_seed = sampling_seed - ctx.group1
     n_para = MVMCExpertModeParsers.count_variational_parameters(data)
     if is_output_rank(ctx)
         parton_write_runinfo(data, out_dir; namelist_path = namelist_str, base_seed = base_seed,
                              n_idx = 0, n_para = n_para, n_rank = ctx.size0,
                              t_start = t_start, t_end = t_start)
-        parton_orbparam_append_runinfo(data, out_dir)
+        parton_orbparam_append_runinfo(data, out_dir; map = map, orbidx_path = orbidx_path)
     end
 
     status = parton_orbparam_vmc_para_opt!(
@@ -311,7 +341,17 @@ function parton_orbparam_run_from_namelist(
         parton_write_runinfo(data, out_dir; namelist_path = namelist_str, base_seed = base_seed,
                              n_idx = 0, n_para = n_para, n_rank = ctx.size0,
                              t_start = t_start, t_end = time())
-        parton_orbparam_append_runinfo(data, out_dir)
+        parton_orbparam_append_runinfo(data, out_dir; map = map, orbidx_path = orbidx_path)
     end
     return status
+end
+
+"namelist.def の `key` 行が指すファイルの絶対パス(無ければ nothing)。runinfo の記録用。"
+function _parton_namelist_entry(namelist_path::AbstractString, key::AbstractString)
+    base_dir = dirname(abspath(String(namelist_path)))
+    for (file_type, file_path) in MVMCExpertModeParsers.parse_namelist_content(
+            MVMCExpertModeParsers.read_def_file(String(namelist_path)))
+        file_type == key && return joinpath(base_dir, file_path)
+    end
+    return nothing
 end
