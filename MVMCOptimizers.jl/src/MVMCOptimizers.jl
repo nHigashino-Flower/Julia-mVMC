@@ -93,9 +93,12 @@ include("parton_vmc_sampling.jl")
 include("parton_pair_amplitude.jl")   # Pfaffian モードの契約 1〜3
 include("parton_vmc_main_cal.jl")
 include("parton_orbparam_o.jl")       # Φ 直接変分の O(DESIGN §12.11)
+include("parton_pair_o.jl")           # Pfaffian モードの O と ⟨O O†⟩
 include("parton_output.jl")
 include("parton_vmc_para_opt.jl")
 include("parton_vmc_para_opt_orbparam.jl")   # Φ 直接変分の SR ループとドライバ
+include("parton_pair_output.jl")             # Pfaffian モードの出力(診断・runinfo・SVD)
+include("parton_vmc_para_opt_pair.jl")       # Pfaffian モードの状態・SR ループ・ドライバ
 include("parton_run_para_opt_from_namelist.jl")
 
 # Export main functions

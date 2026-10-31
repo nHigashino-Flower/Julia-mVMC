@@ -92,6 +92,8 @@ end
     include("test_parton_pair_linalg.jl")
     include("test_parton_pair_skeleton.jl")
     include("test_parton_pair_io.jl")
+    include("test_parton_pair_gradient.jl")
+    include("test_parton_pair_run.jl")
 end
 
 @testset "Unit Tests" begin

@@ -32,6 +32,15 @@ function parton_run_para_opt_from_namelist(
     # 2. MPI コンテキスト(初期化のベースシード解決に要る)
     ctx = build_parallel_context(data.modpara.nsplit_size)
 
+    # --- parton-mode (fork addition) ---
+    # 2a. Pfaffian パートンモード(PartonMode = 2、DESIGN_parton_pf.md)はここで分岐する。
+    #     PartonOrbParam の分岐(Φ)と α の初期化・フラグ・門番より前で分ける。
+    if data.modpara.parton_mode == PARTON_MODE_PFAFFIAN
+        return parton_pair_run_from_namelist(
+            data, namelist_str, ctx;
+            nsteps = nsteps, nsmp = nsmp, output_dir = output_dir, seed = seed)
+    end
+
     # 2b. Φ 直接変分モード(PartonOrbParam ≠ 0、DESIGN §12.11)はここで分岐する。
     #     α の初期化・フラグ・門番より前で分けないと、α 用の検査で落ちる。
     if data.modpara.parton_orb_param != PARTON_ORB_PARAM_ALPHA
