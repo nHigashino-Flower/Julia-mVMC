@@ -22,6 +22,10 @@
 - **検証**: 全配置列挙が Fock 空間の密行列と 1e−12 で一致(α F=2/F=3・Φ・Pf F=2/F=3。**F 奇数のフェルミオン符号も正しい**)。
   配置ごとの恒等式 E_loc = Σ t·G1 + Σ V·G2。小さい系の厳密値は `MVMCOptimizers.parton_exact_expectations`
 - 測定ループは逐次(スレッド並列なし)。並列は MPI
+- **実系検証済み**(`playground_nozomi/km/physcal/REPORT_physcal.md`): KM ν=1/2 4×4 の α(厳密解)と Pf(途中の状態)で、
+  MPI 16 の測定 512 成分が全配置列挙の厳密値と統計誤差の範囲で一致。1 run 約 25 秒
+- **★次の一手**: C4 を課した 8×8 の解(`runs_c4L08/L08_ef4_fsym_c4n2_s1002`)と対照(`runs_orientfix/L08_ef4_s1009`)で
+  ⟨b†_i b_j⟩・⟨n_i n_j⟩ を測り、射影後の状態の物理量が C4 対称になるかを見る。n(k)・S(q) の後処理はそのとき書く
 
 ### ★新規: Pfaffian パートンモード(PartonMode = 2)を実装・運用開始(2026-11-01)
 
