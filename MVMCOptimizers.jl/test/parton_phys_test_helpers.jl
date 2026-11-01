@@ -74,12 +74,16 @@ end
 "Pf モードの状態(全対を別々の idx にした def と乱数の p)。"
 function _phys_pair_case(F::Int; L::Int, Ne::Int, n_qp::Int, rng)
     data = pair_toy_data(; n_site = L, n_elec = Ne, n_flavor = F)
+    mp = data.modpara
+    mp.nvmc_warmup = 50                         # 測定ループのテスト(§13.4)でサンプリングに使う
+    mp.nvmc_interval = 1
+    mp.nvmc_sample = 200
+    mp.parton_block_update_size = 4
     phys_ring_hamiltonian!(data)
     n_qp > 1 && random_ring_qp!(rng, data, n_qp)
     phys_all_green_terms!(data)
     terms = full_pair_terms(L, F)
     src = build_pair_source(data, terms, randn(rng, ComplexF64, length(terms)))
-    mp = data.modpara
     nq = length(data.qp_trans)
     state = MVMCOptimizers.VMCOptimizationState(mp.nsite, mp.nelec, 0, 0, nq,
                                                 max(mp.nvmc_sample, 1), true, false)

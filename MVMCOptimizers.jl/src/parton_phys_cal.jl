@@ -181,3 +181,88 @@ function parton_exact_expectations(pstate::PartonOptimizationState, data::Expert
     return (one_body = one_body ./ norm, two_body = two_body ./ norm, energy = energy / norm,
             n_configurations = n_configurations)
 end
+
+# =====================================================================
+# 測定ループ(DESIGN §13.4)
+# =====================================================================
+
+"""
+    parton_phys_main_cal!(pstate, data) -> Int
+
+保存済みサンプルを順に復元して錨を打ち直し、E_loc と全 Green の局所値を蓄積する
+(`parton_main_cal!` の逐次経路から O と SR を抜いたもの)。ノード上(|ip| < 1e−30)のサンプルは
+飛ばし、その数を返す。w = 1(重点サンプリング)。energy の wc / etot / etot2 は 0 から蓄積し直す。
+`pstate.state.phys_quantities` は呼び出し側で `initialize_phys_quantities!` 済み・0 に戻し済みの前提。
+"""
+function parton_phys_main_cal!(pstate::PartonOptimizationState, data::ExpertModeData)
+    cfg = pstate.config
+    mp = data.modpara
+    qp_weight = parton_qp_weight(data)
+    phys = pstate.state.phys_quantities
+    phys === nothing && error("parton_phys_main_cal!: call initialize_phys_quantities! first.")
+    one_sites, two_sites = _parton_green_site_lists(data)
+
+    energy = pstate.state.energy
+    energy.wc = 0
+    energy.etot = 0
+    energy.etot2 = 0
+    energy.sztot = 0
+    energy.sztot2 = 0
+
+    n_skipped = 0
+    for s = 1:mp.nvmc_sample
+        parton_restore_sample!(cfg, s)
+        parton_recompute_amplitude_all!(pstate.amp, pstate.mfham, cfg, data, pstate.workspace)
+        ip = parton_calculate_ip(pstate.amp, qp_weight)
+        if abs(ip) < 1e-30
+            n_skipped += 1            # ノード上のサンプル。寄与できないので飛ばす
+            continue
+        end
+        w = 1.0
+        e = parton_local_energy(pstate, data, ip)
+        energy.wc += w
+        energy.etot += w * e
+        energy.etot2 += w * conj(e) * e
+        for (n, (ri, rj)) in enumerate(one_sites)
+            accumulate_phys_cis_ajs!(phys, n, w,
+                                     parton_local_green1(pstate, data, qp_weight, ri, rj))
+        end
+        for (n, (ri, rj, rk, rl)) in enumerate(two_sites)
+            accumulate_phys_cis_ajs_ckt_alt_dc!(
+                phys, n, w, parton_local_green2(pstate, data, qp_weight, ri, rj, rk, rl))
+        end
+    end
+    return n_skipped
+end
+
+"""
+    parton_vmc_phys_cal!(pstate, data, ctx; rng, output_dir) -> Int
+
+物理量測定の本体(DESIGN §13.4)。`ismp = 0 … NDataQtySmp−1` ごとに: アキュムレータを 0 に戻す →
+サンプリング → 測定ループ → `weight_average_we!` → `weight_average_green_func!`(上流。rank 0 へ
+集めて全体の Wc で割る)→ カウンタの集計 → 出力(上流の `output_data_phys!`。番号は
+ismp + NDataIdxStart)。振幅の源(α の軌道・Φ・Pf の p)は呼び出し側で固定値に組み済みの前提。
+"""
+function parton_vmc_phys_cal!(pstate::PartonOptimizationState, data::ExpertModeData,
+                              ctx::ParallelContext; rng, output_dir::String)
+    mp = data.modpara
+    out_rank = is_output_rank(ctx)
+    state = pstate.state
+    initialize_phys_quantities!(state, data)
+    mkpath(output_dir)
+    for ismp = 0:(mp.n_data_qty_smp - 1)
+        out_rank && println("Start: Calculate parton physical quantities. Sampling: " *
+                            "$ismp / $(mp.n_data_qty_smp)")
+        reset_phys_quantities!(state)
+        parton_make_sample!(pstate, data, rng)
+        n_skipped = parton_phys_main_cal!(pstate, data)
+        n_skipped > 0 && @warn "Skipped samples sitting on a node of the wave function" n_skipped ismp
+        weight_average_we!(ctx, state)
+        weight_average_green_func!(ctx, state)
+        reduce_counter!(ctx, pstate.config.counter)
+        out_rank && output_data_phys!(data, state, ismp; output_dir = output_dir)
+        out_rank && println("End  : Calculate parton physical quantities. Sampling: " *
+                            "$ismp / $(mp.n_data_qty_smp)")
+    end
+    return 0
+end

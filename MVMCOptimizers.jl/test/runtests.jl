@@ -101,6 +101,7 @@ end
     # 物理量測定(NVMCCalMode = 1、DESIGN_parton.md §13)
     include("parton_phys_test_helpers.jl")
     include("test_parton_phys_local.jl")
+    include("test_parton_phys_loop.jl")
 end
 
 @testset "Unit Tests" begin
