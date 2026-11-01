@@ -253,6 +253,8 @@ JULIA_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 $MPX -n 16 julia --project=. run_case
 (`playground_nozomi/parton_pf/T4/run_case_mpi.jl`)。BLAS を 1 に固定しないと 16 ランク × 16 スレッドがコアを奪い合う。
 QP ごとのスレッド並列は上流の更新を待つ(DESIGN §10)。
 
+> 物理量の測定(NVMCCalMode = 1、⟨b†_i b_j⟩・⟨n_i n_j⟩)は `docs/parton_run.md` の「物理量測定」節。
+
 ## 8. 出力
 
 | ファイル | 内容 |
@@ -280,4 +282,4 @@ QP ごとのスレッド並列は上流の更新を待つ(DESIGN §10)。
 - **Pf は自前の Parlett–Reid と LU**。PfaPack の `pfaffian_ltl!` は複素 n ≥ 4 で値を誤り、`julia_zsktf2!` は正則行列でも
   info = 2 を返す(upstream 報告候補、DESIGN §12)
 - 受理のたびに G = F⁻¹ を反対称へ射影している(しないと丸めの対称成分が等比的に増えて 40 回で NaN)
-- 物理量の測定(`NVMCCalMode = 1`)は未対応
+- 物理量の測定(`NVMCCalMode = 1`)は `docs/parton_run.md` の「物理量測定」節(2026-11-01 対応)

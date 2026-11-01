@@ -240,29 +240,9 @@ function phys_read_cisajscktalt(path)
     return sites, vals
 end
 
-"greenone(全 (i, j))と greentwo(全 (i, i, j, j))を上流の書式で dir に書く。"
-function phys_write_green_defs(dir, n_site::Int)
-    open(joinpath(dir, "greenone.def"), "w") do io
-        println(io, "===============================")
-        println(io, "NCisAjs $(n_site^2)")
-        println(io, "===============================")
-        println(io, "======== Green functions ======")
-        println(io, "===============================")
-        for i = 0:(n_site - 1), j = 0:(n_site - 1)
-            println(io, "$i 0 $j 0")
-        end
-    end
-    open(joinpath(dir, "greentwo.def"), "w") do io
-        println(io, "===============================")
-        println(io, "NCisAjsCktAltDC $(n_site^2)")
-        println(io, "===============================")
-        println(io, "======== Green functions ======")
-        println(io, "===============================")
-        for i = 0:(n_site - 1), j = 0:(n_site - 1)
-            println(io, "$i 0 $i 0 $j 0 $j 0")
-        end
-    end
-end
+# greenone / greentwo の書き出しは運用の道具と同じものを使う(DESIGN §13.2)
+include(joinpath(@__DIR__, "..", "..", "tools", "parton_gen_green_def.jl"))
+phys_write_green_defs(dir, n_site::Int) = parton_write_green_defs(dir, n_site)
 
 """
     phys_convert_to_measurement!(dir, in_files; n_site, n_data_qty_smp = 2, nvmc_sample = 100)

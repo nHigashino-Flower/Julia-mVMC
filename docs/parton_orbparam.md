@@ -19,6 +19,8 @@ def で掛けられる。
 
 開殻の状態(例: CFL の f₃ のフェルミ海)や、α の平均場では表せない軌道を扱いたいときに使う。
 
+> 物理量の測定(NVMCCalMode = 1、⟨b†_i b_j⟩・⟨n_i n_j⟩)は `docs/parton_run.md` の「物理量測定」節。
+
 ## 2. 最小の入力
 
 ### modpara.def

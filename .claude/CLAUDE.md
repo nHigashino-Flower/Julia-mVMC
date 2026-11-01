@@ -7,6 +7,22 @@
 
 ## 現在の状況(2026-11-01 更新)
 
+### ★新規: 物理量測定(NVMCCalMode = 1)を実装(2026-11-01)
+
+**α・Φ・Pf の 3 モード共通**。仕様 = `DESIGN_parton.md` §13(v3.16)、計画 = `docs/superpowers/plans/2026-11-01-parton-physcal.md`、
+使い方 = `docs/parton_run.md` の「物理量測定」節。
+
+- 入口は最適化と同じ `parton_run_para_opt_from_namelist`。modpara の `NVMCCalMode 1` で SR ループの代わりに測定ループへ進む
+- 測れるもの: 1 体 ⟨b†_i b_j⟩ と、**1 粒子の移動で済む 2 体**(⟨n_i n_j⟩・n×ホップ・k = j の縮約)。
+  **別々の 2 粒子を動かす項(ペア相関など)は門番が止める**(ユーザー判断で範囲外)
+- 入力は上流と同じ greenone / greentwo(スピン列 0)。生成は `julia tools/parton_gen_green_def.jl <Nsite> <dir>`
+- **固定パラメータは In で必須**(α: InPmfPara と **InPmfOcc**、Φ: InPmfOrb、Pf: InPartonPairOrbital、Jastrow があれば InJastrow)。
+  α で InPmfOcc を必須にしたのは、MOM の枝の解を aufbau で組み直して別の状態を黙って測る事故を防ぐため
+- 出力は上流互換(`zvo_cisajs_%03d.dat` / `zvo_cisajscktalt_%03d.dat`、番号 = ビン + NDataIdxStart)
+- **検証**: 全配置列挙が Fock 空間の密行列と 1e−12 で一致(α F=2/F=3・Φ・Pf F=2/F=3。**F 奇数のフェルミオン符号も正しい**)。
+  配置ごとの恒等式 E_loc = Σ t·G1 + Σ V·G2。小さい系の厳密値は `MVMCOptimizers.parton_exact_expectations`
+- 測定ループは逐次(スレッド並列なし)。並列は MPI
+
 ### ★新規: Pfaffian パートンモード(PartonMode = 2)を実装・運用開始(2026-11-01)
 
 **`parton-mode` へ合流済み**(2026-11-01、`686bffe`。ブランチ `parton-pf` で開発し、制限付き Φ `292d4db` を取り込んで
@@ -702,6 +718,7 @@ git push origin main
 | 調査レポート | `REPORT_nu12_stuck.md` | ν=1/2 局所解問題の調査記録(§15 が機構の確定、§16/§17 が対処) |
 | 実行手順 | `docs/parton_run.md` | |
 | Φ 直接変分モードのマニュアル | `docs/parton_orbparam.md` | 入力・制限(PartonOrbIdx)・Bloch 形・変換道具・出力・よくある error |
+| 物理量測定(NVMCCalMode = 1) | `docs/parton_run.md`「物理量測定」節 | 仕様は `DESIGN_parton.md` §13 |
 | **Pf パートン(PartonMode = 2)のマニュアル** | `docs/parton_pair.md` | 設計は `DESIGN_parton_pf.md`(本体 DESIGN の別冊)。2026-11-01 に parton-mode へ合流 |
 | テスト | `MVMCOptimizers.jl/test/` `MVMCExpertModeParsers.jl/test/` `test/` | |
 | 手元の計算 | `playground_nozomi/` | **git 管理外**(`.gitignore`)。入力・出力・診断コードが混在 |
@@ -780,7 +797,7 @@ julia --project=/home/nozomihigashino/Julia-mVMC/tools ../tools/plot_parton_conv
       実パラメータ 3996 > サンプル 2000 なので、短い試走で安定性(xmax_pre、E の跳び)を見てから
 - [ ] seed を変えて KM 4×4 の処方の再現性を確認(判定基準の 4)
 - [ ] (任意)乱数のパートン平均場からの初期化(`T4/random_mf_init.jl`、準備済み・未使用)
-- [ ] 高速化(W = 𝔽G、modpara キーで選択)は必要になったら。物理量測定(NVMCCalMode = 1)は未対応
+- [ ] 高速化(W = 𝔽G、modpara キーで選択)は必要になったら。物理量測定(NVMCCalMode = 1)は 2026-11-01 に対応済み
 
 ### Φ 直接変分モード(2026-10-31、★次セッションはここから)
 
@@ -884,7 +901,7 @@ julia --project=. playground_nozomi/cb_nu12_boson/scripts/c4_band_asym.jl
       (4×4 で使った `det_sector` 相当)。n=2 なら −1 に近いはず
 - [ ] s1003 の完走後、s1002 と `band_c4` を比べて seed 頑健性を見る
 
-### ★次の大きな選択肢: パートンモードの物理量計算(NVMCCalMode = 1)実装
+### パートンモードの物理量計算(NVMCCalMode = 1)— **2026-11-01 実装済み**(上の「★新規: 物理量測定」節)。以下は実装前の動機の記録
 
 **動機(2026-08-29 ユーザー)**: 話を完結させるには、対になる 2 つを実測で並べたい。
 
