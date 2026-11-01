@@ -1,5 +1,7 @@
 # パートンモードの実行手順(並列・ジョブスクリプト)
 
+> Φ 直接変分モード(`PartonOrbParam = 1`、制限 `PartonOrbIdx`・Bloch 形)の入力と使い方は `docs/parton_orbparam.md`。
+
 <!-- --- parton-mode (fork addition) --- -->
 
 設計の正は `DESIGN_parton.md`(§3.3.1 出力一覧 / §3.3.2 CalcTimer)。

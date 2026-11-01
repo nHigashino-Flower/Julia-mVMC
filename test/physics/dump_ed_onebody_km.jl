@@ -32,7 +32,7 @@ onebody(lat, model) = [ExactDiagonalization.tij(model, lat, i, j)
                        for i = 0:n_site(lat)-1, j = 0:n_site(lat)-1]
 
 function dump_case(outdir, tag, Lx, Ly, φ, F, N, stat, full)
-    lat = KapitMuellerLattice(Lx, Ly)
+    lat = KapitMuellerLattice(Lx, Ly, MagneticField(φ))   # Nsite の参照用 (各ブロックは自分の field で格子を作り直す)
     open(joinpath(outdir, "ed_onebody_$(tag).dat"), "w") do io
         println(io, "# 外部 ED 実装(ExactDiagonalization/coupling.jl の tij)から生成。手で編集しないこと。")
         println(io, "# generator: dump_ed_onebody_km.jl  julia $(VERSION)")
@@ -41,11 +41,13 @@ function dump_case(outdir, tag, Lx, Ly, φ, F, N, stat, full)
         println(io, "gauge landau")
         println(io, "bonds displacement_sum")
         for hm in HOPMAXES
-            for (kind, ff) in (("phys", float(φ)), ("mf", float(φ) / F))
-                m = KapitMuellerModel(ff; hopmax = hm)
-                H = onebody(lat, m)
+            for (kind, ff) in (("phys", φ), ("mf", φ // F))
+                field = MagneticField(ff)                 # フラックス p//q + LandauGaugeX
+                lat_ff = KapitMuellerLattice(Lx, Ly, field)
+                m = KapitMuellerModel(field; hopmax = hm)
+                H = onebody(lat_ff, m)
                 ev = eigvals(Hermitian((H + H') / 2))
-                @printf(io, "BLOCK %s hopmax %.17g flux %.17g\n", kind, hm, ff)
+                @printf(io, "BLOCK %s hopmax %.17g flux %.17g\n", kind, hm, float(ff))
                 @printf(io, "HERMRES %.3e\n", maximum(abs.(H - H')))
                 if full
                     nz = count(x -> abs(x) > 1e-14, H)

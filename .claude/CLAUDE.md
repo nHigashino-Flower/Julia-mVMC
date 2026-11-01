@@ -5,7 +5,38 @@
 ・恒常的に認知が必用なことは逐次 CLAUDE.mdに書き足す。
 ・セッションをリセットした時に、続きから再開しやすいように、TODOリスト等を活用する。
 
-## 現在の状況(2026-10-31 更新)
+## 現在の状況(2026-11-01 更新)
+
+### ★新規: Pfaffian パートンモード(PartonMode = 2)を実装・運用開始(2026-11-01)
+
+**`parton-mode` へ合流済み**(2026-11-01、`686bffe`。ブランチ `parton-pf` で開発し、制限付き Φ `292d4db` を取り込んで
+fast-forward)。本体ディレクトリでそのまま使える。**ユーザーは次回からこのモードを積極的に使う**(2026-11-01)。
+開発用の worktree `/home/nozomihigashino/Julia-mVMC-pf` は 2026-11-01 に片付けた(ブランチ `parton-pf` は履歴として残す)。
+
+- **入口 = `docs/parton_pair.md`**(運用マニュアル)。設計 = `DESIGN_parton_pf.md`(唯一の正、
+  決定ログ §11、実装と試走 §13、結論 §13.6)。ベンチマークの run と道具 = `playground_nozomi/parton_pf/T4/`
+- 波動関数は Ψ = Σ_qp w_qp Pf F_qp(x)、F_IJ = f[(r_I,a_I),(r_J,a_J)]、M = K·N。**f = ΞJΞᵀ なら Pf F = ±Pf J ∏ det Φ^a**
+  なので PartonMode = 1 を厳密に含む。f は def の idx ごとに SR で直接変分(上流の Pfaffian と同じ ×2 規約、未記載の対は構造的 0)
+- 入力: `PartonMode 2`・`NExUpdatePath 6`・`NFlavor ≥ 2`、namelist に `PartonPairOrbital`(必須、上流 orbitalidxgen と同じ列)と
+  `InPartonPairOrbital`(任意。無ければ RndSeed の乱数)。def は `tools/parton_gen_pair_def.jl`(同フレーバー対を外し、
+  拡大セルの並進で共有)
+- **★SR の設定(実測)**: 乱数スタートの KM 4×4 ν=1/2 で、**StaDel 0.1 は遅すぎる**。必要な虚時間が StaDel で決まり
+  (0.1 / 0.01 / 0.001 で τ ≈ 60 / 21 / 9.5)、dt はそれを step に換算するだけ。**dt 0.03・StaDel 0.01 なら 156 step で
+  −3.99、2000 step で −4.0000(ED −4)**。1 段目は dt 0.01〜0.03・StaDel 0.01 から。dt を絞る追い込みは頭打ちになってから。
+  ただし 1 seed・小さい系だけの結果で、実パラメータ > サンプル数の系(KM 9×4)で小さい StaDel が安定かは未確認
+- **★収束の判定**: `julia --project=tools tools/plot_parton_conv.jl <out_dir>`(Pf の出力を自動で見分ける。Mode 1 は従来どおり)。
+  8 枚の図のうち **dE/dτ vs step(符号つき、±2·SE の帯)** で帯が 0 をまたいだら頭打ち、**σ_N/σ_{N+1} の変化 < 5%** で構造が
+  落ち着いた。**表現力の限界と言ってよいのは、(1) 虚時間で停留 (2) 特異値比が落ち着いた (3) dt・StaDel を変えて揺さぶっても
+  下がらない (4) seed によらない (5) Mode 1 の最適解など変分空間内の既知の状態より高くない、をすべて満たすときだけ**。
+  頭打ちに見えた区間のあとで急に下がる実例あり(KM 4×4、特異値比が 1 で入れ替わった直後に 0.02 下がった)。
+  同じ軌跡での分散外挿は使えない(上にも下にも外れる)
+- **★運動量セクターの罠**: def で並進 T を(±1 の符号で)共有すると Pf の T の固有値は χ^{M/2} に限られる。det^K の運動量
+  (Ly = 4 でバンドを埋めると π)と合わないと Mode 1 の解すら表せない(KM 9×4・CB 6×3 の K = 3)。**合わない並進は
+  f の共有から外して QP に入れ、重みでセクターを選ぶ**(`T4/make_sector_inputs.jl`、検査は `T4/checks/check_sector.jl`)
+- diagCut が 37 / 73 の塊で出入りするのは、最近接斥力で隣接配置がサンプルされないため(実装ミスではない。マニュアル §9)
+- 高速化(W = 𝔽G の前計算)はペンディング。**実装するなら NSRCG のように modpara キーで選べる形にし、今の実装を既定で残す**。
+  QP のスレッド並列は上流の更新待ち。並列は MPI(サンプル並列、BLAS = 1、MPI.jl 付属の mpiexec)
+- 1 step(MPI 16・合計 2000 サンプル): KM 4×4 0.02 s / CB 4×4 0.08 s / KM 9×4(セル 9×1)0.52 s /(セル 9×2)2.08 s
 
 ### ★新規: Φ 直接変分モード(上流型・第 1 段)を実装(2026-10-31)
 
@@ -670,6 +701,8 @@ git push origin main
 | 設計文書 | `DESIGN_parton.md` | **唯一の正**。仕様の判断は必ずここを先に読む |
 | 調査レポート | `REPORT_nu12_stuck.md` | ν=1/2 局所解問題の調査記録(§15 が機構の確定、§16/§17 が対処) |
 | 実行手順 | `docs/parton_run.md` | |
+| Φ 直接変分モードのマニュアル | `docs/parton_orbparam.md` | 入力・制限(PartonOrbIdx)・Bloch 形・変換道具・出力・よくある error |
+| **Pf パートン(PartonMode = 2)のマニュアル** | `docs/parton_pair.md` | 設計は `DESIGN_parton_pf.md`(本体 DESIGN の別冊)。2026-11-01 に parton-mode へ合流 |
 | テスト | `MVMCOptimizers.jl/test/` `MVMCExpertModeParsers.jl/test/` `test/` | |
 | 手元の計算 | `playground_nozomi/` | **git 管理外**(`.gitignore`)。入力・出力・診断コードが混在 |
 | アンザッツ比較の出力 | `playground_nozomi/cb_nu12_boson/runs_ansatz/` | 第 1 波 170 run。`_roster.dat` が一次データ |
@@ -720,6 +753,34 @@ git submodule update --init --recursive
 ```
 
 ## TODO リスト
+
+### Pf パートンモード(PartonMode = 2、2026-11-01)
+
+**使い方の要点**(詳細は `docs/parton_pair.md`):
+
+```bash
+cd /home/nozomihigashino/Julia-mVMC/MVMCOptimizers.jl
+# def の生成(KM の例: <Lx> <Ly> <φ> <K> <ex> <ey>)
+julia --project=. ../tools/parton_gen_pair_def.jl out.def km 4 4 1/2 2 4 1
+# 実行(MPI 16。NVMCSample はランクあたり)
+MPX=$(julia --project=. -e 'using MPI; MPI.mpiexec(p -> print(p))')
+JULIA_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 $MPX -n 16 julia --project=. \
+  /home/nozomihigashino/Julia-mVMC/playground_nozomi/parton_pf/T4/run_case_mpi.jl <run>/namelist.def <run>/out_mpi16
+# 収束図と判定(<out_dir>/parton_conv.pdf)
+julia --project=/home/nozomihigashino/Julia-mVMC/tools ../tools/plot_parton_conv.jl <run>/out_mpi16
+```
+
+- [x] P0〜P2(設計・実装・T0〜T4)。コミットは parton-pf の `fa2132a` 〜 `66ffa1b`
+- [x] 乱数スタートで厳密解に届く処方(StaDel を下げる)と、収束図・判定基準(DESIGN §13.6)
+- [x] **parton-mode へ合流**(2026-11-01、`8db9f63` 合流 + `686bffe` 門番 2 件。合流後の全テスト: Parton 4599 / Unit 793 /
+      Slater 25 / パーサ 772 / P 層 1292 が全緑)
+- [ ] DESIGN_parton.md への統合(今は別冊 `DESIGN_parton_pf.md`)
+- [x] worktree `/home/nozomihigashino/Julia-mVMC-pf` の片付け(2026-11-01。playground の T4 のスクリプトの参照先は本体へ書き換え済み)
+- [ ] KM 9×4(セル 9×2・QP 6 本)を dt 0.01・StaDel 0.01 で乱数から回し、Mode 1(−3.93989)に届くか。
+      実パラメータ 3996 > サンプル 2000 なので、短い試走で安定性(xmax_pre、E の跳び)を見てから
+- [ ] seed を変えて KM 4×4 の処方の再現性を確認(判定基準の 4)
+- [ ] (任意)乱数のパートン平均場からの初期化(`T4/random_mf_init.jl`、準備済み・未使用)
+- [ ] 高速化(W = 𝔽G、modpara キーで選択)は必要になったら。物理量測定(NVMCCalMode = 1)は未対応
 
 ### Φ 直接変分モード(2026-10-31、★次セッションはここから)
 
