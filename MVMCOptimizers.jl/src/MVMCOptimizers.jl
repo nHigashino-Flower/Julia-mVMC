@@ -99,6 +99,7 @@ include("parton_vmc_para_opt.jl")
 include("parton_vmc_para_opt_orbparam.jl")   # Φ 直接変分の SR ループとドライバ
 include("parton_pair_output.jl")             # Pfaffian モードの出力(診断・runinfo・SVD)
 include("parton_vmc_para_opt_pair.jl")       # Pfaffian モードの状態・SR ループ・ドライバ
+include("parton_phys_cal.jl")                 # 物理量測定(NVMCCalMode = 1、DESIGN §13)
 include("parton_run_para_opt_from_namelist.jl")
 
 # Export main functions

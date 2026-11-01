@@ -3,6 +3,7 @@
 - ステータス: **M2 完了**(§8 の 0〜18 と P 層 P0〜P2 全緑・既存回帰全緑。
   SR の gap 崩壊漂流は **v3.12 で根治**(占有追跡 `PartonOccMode`。既定は従来と
   ビット一致の opt-in)。機構は REPORT §15、実装の記録は §11)
+- 改訂: v3.16 (2026-11-01) — 物理量測定 NVMCCalMode = 1 の仕様(§13、実装前)
 - 改訂: v3.15 草案 (2026-10-23) — Φ 直接変分モード(案 A・案 B)の構造設計。**実装前**(§12)
 - 改訂: v3.13 (2026-08-14) — 占有の読み戻し InPmfOcc(§2.3.1 / §3.3.1 / §8-18)
 - 改訂: v3.12 (2026-08-14) — SR 漂流の根治: 占有追跡 PartonOccMode(§1.1 / §2.1 / §2.5 / §3.3.1 / §8-17)
@@ -1499,3 +1500,85 @@ end
 | α 解からの変換 | 変換道具に Bloch def を渡すと、α の射影子 P = ΦΦ† を k ごとのブロック P(k)(N_σ × N_σ)に分けて対角化し、固有値 ≈ 1 の固有ベクトルを u_{k,b} とする(最小二乗の近似を使わない)。本数が占有指定と合わなければ error |
 | パラメータ数 | Bloch でフレーバーあたり Ns·Ne → Ns·Ne / N_cell。SR の ⟨O O†⟩ は n_para² で効く |
 | 第 1 版の対象外 | 磁気並進(ゲージ変換を伴う並進)/ パートン境界条件のひねり θ_f / \|c\| ≠ 1 の係数 |
+
+## 13. 物理量測定(NVMCCalMode = 1)(v3.16、2026-11-01 決定・実装前)
+
+### 13.0 目的と範囲
+
+射影後の波動関数 Ψ について、**ゲージ不変な物理量**を測る。α・Φ(Slater)と Pf(PartonMode = 2)の 3 モードに共通。
+動機は、量子数射影が対称化するもの(射影後の状態の物理量)としないもの(H_MF・バンド = 実測済み)を並べること、
+および CFL の判定(S(q)・n(k))。ゲージ依存量 ⟨f†f⟩ は対象外(H_MF から直接得られる)。
+
+- 物理粒子 b_i = Π_f f^(f)_i は硬芯。**F が偶数ならボソン、奇数ならフェルミオン**。スピンは無い
+- パラメータは固定(SR しない)。入口は既存の `parton_run_para_opt_from_namelist`(modpara の `NVMCCalMode 1` で分岐)
+- 新しい modpara キーは無い(`NVMCCalMode`・`NDataQtySmp`・`NDataIdxStart`・`NVMCSample` は上流の既存キー)
+
+### 13.1 局所値
+
+⟨O⟩ = Σ_x |Ψ(x)|² O_loc(x) / Σ_x |Ψ(x)|²、O_loc(x) = Σ_x′ ⟨x|O|x′⟩ Ψ(x′)/Ψ(x)。⟨x|O = (O†|x⟩)† なので、
+**O† を |x⟩ に右から順に作用させた先の配置 x′ について Ψ(x′)/Ψ(x)** を取ればよい。比は契約 2 の振幅比 ×
+exp(`parton_log_proj_ratio`)(E_loc のホップ項と同じ。統計の符号は粒子ラベルつきの det / Pf が運ぶ)。
+x[i→j] は「サイト i の粒子を j へ移した配置」。
+
+**1 体** ⟨b†_i b_j⟩(O† = b†_j b_i):
+
+| 条件 | G1_loc(i, j; x) |
+|---|---|
+| i = j | n_i(x) |
+| i ≠ j、n_i(x) = 1、n_j(x) = 0 | Ψ(x[i→j]) / Ψ(x) |
+| それ以外 | 0 |
+
+**2 体** ⟨b†_i b_j b†_k b_l⟩(O† = b†_l b_k b†_j b_i。段 A = b†_j b_i、段 B = b†_l b_k の順に作用)。
+**1 粒子の移動で済む 4 類だけ**を扱う(2026-11-01 ユーザー決定):
+
+| 類(名前) | 添字の条件 | G2_loc(x) |
+|---|---|---|
+| `density` | i = j かつ k = l | n_i(x) · n_k(x) |
+| `hop_then_density` | i ≠ j かつ k = l | [n_i(x)=1, n_j(x)=0] · n_k(x[i→j]) · Ψ(x[i→j])/Ψ(x) |
+| `density_then_hop` | i = j かつ k ≠ l | n_i(x) · G1_loc(k, l; x) |
+| `same_particle` | i ≠ j、k ≠ l、k = j | l = i なら [n_i(x)=1, n_j(x)=0]。l ≠ i なら [n_i(x)=1, n_j(x)=0, n_l(x)=0] · Ψ(x[i→l])/Ψ(x) |
+| `two_particle`(**未対応**) | i ≠ j、k ≠ l、k ≠ j | 別々の 2 粒子を動かす(l = i の連鎖も含む)。門番で止める |
+
+n_k(x[i→j]) は k = j なら 1、k = i なら 0、それ以外は n_k(x)。`same_particle` は硬芯の
+b†_i b_j b†_j b_l = b†_i (1 − n_j) b_l と一致する(i ≠ l)。
+
+### 13.2 入力
+
+- `OneBodyG`(greenone.def)と `TwoBodyG`(greentwo.def)は**上流と同じ書式**。スピン列はすべて 0
+- `TwoBodyGEx` は対象外(上流でも Lanczos 用)
+- 固定パラメータは In*.def から読む。**測定では乱数で埋めた値を使わない**:
+
+| モード | 必須の入力 |
+|---|---|
+| α | 全 idx の値(`InPmfPara`、または pmfpara.def の値で全 idx が埋まっている)。`InPmfOcc` が無いときは aufbau 占有が自己完結(`parton_check_occupation_selfcontained`)であること |
+| Φ | `InPmfOrb` |
+| Pf | `InPartonPairOrbital` |
+| 共通 | 項のある射影族(Jastrow など)の In ファイル(`InJastrow` など) |
+
+### 13.3 門番
+
+- `NVMCCalMode` は 0 か 1(2 以上は error)。1 のとき `NDataQtySmp ≥ 1`
+- greenone / greentwo のサイトは [0, Nsite)、スピンはすべて 0。`TwoBodyGEx` があれば error
+- greentwo に `two_particle` 類があれば error(行番号と添字を示す)
+- 13.2 の必須入力が欠けていれば error(何が欠けているかと、どの出力を In にすればよいかを示す)
+- **NVMCCalMode = 0 で OneBodyG / TwoBodyG があれば warn**(最適化では読まない。従来は黙って無視していた)
+
+### 13.4 実行と出力
+
+`ismp = 0 … NDataQtySmp−1` ごとに: アキュムレータを 0 に戻す → `parton_make_sample!` → 測定ループ
+(サンプルごとに錨を打ち直し、ノード上(|ip| < 1e−30)は飛ばす、w = 1)→ `weight_average_we!(ctx, …)` →
+`weight_average_green_func!(ctx, …)`(上流。rank 0 へ集めて全体の Wc で割る)→ 出力。
+測定ループは逐次(スレッド並列なし)。並列は MPI のサンプル並列(NSplitSize = 1)。
+
+出力は上流互換: `zvo_out.dat`(ismp ごとに 1 行)、`zvo_cisajs_%03d.dat`、`zvo_cisajscktalt_%03d.dat`
+(番号 = ismp + NDataIdxStart、スピン列は 0)。
+
+### 13.5 検証
+
+1. **全配置列挙 vs 密行列(決定論的、1e−12)**: |Ψ|² で重みづけた局所値の平均を、Fock 空間で b†・b を
+   素直に作用させた密行列の期待値と比べる。α(F = 2、QP 2 本・複素重み・Jastrow あり)、α(F = 3 = フェルミオン)、
+   Φ(F = 2)、Pf(F = 2 と F = 3)。4 類すべてを含める
+2. **配置ごとの恒等式(1e−12)**: E_loc(x) = Σ_physhop [t·G1_loc(j,i) + t*·G1_loc(i,j)] + Σ_coulomb V·G2_loc(i,i,j,j)
+3. **run の総和則**: Σ_i ⟨n_i⟩ = N、および zvo_out.dat の E = 上の式を Green の出力から組んだ値(1e−10)
+4. **NVMCCalMode = 0 はビット一致**(Green の def を足しても zvo_out.dat が変わらない)
+5. **実系**: KM ν=1/2 4×4(α と Pf)を MPI 16 で測り、同じ Ψ の全配置列挙の厳密値と統計誤差の範囲で一致

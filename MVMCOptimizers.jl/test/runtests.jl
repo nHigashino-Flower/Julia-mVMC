@@ -98,6 +98,9 @@ end
     include("test_parton_pair_gradient.jl")
     include("test_parton_pair_run.jl")
     include("test_parton_pair_tools.jl")
+    # 物理量測定(NVMCCalMode = 1、DESIGN_parton.md §13)
+    include("parton_phys_test_helpers.jl")
+    include("test_parton_phys_local.jl")
 end
 
 @testset "Unit Tests" begin
