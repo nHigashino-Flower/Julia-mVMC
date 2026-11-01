@@ -83,8 +83,10 @@ Rejected or required:
   numbers, so this must be pinned explicitly.
 - `NCond = -1`, `NLocSpin = 0`: the upstream relation
   `NElec = (NLocSpin + NCond) / 2` is meaningless once flavors replace spin.
-- `ComplexType = 1`, `NSRCG = 0`, `NLanczosMode = 0`, `NVMCCalMode = 0`:
-  the single variant implemented in M1.
+- `ComplexType = 1`, `NSRCG = 0`, `NLanczosMode = 0`: the single variant
+  implemented in M1.
+- `NVMCCalMode ∈ {0, 1}`: 0 = parameter optimization, 1 = physical measurement
+  (DESIGN_parton.md §13, which also needs `NDataQtySmp >= 1`).
 - `NExUpdatePath = 6`: the gauge constraint that every flavor's partons hop
   with the same coordinate (flavor lock).
 - `NSPGaussLeg = 1`, `NSPStot = 0`: spin projection assumes SU(2) and does not
@@ -201,11 +203,18 @@ function validate_parton_modpara(
     end
 
     # --- single implemented variant (M1) -----------------------------------
-    if modpara.vmc_calc_mode != 0
+    # --- parton-mode (fork addition) --- 物理量測定(DESIGN §13)を開放
+    if !(modpara.vmc_calc_mode in (0, 1))
         error(
-            "Parton mode implements parameter optimization only " *
-            "(NVMCCalMode = 0), got NVMCCalMode = $(modpara.vmc_calc_mode). " *
-            "Physical measurement for the parton ansatz is not ported yet.",
+            "Parton mode supports NVMCCalMode = 0 (parameter optimization) and " *
+            "NVMCCalMode = 1 (physical measurement, DESIGN_parton.md §13), got " *
+            "NVMCCalMode = $(modpara.vmc_calc_mode).",
+        )
+    end
+    if modpara.vmc_calc_mode == 1 && modpara.n_data_qty_smp < 1
+        error(
+            "NVMCCalMode = 1 needs NDataQtySmp >= 1 (the number of measurement " *
+            "batches), got NDataQtySmp = $(modpara.n_data_qty_smp).",
         )
     end
     if modpara.complex_flag != 1

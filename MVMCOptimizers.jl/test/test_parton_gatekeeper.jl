@@ -67,7 +67,7 @@ end
         "NElec=0" => d -> d.modpara.nelec = 0,
         "NCond≠-1" => d -> d.modpara.ncond = 4,
         "NLocSpin≠0" => d -> d.modpara.nlocspin = 2,
-        "NVMCCalMode=1" => d -> d.modpara.vmc_calc_mode = 1,
+        "NVMCCalMode=2" => d -> d.modpara.vmc_calc_mode = 2,
         "NSRCG≠0" => d -> d.modpara.nsrcg = 1,
         "NLanczosMode≠0" => d -> d.modpara.lanczos_mode = 1,
         "NSPGaussLeg≠1" => d -> d.modpara.nsp_gauss_leg = 2,

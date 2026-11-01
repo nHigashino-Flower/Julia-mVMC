@@ -266,3 +266,74 @@ function parton_vmc_phys_cal!(pstate::PartonOptimizationState, data::ExpertModeD
     end
     return 0
 end
+
+# =====================================================================
+# 門番(DESIGN §13.2 / §13.3)
+# =====================================================================
+
+"""
+    validate_parton_green_inputs(data) -> Nothing
+
+greenone / greentwo / greentwoex の門番(DESIGN §13.3)。
+
+- NVMCCalMode = 1: サイトは [0, Nsite)、スピンはすべて 0(パートンの物理粒子にスピンは無い)、
+  TwoBodyGEx は無いこと、greentwo に別々の 2 粒子を動かす項(`two_particle` 類)が無いこと。
+  違反は error で、greentwo なら何番目の項(1-based)と 0-based の 4 添字を示す
+- NVMCCalMode = 0: OneBodyG / TwoBodyG があれば warn(最適化では読まない)
+"""
+function validate_parton_green_inputs(data::ExpertModeData)
+    mp = data.modpara
+    if mp.vmc_calc_mode != 1
+        if !isempty(data.green_one_terms) || !isempty(data.green_two_terms) ||
+           !isempty(data.green_two_ex_terms)
+            @warn "OneBodyG / TwoBodyG are not read in parameter optimization (NVMCCalMode = 0); " *
+                  "set NVMCCalMode = 1 to measure them (DESIGN_parton.md §13)."
+        end
+        return nothing
+    end
+
+    isempty(data.green_two_ex_terms) || error(
+        "Parton physical measurement does not support TwoBodyGEx (factored two-body Green, " *
+        "used by upstream Lanczos); remove it from namelist.def and use TwoBodyG instead.")
+    n_site = mp.nsite
+    in_range(r) = 0 <= r < n_site
+    for (n, t) in enumerate(data.green_one_terms)
+        (in_range(t.site1) && in_range(t.site2)) || error(
+            "OneBodyG term $n: site out of range [0, $n_site): (i, j) = ($(t.site1), $(t.site2)).")
+        (t.spin1 === :up && t.spin2 === :up) || error(
+            "OneBodyG term $n: the parton particle has no spin, so every spin column must be 0; " *
+            "got spins ($(t.spin1), $(t.spin2)).")
+    end
+    for (n, t) in enumerate(data.green_two_terms)
+        sites = (t.site1, t.site2, t.site3, t.site4)
+        all(in_range, sites) || error(
+            "TwoBodyG term $n: site out of range [0, $n_site): (i, j, k, l) = $sites.")
+        all(==(:up), (t.spin1, t.spin2, t.spin3, t.spin4)) || error(
+            "TwoBodyG term $n: the parton particle has no spin, so every spin column must be 0; " *
+            "got spins $((t.spin1, t.spin2, t.spin3, t.spin4)).")
+        parton_green2_class(sites...) === :two_particle && error(
+            "TwoBodyG term $n: (i, j, k, l) = $sites is two_particle (it moves two distinct " *
+            "particles), which parton measurement does not support. Supported: i = j, k = l, " *
+            "or k = j (DESIGN_parton.md §13.1).")
+    end
+    return nothing
+end
+
+"""
+    parton_phys_require_fixed_inputs(data, namelist_path; orbital_given, orbital_hint) -> Nothing
+
+測定では乱数で埋めた値を使わない(DESIGN §13.2)。`orbital_given = false`(軌道のパラメータが
+In ファイルで与えられていない)なら `orbital_hint` を添えて error。項のある射影族(Jastrow)の
+In ファイルが namelist に無ければ error。
+"""
+function parton_phys_require_fixed_inputs(data::ExpertModeData, namelist_path::AbstractString;
+                                          orbital_given::Bool, orbital_hint::AbstractString)
+    orbital_given || error(
+        "NVMCCalMode = 1 measures fixed parameters, but the orbital parameters were not given " *
+        "by an input file (they would be random): $orbital_hint.")
+    if !isempty(data.jastrow_terms) && _parton_namelist_entry(namelist_path, "InJastrow") === nothing
+        error("NVMCCalMode = 1 measures fixed parameters, but namelist.def has Jastrow terms " *
+              "and no InJastrow line (the Jastrow factors would be zero). Add InJastrow.")
+    end
+    return nothing
+end
