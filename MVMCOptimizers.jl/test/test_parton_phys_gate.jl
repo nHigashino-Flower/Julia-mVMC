@@ -90,5 +90,15 @@ end
     @test err isa ErrorException && occursin("InJastrow", err.msg)
 
     write(nl, "ModPara modpara.def\nInJastrow InJastrow.def\n")
+    # 最終レビュー Important 1: 行があってもファイルが無い / 4 行ヘッダで idx 0 が落ちる → error
+    err = try req(data, nl; orbital_given = true, orbital_hint = ""); nothing catch e; e end
+    @test err isa ErrorException && occursin("not found", err.msg)
+    head4 = "===============================\nNJastrowIdx 2\n===============================\n" *
+            "===============================\n"
+    write(joinpath(dir, "InJastrow.def"), head4 * "0 0.1 0.0\n1 0.2 0.0\n")   # zqp_jastrow_opt.dat の形
+    err = try req(data, nl; orbital_given = true, orbital_hint = ""); nothing catch e; e end
+    @test err isa ErrorException && occursin("5-line header", err.msg)
+    write(joinpath(dir, "InJastrow.def"),
+          head4 * "===============================\n0 0.1 0.0\n1 0.2 0.0\n")    # 正しい 5 行ヘッダ
     @test req(data, nl; orbital_given = true, orbital_hint = "") === nothing
 end

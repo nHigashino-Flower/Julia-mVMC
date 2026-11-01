@@ -258,6 +258,12 @@ function parton_vmc_phys_cal!(pstate::PartonOptimizationState, data::ExpertModeD
         n_skipped = parton_phys_main_cal!(pstate, data)
         n_skipped > 0 && @warn "Skipped samples sitting on a node of the wave function" n_skipped ismp
         weight_average_we!(ctx, state)
+        # 全体の Wc(allreduce 済みなので全ランクで同じ値)が 0 なら平均できない。0 埋めの結果を
+        # 書かずに止める(L が大きいと |ip| < 1e-30 の閾値に全サンプルが掛かりうる)
+        abs(state.energy.wc) < 1e-15 && error(
+            "Parton measurement, bin $ismp: every sample on every rank sat on a node of the wave " *
+            "function (|ip| < 1e-30), so there is nothing to average. No output is written for " *
+            "this bin.")
         weight_average_green_func!(ctx, state)
         reduce_counter!(ctx, pstate.config.counter)
         out_rank && output_data_phys!(data, state, ismp; output_dir = output_dir)
@@ -331,9 +337,20 @@ function parton_phys_require_fixed_inputs(data::ExpertModeData, namelist_path::A
     orbital_given || error(
         "NVMCCalMode = 1 measures fixed parameters, but the orbital parameters were not given " *
         "by an input file (they would be random): $orbital_hint.")
-    if !isempty(data.jastrow_terms) && _parton_namelist_entry(namelist_path, "InJastrow") === nothing
-        error("NVMCCalMode = 1 measures fixed parameters, but namelist.def has Jastrow terms " *
-              "and no InJastrow line (the Jastrow factors would be zero). Add InJastrow.")
-    end
+    isempty(data.jastrow_terms) && return nothing
+    path = _parton_namelist_entry(namelist_path, "InJastrow")
+    path === nothing && error(
+        "NVMCCalMode = 1 measures fixed parameters, but namelist.def has Jastrow terms " *
+        "and no InJastrow line (the Jastrow factors would be zero). Add InJastrow.")
+    # 上流のパーサは、ファイルが無ければ warn して読み飛ばし、4 行ヘッダなら idx 0 を黙って落とす。
+    # どちらも最適化とは別の状態を黙って測ることになるので、ここで読み直して件数まで確かめる
+    isfile(path) || error("InJastrow file listed in namelist.def but not found: $path")
+    params = MVMCExpertModeParsers.parse_input_parameter_file(path)
+    n = length(data.jastrow_terms)
+    (length(params) == n && all(k -> 0 <= k < n, keys(params))) || error(
+        "InJastrow: $path holds $(length(params)) Jastrow parameters but jastrowidx.def declares " *
+        "$n (idx 0 … $(n - 1)). The optimizer's zqp_jastrow_opt.dat has a 4-line header, so read " *
+        "as an In file its idx 0 is dropped: add one separator line to give it the 5-line header " *
+        "the In format expects.")
     return nothing
 end

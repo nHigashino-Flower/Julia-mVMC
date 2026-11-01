@@ -91,9 +91,9 @@ InJastrow      InJastrow.def           # Jastrow の項があるとき(必須)
 | α | `InPmfPara`(pmfpara.def が全 idx の値を持つなら不要)と **`InPmfOcc`** | `zqp_pmfpara_opt.dat`・`zqp_pmfocc_opt.dat` |
 | Φ | `InPmfOrb` | `zqp_pmforb_opt.dat` |
 | Pf | `InPartonPairOrbital` | `zqp_parton_pair_opt.dat` |
-| 共通 | Jastrow の項があれば `InJastrow` | 段の引き継ぎと同じ方法で作る |
+| 共通 | Jastrow の項があれば `InJastrow` | `zqp_jastrow_opt.dat`。**ヘッダが 4 行しかないので、区切り行を 1 行足して 5 行にする**(そのまま渡すと idx 0 が落ちるので門番が止める) |
 
-欠けていれば門番が止める(測定では乱数で埋めた値を使わない)。α で `InPmfOcc` を必須にしているのは、
+欠けていれば門番が止める(測定では乱数で埋めた値を使わない)。InJastrow はファイルの有無と件数まで確かめる。全サンプルがノード上(|ip| < 1e−30)で平均できないビンが出たら、0 埋めを書かずに error で止まる。α で `InPmfOcc` を必須にしているのは、
 MOM の枝で終わった解を aufbau で組み直すと**別の状態を黙って測る**ことになるため。
 
 ### 測れる 2 体

@@ -109,3 +109,26 @@ end
     end
     @test count(!isempty ∘ strip, eachline(joinpath(dir, "zvo_out.dat"))) == 2
 end
+
+@testset "最終レビュー: 全サンプルがノード上なら 0 埋めを書かずに error" begin
+    c = _phys_case("orbparam_F2")
+    data, pstate = c.data, c.pstate
+    mp = data.modpara
+    mp.nvmc_warmup = 10
+    mp.nvmc_sample = 20
+    mp.n_data_qty_smp = 1
+    mp.n_data_idx_start = 1
+    for Φ in pstate.mfham.orbitals
+        Φ .*= 1e-10                 # |ip| ~ 1e-60: サンプリングは通るが測定の閾値 1e-30 で全部飛ぶ
+    end
+    dir = mktempdir()
+    err = try
+        MVMCOptimizers.parton_vmc_phys_cal!(pstate, data, MVMCOptimizers.serial_context();
+                                            rng = MersenneTwister(3), output_dir = dir)
+        nothing
+    catch e
+        e
+    end
+    @test err isa ErrorException && occursin("node", err.msg)
+    @test !isfile(joinpath(dir, "zvo_cisajs_001.dat"))
+end
