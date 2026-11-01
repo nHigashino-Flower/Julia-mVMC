@@ -83,19 +83,6 @@ end
                    atol = 1e-12)
 end
 
-"上流書式の zvo_cisajs を読む(ri si rj sj Re Im)。"
-function _read_cisajs(path)
-    vals = ComplexF64[]
-    sites = NTuple{2,Int}[]
-    for line in eachline(path)
-        tok = split(line)
-        length(tok) == 6 || continue
-        push!(sites, (parse(Int, tok[1]), parse(Int, tok[3])))
-        push!(vals, complex(parse(Float64, tok[5]), parse(Float64, tok[6])))
-    end
-    return sites, vals
-end
-
 @testset "Review Focus 3 と出力: NDataQtySmp = 2" begin
     c = _phys_case("alpha_F2")
     data, pstate = c.data, c.pstate
@@ -111,7 +98,7 @@ end
     for k in (1, 2)
         path = joinpath(dir, "zvo_cisajs_$(lpad(k, 3, '0')).dat")
         @test isfile(path)
-        sites, vals = _read_cisajs(path)
+        sites, vals = phys_read_cisajs(path)
         @test length(vals) == length(data.green_one_terms)
         # ismp ごとに 0 に戻っていれば各ファイルの和は N(持ち越すと 2N になる)
         @test isapprox(sum(vals[n] for (n, (i, j)) in enumerate(sites) if i == j), mp.nelec;

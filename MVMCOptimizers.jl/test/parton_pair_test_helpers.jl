@@ -14,6 +14,7 @@ using LinearAlgebra
 using Random
 using MVMCExpertModeParsers
 using MVMCOptimizers
+using Printf
 
 "1-based の (サイト, フレーバー) → 合成添字(1-based)。"
 _pair_state(n_site::Int, i::Int, a::Int) = (a - 1) * n_site + i
@@ -161,4 +162,78 @@ function random_ring_qp!(rng, data, n_qp::Int)
     sgns = [q == 0 ? ones(Int, n_site) : rand(rng, [-1, 1], n_site) for q = 0:(n_qp - 1)]
     weights = [q == 0 ? ComplexF64(1) : randn(rng, ComplexF64) for q = 0:(n_qp - 1)]
     return set_shift_qp!(data, shifts, sgns, weights)
+end
+
+# --- 実行テストの最小入力(test_parton_pair_run.jl から移した。物理量測定のテストと共有)---
+
+"全対・共有なしの対軌道 def を書く(上流 orbitalidxgen.def と同じ書式)。"
+function _write_full_pair_def(path, n_site, n_flavor; opt_lines = true)
+    terms = full_pair_terms(n_site, n_flavor)
+    open(path, "w") do io
+        println(io, "=============================================")
+        println(io, "NOrbitalIdx $(length(terms))")
+        println(io, "ComplexType 1")
+        println(io, "=============================================")
+        println(io, "=============================================")
+        for t in terms
+            println(io, "$(t.site1) $(t.flavor1) $(t.site2) $(t.flavor2) $(t.idx) $(t.sign)")
+        end
+        opt_lines && for t in terms
+            println(io, "$(t.idx) 1")
+        end
+    end
+    return terms
+end
+
+"""
+    _write_min_pair_input(dir; nsteps, nsmp, in_from, qp) -> namelist
+
+`_write_min_parton_input`(4 サイト環・F=2・Ne=2 の物理項と modpara)から pmftrans / pmfpara を
+外し、`PartonMode 2` と全対の def を足した最小入力。`in_from` を渡すとそれを
+InPartonPairOrbital にする。`qp = true` なら 2 並進(シフト 0, 1)の qptransidx.def を足す。
+"""
+function _write_min_pair_input(dir; nsteps::Int = 4, nsmp::Int = 1, in_from = nothing,
+                               qp::Bool = false)
+    _write_min_parton_input(dir)
+    rm(joinpath(dir, "pmftrans.def"))
+    rm(joinpath(dir, "pmfpara.def"))
+    mod = joinpath(dir, "modpara.def")
+    lines = map(readlines(mod)) do l
+        startswith(l, "NSROptItrStep") ? "NSROptItrStep $nsteps" :
+        startswith(l, "NSROptItrSmp") ? "NSROptItrSmp $nsmp" :
+        startswith(l, "PartonMode") ? "PartonMode 2" : l
+    end
+    qp && push!(lines, "NMPTrans 2")
+    write(mod, join(lines, "\n") * "\n")
+    _write_full_pair_def(joinpath(dir, "pair.def"), 4, 2)
+    entries = "ModPara        modpara.def\nPhysHop        physhop.def\n" *
+              "CoulombInter   coulombinter.def\nPartonPairOrbital pair.def\n"
+    if in_from !== nothing
+        cp(in_from, joinpath(dir, "InPair.def"); force = true)
+        entries *= "InPartonPairOrbital InPair.def\n"
+    end
+    qp && (_write_two_shift_qp(joinpath(dir, "qptransidx.def"), 4);
+           entries *= "TransSym       qptransidx.def\n")
+    write(joinpath(dir, "namelist.def"), entries)
+    return joinpath(dir, "namelist.def")
+end
+
+"環のシフト 0, 1 の 2 並進(重み 1 と e^{iπ/3})。"
+function _write_two_shift_qp(path, n_site)
+    open(path, "w") do io
+        println(io, "===============================")
+        println(io, "NQPTrans 2")
+        println(io, "===============================")
+        println(io, "== i_j_TransSym ==")
+        println(io, "===============================")
+        w = cis(π / 3)
+        @printf(io, "0 % .18e % .18e\n", 1.0, 0.0)
+        @printf(io, "1 % .18e % .18e\n", real(w), imag(w))
+        for j = 0:(n_site - 1)
+            @printf(io, "0 %d %d 1\n", j, j)
+        end
+        for j = 0:(n_site - 1)
+            @printf(io, "1 %d %d 1\n", j, mod(j + 1, n_site))
+        end
+    end
 end

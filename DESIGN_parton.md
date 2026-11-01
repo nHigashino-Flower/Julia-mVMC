@@ -1550,7 +1550,7 @@ b†_i b_j b†_j b_l = b†_i (1 − n_j) b_l と一致する(i ≠ l)。
 
 | モード | 必須の入力 |
 |---|---|
-| α | 全 idx の値(`InPmfPara`、または pmfpara.def の値で全 idx が埋まっている)。`InPmfOcc` が無いときは aufbau 占有が自己完結(`parton_check_occupation_selfcontained`)であること |
+| α | 全 idx の値(`InPmfPara`、または pmfpara.def の値で全 idx が埋まっている)と **`InPmfOcc`(必須)**。占有は状態の一部(v3.13)で、MOM の枝で終わった解を aufbau で組み直すと別の状態を黙って測ることになり、α だけからは検出できないため(2026-11-01 実装時の判断) |
 | Φ | `InPmfOrb` |
 | Pf | `InPartonPairOrbital` |
 | 共通 | 項のある射影族(Jastrow など)の In ファイル(`InJastrow` など) |

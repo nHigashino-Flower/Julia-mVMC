@@ -200,6 +200,12 @@ function parton_pair_run_from_namelist(
     in_path === nothing && parton_pair_init_random!(data, base_seed)
     parton_pair_rescale!(data)                      # 上流が初期化直後に掛けるのと同じ
     validate_parton_pair_inputs(data, ctx)
+    # 物理量測定(DESIGN §13)の門番。NVMCCalMode = 0 では Green の def に warn するだけ
+    validate_parton_green_inputs(data)
+    mp.vmc_calc_mode == 1 && parton_phys_require_fixed_inputs(
+        data, namelist_str; orbital_given = in_path !== nothing,
+        orbital_hint = "add InPartonPairOrbital (use $(mp.c_para_file_head)_parton_pair_opt.dat " *
+                       "of the optimization run)")
     if is_output_rank(ctx)
         parton_warn_threading_config()
         parton_sample_threading_enabled() && @warn "PartonMode = 2 runs the measurement " *
@@ -234,6 +240,18 @@ function parton_pair_run_from_namelist(
                              n_idx = 0, n_para = n_para, n_rank = ctx.size0,
                              t_start = t_start, t_end = t_start)
         parton_pair_append_runinfo(data, out_dir; init_source = init_source)
+    end
+
+    # 物理量測定(DESIGN §13): p は build_state が読み込み済み。SR ループの代わりに測定へ
+    if mp.vmc_calc_mode == 1
+        status = parton_vmc_phys_cal!(pstate, data, ctx; rng = rng, output_dir = out_dir)
+        if is_output_rank(ctx)
+            parton_write_runinfo(data, out_dir; namelist_path = namelist_str, base_seed = base_seed,
+                                 n_idx = 0, n_para = n_para, n_rank = ctx.size0,
+                                 t_start = t_start, t_end = time())
+            parton_pair_append_runinfo(data, out_dir; init_source = init_source)
+        end
+        return status
     end
 
     status = parton_pair_vmc_para_opt!(

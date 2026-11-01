@@ -292,11 +292,17 @@ function parton_orbparam_run_from_namelist(
     sampling_seed = resolve_rnd_seed(ctx, mp.rnd_seed, seed)
     base_seed = sampling_seed - ctx.group1
     parton_orbparam_init_random!(data, map, base_seed)
-    parton_orbparam_read_in_pmforb!(data, namelist_str, map)
+    in_pmforb = parton_orbparam_read_in_pmforb!(data, namelist_str, map)
     parton_orbparam_rescale!(data, map)
     parton_orbparam_reject_alpha_files(namelist_str)
     parton_orbparam_materialize_flags!(data, map)
     validate_parton_orbparam_inputs(data, ctx, map)
+    # 物理量測定(DESIGN §13)の門番。NVMCCalMode = 0 では Green の def に warn するだけ
+    validate_parton_green_inputs(data)
+    mp.vmc_calc_mode == 1 && parton_phys_require_fixed_inputs(
+        data, namelist_str; orbital_given = in_pmforb !== nothing,
+        orbital_hint = "add InPmfOrb (use $(mp.c_para_file_head)_pmforb_opt.dat " *
+                       "of the optimization run)")
     is_output_rank(ctx) && parton_warn_threading_config()
 
     nsteps !== nothing && (mp.nsr_opt_itr_step = Int(nsteps))
@@ -328,6 +334,18 @@ function parton_orbparam_run_from_namelist(
                              n_idx = 0, n_para = n_para, n_rank = ctx.size0,
                              t_start = t_start, t_end = t_start)
         parton_orbparam_append_runinfo(data, out_dir; map = map, orbidx_path = orbidx_path)
+    end
+
+    # 物理量測定(DESIGN §13): Φ は build_state が θ から組み済み。SR ループの代わりに測定へ
+    if mp.vmc_calc_mode == 1
+        status = parton_vmc_phys_cal!(pstate, data, ctx; rng = rng, output_dir = out_dir)
+        if is_output_rank(ctx)
+            parton_write_runinfo(data, out_dir; namelist_path = namelist_str,
+                                 base_seed = base_seed, n_idx = 0, n_para = n_para,
+                                 n_rank = ctx.size0, t_start = t_start, t_end = time())
+            parton_orbparam_append_runinfo(data, out_dir; map = map, orbidx_path = orbidx_path)
+        end
+        return status
     end
 
     status = parton_orbparam_vmc_para_opt!(

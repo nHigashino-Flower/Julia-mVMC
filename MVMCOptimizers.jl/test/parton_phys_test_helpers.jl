@@ -213,3 +213,109 @@ function dense_expectation(configs, psi, ops::Vector{Tuple{Int,Int}}, fermionic:
     end
     return num / sum(abs2, psi)
 end
+
+"上流書式の zvo_cisajs を読む(ri si rj sj Re Im)。"
+function phys_read_cisajs(path)
+    vals = ComplexF64[]
+    sites = NTuple{2,Int}[]
+    for line in eachline(path)
+        tok = split(line)
+        length(tok) == 6 || continue
+        push!(sites, (parse(Int, tok[1]), parse(Int, tok[3])))
+        push!(vals, complex(parse(Float64, tok[5]), parse(Float64, tok[6])))
+    end
+    return sites, vals
+end
+
+"上流書式の zvo_cisajscktalt を読む(ri si rj sj rk sk rl sl Re Im)。"
+function phys_read_cisajscktalt(path)
+    sites = NTuple{4,Int}[]
+    vals = ComplexF64[]
+    for line in eachline(path)
+        tok = split(line)
+        length(tok) == 10 || continue
+        push!(sites, Tuple(parse(Int, tok[n]) for n in (1, 3, 5, 7)))
+        push!(vals, complex(parse(Float64, tok[9]), parse(Float64, tok[10])))
+    end
+    return sites, vals
+end
+
+"greenone(全 (i, j))と greentwo(全 (i, i, j, j))を上流の書式で dir に書く。"
+function phys_write_green_defs(dir, n_site::Int)
+    open(joinpath(dir, "greenone.def"), "w") do io
+        println(io, "===============================")
+        println(io, "NCisAjs $(n_site^2)")
+        println(io, "===============================")
+        println(io, "======== Green functions ======")
+        println(io, "===============================")
+        for i = 0:(n_site - 1), j = 0:(n_site - 1)
+            println(io, "$i 0 $j 0")
+        end
+    end
+    open(joinpath(dir, "greentwo.def"), "w") do io
+        println(io, "===============================")
+        println(io, "NCisAjsCktAltDC $(n_site^2)")
+        println(io, "===============================")
+        println(io, "======== Green functions ======")
+        println(io, "===============================")
+        for i = 0:(n_site - 1), j = 0:(n_site - 1)
+            println(io, "$i 0 $i 0 $j 0 $j 0")
+        end
+    end
+end
+
+"""
+    phys_convert_to_measurement!(dir, in_files; n_site, n_data_qty_smp = 2, nvmc_sample = 100)
+
+最適化の入力ディレクトリを測定用に書き換える: modpara を `NVMCCalMode 1`・`NDataQtySmp`・
+`NDataIdxStart 1`・`NVMCSample` にし、namelist に OneBodyG / TwoBodyG と `in_files`
+(namelist のキー => コピー元のファイル)を足す。
+"""
+function phys_convert_to_measurement!(dir, in_files; n_site::Int, n_data_qty_smp::Int = 2,
+                                      nvmc_sample::Int = 100)
+    mod = joinpath(dir, "modpara.def")
+    lines = filter(l -> !startswith(l, "NVMCCalMode") && !startswith(l, "NVMCSample"),
+                   readlines(mod))
+    append!(lines, ["NVMCCalMode 1", "NDataQtySmp $n_data_qty_smp", "NDataIdxStart 1",
+                    "NVMCSample $nvmc_sample"])
+    write(mod, join(lines, "\n") * "\n")
+    phys_write_green_defs(dir, n_site)
+    open(joinpath(dir, "namelist.def"), "a") do io
+        println(io, "OneBodyG       greenone.def")
+        println(io, "TwoBodyG       greentwo.def")
+        for (key, src) in in_files
+            name = key * ".def"
+            cp(src, joinpath(dir, name); force = true)
+            println(io, "$key $name")
+        end
+    end
+    return joinpath(dir, "namelist.def")
+end
+
+"""
+    phys_check_outputs(namelist, out_dir, n_data_qty_smp) -> Vector{Tuple{ComplexF64,ComplexF64,ComplexF64}}
+
+測定の出力を読み、ismp ごとに (Σ⟨n_i⟩, zvo_out の E, Green から組んだ E) を返す。
+"""
+function phys_check_outputs(namelist, out_dir, n_data_qty_smp::Int)
+    data = MVMCExpertModeParsers.parse_expert_mode_files(namelist)
+    e_lines = [split(l) for l in eachline(joinpath(out_dir, "zvo_out.dat")) if !isempty(strip(l))]
+    out = Tuple{ComplexF64,ComplexF64,ComplexF64}[]
+    for k = 1:n_data_qty_smp
+        s1, g1 = phys_read_cisajs(joinpath(out_dir, "zvo_cisajs_$(lpad(k, 3, '0')).dat"))
+        s2, g2 = phys_read_cisajscktalt(joinpath(out_dir, "zvo_cisajscktalt_$(lpad(k, 3, '0')).dat"))
+        one = Dict(s => g1[n] for (n, s) in enumerate(s1))
+        two = Dict(s => g2[n] for (n, s) in enumerate(s2))
+        e_green = zero(ComplexF64)
+        for h in data.physhop_terms
+            e_green += h.value * one[(h.site2, h.site1)] + conj(h.value) * one[(h.site1, h.site2)]
+        end
+        for d in data.coulomb_inter_terms
+            e_green += d.value * two[(d.site1, d.site1, d.site2, d.site2)]
+        end
+        n_sum = sum(g1[n] for (n, (i, j)) in enumerate(s1) if i == j)
+        e = complex(parse(Float64, e_lines[k][1]), parse(Float64, e_lines[k][2]))
+        push!(out, (n_sum, e, e_green))
+    end
+    return out
+end

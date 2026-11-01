@@ -103,6 +103,7 @@ end
     include("test_parton_phys_local.jl")
     include("test_parton_phys_loop.jl")
     include("test_parton_phys_gate.jl")
+    include("test_parton_phys_run.jl")
 end
 
 @testset "Unit Tests" begin

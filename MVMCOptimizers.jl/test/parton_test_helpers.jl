@@ -535,3 +535,61 @@ function orbparam_map_fixture(; qp2::Bool = false, jastrow::Bool = false)
     jastrow && _add_ring_jastrow!(data, [0.1, -0.2, 0.05])
     return data, map
 end
+
+# --- 実行テストの最小入力(test_parton_orbparam_run.jl から移した。物理量測定のテストと共有)---
+
+"""
+    _write_min_orbparam_input(dir; nsteps = 5, nsmp = 2, inpmforb_from = nothing) -> namelist
+
+`_write_min_parton_input` と同じ物理項・modpara に `PartonOrbParam 1` を足し、
+pmftrans / pmfpara を外した最小入力。InPmfOrb は既定ではトイの α 解の軌道から作り、
+`inpmforb_from` を渡すとそのファイルを使う。
+"""
+function _write_min_orbparam_input(dir; nsteps::Int = 5, nsmp::Int = 2,
+                                   inpmforb_from = nothing)
+    _write_min_parton_input(dir)
+    rm(joinpath(dir, "pmftrans.def"))
+    rm(joinpath(dir, "pmfpara.def"))
+    mod = joinpath(dir, "modpara.def")
+    lines = readlines(mod)
+    lines = map(lines) do l
+        startswith(l, "NSROptItrStep") ? "NSROptItrStep $nsteps" :
+        startswith(l, "NSROptItrSmp") ? "NSROptItrSmp $nsmp" : l
+    end
+    push!(lines, "PartonOrbParam 1")
+    write(mod, join(lines, "\n") * "\n")
+    write(joinpath(dir, "namelist.def"),
+          "ModPara        modpara.def\nPhysHop        physhop.def\n" *
+          "CoulombInter   coulombinter.def\nInPmfOrb       InPmfOrb.def\n")
+    if inpmforb_from === nothing
+        data = dimerized_mf_data()
+        mfham = build_toy_mfham(data; n_idx = 3)
+        data.pmforb_params = MVMCOptimizers.parton_orbparam_params_from_orbitals(mfham.orbitals)
+        MVMCOptimizers.parton_orbparam_write_pmforb(data, joinpath(dir, "InPmfOrb.def"))
+    else
+        cp(inpmforb_from, joinpath(dir, "InPmfOrb.def"); force = true)
+    end
+    return joinpath(dir, "namelist.def")
+end
+
+"α の最小入力に環の距離クラス Jastrow(jastrowidx.def)を足す。"
+function _add_jastrow_def!(dir, n_site::Int)
+    n_class = n_site ÷ 2
+    open(joinpath(dir, "jastrowidx.def"), "w") do io
+        println(io, "===============================")
+        println(io, "NJastrowIdx $n_class")
+        println(io, "ComplexType 0")
+        println(io, "===============================")
+        println(io, "===============================")
+        for i = 0:(n_site - 1), j = 0:(n_site - 1)
+            i == j && continue
+            println(io, "$i $j $(min(mod(i - j, n_site), mod(j - i, n_site)) - 1)")
+        end
+        for k = 0:(n_class - 1)
+            println(io, "$k 1")
+        end
+    end
+    open(joinpath(dir, "namelist.def"), "a") do io
+        println(io, "Jastrow        jastrowidx.def")
+    end
+end

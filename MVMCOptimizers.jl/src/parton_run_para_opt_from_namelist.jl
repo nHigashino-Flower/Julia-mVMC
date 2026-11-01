@@ -54,8 +54,8 @@ function parton_run_para_opt_from_namelist(
     #    ベースシードはランクごとのオフセットを加える前の値なので、全ランクが
     #    構成的に同一の α を得る(bcast 不要)。サンプリング用 RNG は消費しない。
     base_seed = resolve_rnd_seed(ctx, data.modpara.rnd_seed, seed) - ctx.group1
-    parton_init_alpha!(data, base_seed)
-    parton_read_in_pmfpara!(data, namelist_str)
+    randomized_idx = parton_init_alpha!(data, base_seed)
+    in_pmfpara = parton_read_in_pmfpara!(data, namelist_str)
 
     # 4. OptFlag の実体化(門番より前)
     parton_materialize_flags!(data)
@@ -68,6 +68,21 @@ function parton_run_para_opt_from_namelist(
     is_output_rank(ctx) && parton_warn_threading_config()
 
     mp = data.modpara
+    # 物理量測定(DESIGN §13)の門番。NVMCCalMode = 0 では Green の def に warn するだけ
+    validate_parton_green_inputs(data)
+    if mp.vmc_calc_mode == 1
+        parton_phys_require_fixed_inputs(
+            data, namelist_str;
+            orbital_given = in_pmfpara || isempty(randomized_idx),
+            orbital_hint = "add InPmfPara (use $(mp.c_para_file_head)_pmfpara_opt.dat " *
+                           "of the optimization run)")
+        # 占有は状態の一部(v3.13)。aufbau で組み直すと MOM の枝の解とは別の状態を黙って測る
+        parton_read_in_pmfocc(data, namelist_str) === nothing && error(
+            "NVMCCalMode = 1 with the α mode needs InPmfOcc: the occupation is part of the " *
+            "state, and rebuilding it by aufbau silently measures a different state when the " *
+            "optimization ended on a non-aufbau branch. Add InPmfOcc (use " *
+            "$(mp.c_para_file_head)_pmfocc_opt.dat of the optimization run).")
+    end
     nsteps !== nothing && (mp.nsr_opt_itr_step = Int(nsteps))
     nsmp !== nothing && (mp.nsr_opt_itr_smp = Int(nsmp))
     mp.nsr_opt_itr_step >= mp.nsr_opt_itr_smp || throw(
@@ -118,6 +133,18 @@ function parton_run_para_opt_from_namelist(
         n_idx = parton_n_idx(data),
         n_para = MVMCExpertModeParsers.count_variational_parameters(data),
         n_rank = ctx.size0, t_start = t_start, t_end = t_start)
+
+    # 物理量測定(DESIGN §13): SR ループの代わりに測定ループへ進む
+    if mp.vmc_calc_mode == 1
+        status = parton_vmc_phys_cal!(pstate, data, ctx; rng = rng,
+                                      output_dir = String(output_dir))
+        is_output_rank(ctx) && parton_write_runinfo(
+            data, String(output_dir); namelist_path = namelist_str, base_seed = base_seed,
+            n_idx = parton_n_idx(data),
+            n_para = MVMCExpertModeParsers.count_variational_parameters(data),
+            n_rank = ctx.size0, t_start = t_start, t_end = time())
+        return status
+    end
 
     # CalcTimer はパートンモードでは**既定で有効**(v3.5)。既存モードは
     # `MVMC_C_TIMER=1` の opt-in のままで、既定は変えていない。
