@@ -7,6 +7,20 @@ DESIGN_parton.md §1.3(選択則と符号定理)、§1.4(固定式)、§2.4(物�
 """
 
 """
+    parton_ip_usable(ip) -> Bool
+    parton_eloc_usable(e) -> Bool
+
+サンプルを E・O・物理量の平均に使えるか(上流 `vmc_main_cal.jl` と同じ基準。2026-11-05)。
+
+E_loc も O も比 Ψ(x′)/Ψ(x) なので、|ip| の絶対値そのものは問わない。捨てるのは ip が 0(波動関数の節の
+上)か非有限のときと、上流と同じく E_loc が非有限のときだけ。以前は |ip| < 1e−30 で捨てていたが、f(や Φ)
+全体のスケールが下がっただけ(物理は同じ)で全サンプルが捨てられ、重みの和が 0 になって SR が NaN で止まった
+(Li–Wu ν=2/3 6×6 の Pf、M = 72。上流はこの閾値を持たず、|ip| < 1e−100 で警告するだけ)。
+"""
+parton_ip_usable(ip::Number) = isfinite(ip) && !iszero(ip)
+parton_eloc_usable(e::Number) = isfinite(real(e) + imag(e))
+
+"""
     parton_build_phys_hamiltonian(data) -> PartonPhysHamiltonian
 
 物理ハミルトニアンのテンプレートを起動時に 1 回組む。平均場側の
@@ -491,13 +505,17 @@ function _parton_main_cal_samples_threaded!(
                 parton_restore_sample_from!(cfg_t, pstate.config, s)
                 parton_recompute_amplitude_all!(amp_t, pstate.mfham, cfg_t, data, ws_t)
                 ip = parton_calculate_ip(amp_t, qp_weight)
-                if abs(ip) < 1e-30
+                if !parton_ip_usable(ip)
                     ctx.ok_all[s] = false
                     continue
                 end
                 ctimer_start!(timer_t, 808)
                 ctx.e_all[s] = parton_local_energy(ps_t, data, ip)
                 ctimer_stop!(timer_t, 808)
+                if !parton_eloc_usable(ctx.e_all[s])
+                    ctx.ok_all[s] = false
+                    continue
+                end
                 ctimer_start!(timer_t, 809)
                 parton_fill_sr_opt_o!(
                     view(ctx.o_all, :, s), amp_t, pstate.mfham, cfg_t, data,
@@ -588,14 +606,18 @@ function parton_main_cal!(pstate::PartonOptimizationState, data::ExpertModeData;
             parton_restore_sample!(cfg, s)
             parton_recompute_amplitude_all!(amp, mfham, cfg, data, ws)
             ip = parton_calculate_ip(amp, qp_weight)
-            if abs(ip) < 1e-30
-                n_skipped += 1        # ノード上のサンプル。寄与できないので飛ばす
+            if !parton_ip_usable(ip)
+                n_skipped += 1        # ノード上(ip = 0)か非有限。寄与できないので飛ばす
                 continue
             end
 
             ctimer_start!(c_timer, 808)
             e = parton_local_energy(pstate, data, ip)
             ctimer_stop!(c_timer, 808)
+            if !parton_eloc_usable(e)
+                n_skipped += 1        # 上流と同じく E_loc が非有限のサンプルは飛ばす
+                continue
+            end
 
             ctimer_start!(c_timer, 809)
             parton_fill_sr_opt_o!(

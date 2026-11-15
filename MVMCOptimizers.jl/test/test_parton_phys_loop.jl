@@ -110,25 +110,36 @@ end
     @test count(!isempty ∘ strip, eachline(joinpath(dir, "zvo_out.dat"))) == 2
 end
 
-@testset "最終レビュー: 全サンプルがノード上なら 0 埋めを書かずに error" begin
+@testset "|ip| が小さいだけなら測定は同じ結果(上流と同じ基準、2026-11-05)" begin
+    # 以前は |ip| < 1e-30 で捨てていたので、Φ を縮めると全サンプルが飛んで error になっていた。
+    # 2 の冪で縮めると比は浮動小数点でも厳密に同じなので、出力のバイト列まで一致する
+    outs = String[]
+    for λ in (1.0, 2.0^-40)
+        c = _phys_case("orbparam_F2")
+        data, pstate = c.data, c.pstate
+        mp = data.modpara
+        mp.nvmc_warmup = 10
+        mp.nvmc_sample = 20
+        mp.n_data_qty_smp = 1
+        mp.n_data_idx_start = 1
+        λ < 1 && @test λ^(mp.nflavor * mp.nelec) < 1e-30
+        for Φ in pstate.mfham.orbitals
+            Φ .*= λ
+        end
+        dir = mktempdir()
+        @test MVMCOptimizers.parton_vmc_phys_cal!(pstate, data, MVMCOptimizers.serial_context();
+                                                  rng = MersenneTwister(3), output_dir = dir) == 0
+        push!(outs, read(joinpath(dir, "zvo_cisajs_001.dat"), String))
+    end
+    @test outs[1] == outs[2]
+end
+
+@testset "最終レビュー: 全サンプルが使えなければ 0 埋めを書かずに error" begin
     c = _phys_case("orbparam_F2")
-    data, pstate = c.data, c.pstate
-    mp = data.modpara
-    mp.nvmc_warmup = 10
-    mp.nvmc_sample = 20
-    mp.n_data_qty_smp = 1
-    mp.n_data_idx_start = 1
-    for Φ in pstate.mfham.orbitals
-        Φ .*= 1e-10                 # |ip| ~ 1e-60: サンプリングは通るが測定の閾値 1e-30 で全部飛ぶ
-    end
-    dir = mktempdir()
-    err = try
-        MVMCOptimizers.parton_vmc_phys_cal!(pstate, data, MVMCOptimizers.serial_context();
-                                            rng = MersenneTwister(3), output_dir = dir)
-        nothing
-    catch e
-        e
-    end
+    state = c.pstate.state
+    state.energy.wc = 0
+    err = try MVMCOptimizers.parton_phys_require_weight(state, 0); nothing catch e; e end
     @test err isa ErrorException && occursin("node", err.msg)
-    @test !isfile(joinpath(dir, "zvo_cisajs_001.dat"))
+    state.energy.wc = 20
+    @test MVMCOptimizers.parton_phys_require_weight(state, 0) === nothing
 end

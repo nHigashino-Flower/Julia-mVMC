@@ -157,7 +157,7 @@ function parton_exact_expectations(pstate::PartonOptimizationState, data::Expert
         parton_make_proj_cnt!(cfg, data)
         parton_recompute_amplitude_all!(pstate.amp, pstate.mfham, cfg, data, pstate.workspace)
         ip = parton_calculate_ip(pstate.amp, qp_weight)
-        if abs(ip) >= 1e-30
+        if parton_ip_usable(ip)
             ln_pj = 0.0
             if parton_n_proj(cfg) > 0
                 for a = 1:n_elec, b = (a + 1):n_elec
@@ -214,12 +214,16 @@ function parton_phys_main_cal!(pstate::PartonOptimizationState, data::ExpertMode
         parton_restore_sample!(cfg, s)
         parton_recompute_amplitude_all!(pstate.amp, pstate.mfham, cfg, data, pstate.workspace)
         ip = parton_calculate_ip(pstate.amp, qp_weight)
-        if abs(ip) < 1e-30
-            n_skipped += 1            # ノード上のサンプル。寄与できないので飛ばす
+        if !parton_ip_usable(ip)
+            n_skipped += 1            # ノード上(ip = 0)か非有限。寄与できないので飛ばす
             continue
         end
         w = 1.0
         e = parton_local_energy(pstate, data, ip)
+        if !parton_eloc_usable(e)
+            n_skipped += 1            # 上流と同じく E_loc が非有限のサンプルは飛ばす
+            continue
+        end
         energy.wc += w
         energy.etot += w * e
         energy.etot2 += w * conj(e) * e
@@ -233,6 +237,20 @@ function parton_phys_main_cal!(pstate::PartonOptimizationState, data::ExpertMode
         end
     end
     return n_skipped
+end
+
+"""
+    parton_phys_require_weight(state, ismp)
+
+全体の Wc(allreduce 済みなので全ランクで同じ値)が 0 なら平均できないので、0 埋めの結果を書かずに止める。
+サンプルを捨てるのは ip が 0 か非有限、または E_loc が非有限のときだけ(`parton_ip_usable`、2026-11-05)。
+"""
+function parton_phys_require_weight(state, ismp::Integer)
+    abs(state.energy.wc) < 1e-15 && error(
+        "Parton measurement, bin $ismp: every sample on every rank sat on a node of the wave " *
+        "function (ip = 0) or had a non-finite ip / E_loc, so there is nothing to average. No " *
+        "output is written for this bin.")
+    return nothing
 end
 
 """
@@ -256,14 +274,9 @@ function parton_vmc_phys_cal!(pstate::PartonOptimizationState, data::ExpertModeD
         reset_phys_quantities!(state)
         parton_make_sample!(pstate, data, rng)
         n_skipped = parton_phys_main_cal!(pstate, data)
-        n_skipped > 0 && @warn "Skipped samples sitting on a node of the wave function" n_skipped ismp
+        n_skipped > 0 && @warn "Skipped samples sitting on a node of the wave function (ip = 0) or with a non-finite ip / E_loc" n_skipped ismp
         weight_average_we!(ctx, state)
-        # 全体の Wc(allreduce 済みなので全ランクで同じ値)が 0 なら平均できない。0 埋めの結果を
-        # 書かずに止める(L が大きいと |ip| < 1e-30 の閾値に全サンプルが掛かりうる)
-        abs(state.energy.wc) < 1e-15 && error(
-            "Parton measurement, bin $ismp: every sample on every rank sat on a node of the wave " *
-            "function (|ip| < 1e-30), so there is nothing to average. No output is written for " *
-            "this bin.")
+        parton_phys_require_weight(state, ismp)
         weight_average_green_func!(ctx, state)
         reduce_counter!(ctx, pstate.config.counter)
         out_rank && output_data_phys!(data, state, ismp; output_dir = output_dir)

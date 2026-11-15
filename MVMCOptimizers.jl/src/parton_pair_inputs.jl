@@ -197,18 +197,20 @@ end
 """
     parton_pair_rescale!(data) -> Float64
 
-上流の D_AmpMax と同じ再スケール(`parameter_sync.jl:138-151`): p ← (D_AMP_MAX / max_k |p_k|)·p。
-OptFlag = 0 の成分も含めて全成分に掛け、**max が 4 未満でも拡大する**。倍率は正の実数なので
-全体位相は固定しない。Pf(λF) = λ^{M/2} Pf F なので物理は変わらない。
+上流の D_AmpMax と同じ再スケール(`parameter_sync.jl:138-151`): p ← (D / max_k |p_k|)·p。
+D は modpara の `PartonPairAmpMax`(既定 4.0 = 上流の D_AMP_MAX。2026-11-05 にキー化)。
+OptFlag = 0 の成分も含めて全成分に掛け、**max が D 未満でも拡大する**。倍率は正の実数なので
+全体位相は固定しない。Pf(λF) = λ^{M/2} Pf F なので物理は変わらず、変わるのは |ip| の絶対値だけ。
 
 返り値は再スケール**前**の max|p|(診断用)。全成分が 0 なら error(0 で割らない)。
 """
 function parton_pair_rescale!(data::ExpertModeData)
     params = data.parton_pair_params
     x = isempty(params) ? 0.0 : maximum(abs, params)
+    D = data.modpara.parton_pair_amp_max
     x > 0 || error(
-        "The pair parameters are identically zero; cannot rescale them to D_AmpMax = $D_AMP_MAX.")
-    ratio = D_AMP_MAX / x
+        "The pair parameters are identically zero; cannot rescale them to PartonPairAmpMax = $D.")
+    ratio = D / x
     for k in eachindex(params)
         params[k] *= ratio
     end
@@ -261,6 +263,12 @@ function validate_parton_pair_inputs(data::ExpertModeData, ctx::ParallelContext)
     mp.parton_orb_param == PARTON_ORB_PARAM_ALPHA || error(
         "PartonOrbParam = $(mp.parton_orb_param) has no meaning in PartonMode = 2; set it " *
         "to 0 or remove it.")
+    # 再スケールの値(2026-11-05)。Φ 用の PartonOrbAmpMax は Pf では読まないので、書いてあれば止める
+    (isfinite(mp.parton_pair_amp_max) && mp.parton_pair_amp_max > 0) || error(
+        "PartonPairAmpMax must be a positive finite number, got $(mp.parton_pair_amp_max).")
+    mp.parton_orb_amp_max == MVMCExpertModeParsers.DEFAULT_PARTON_ORB_AMP_MAX || error(
+        "PartonOrbAmpMax = $(mp.parton_orb_amp_max) has no meaning in PartonMode = 2 (it rescales " *
+        "the direct orbitals of PartonMode = 1); use PartonPairAmpMax for the pair orbitals.")
     mp.parton_occ_mode == PARTON_OCC_AUFBAU || error(
         "PartonOccMode = $(mp.parton_occ_mode) has no meaning in PartonMode = 2 (there is " *
         "no occupation to choose); set it to 0 or remove it.")

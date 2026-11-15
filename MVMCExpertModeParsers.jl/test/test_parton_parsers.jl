@@ -177,6 +177,14 @@ end
     @test p.parton_orb_amp_max == 4.0
 end
 
+@testset "modpara: Pf の再スケールの値 PartonPairAmpMax(2026-11-05)" begin
+    r = MVMCExpertModeParsers.parse_modpara_content("Nsite 4\nPartonMode 2\nPartonPairAmpMax 16.0\n")
+    @test r.success
+    @test r.data.parton_pair_amp_max == 16.0
+    @test r.data.parton_orb_amp_max == 4.0          # Φ 用のキーとは別
+    @test MVMCExpertModeParsers.ModParaParameters().parton_pair_amp_max == 4.0
+end
+
 @testset "count_variational_parameters が Φ の要素数を数える" begin
     data = MVMCExpertModeParsers.ExpertModeData()
     @test isempty(data.pmforb_params)

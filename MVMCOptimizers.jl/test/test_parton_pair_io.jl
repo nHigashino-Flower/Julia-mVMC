@@ -73,6 +73,19 @@ end
     @test_throws ErrorException MOI.parton_pair_rescale!(data)
 end
 
+@testset "PartonPairAmpMax: 再スケールの値を modpara で選ぶ(既定 4 = 上流の D_AMP_MAX)" begin
+    data = pair_ok_data()
+    @test data.modpara.parton_pair_amp_max == MOI.D_AMP_MAX
+    ref = copy(data.parton_pair_params)
+    MOI.parton_pair_rescale!(data)
+    four = copy(data.parton_pair_params)
+    data.parton_pair_params .= ref
+    data.modpara.parton_pair_amp_max = 16.0
+    MOI.parton_pair_rescale!(data)
+    @test maximum(abs, data.parton_pair_params) ≈ 16.0 rtol = 1e-15
+    @test data.parton_pair_params ≈ 4 .* four rtol = 1e-14      # 全成分に同じ正の倍率(向きは同じ)
+end
+
 @testset "T1-h 乱数初期化: 上流と同じ分布・専用の乱数列・凍結は 0" begin
     data = pair_ok_data()
     data.parton_pair_opt_flags = Dict(1 => 0)
@@ -161,6 +174,10 @@ end
         "KN 奇数" => d -> (d.modpara.nelec = 3; d.modpara.nflavor = 3),
         "NFlavor=1" => d -> (d.modpara.nflavor = 1; d.modpara.nelec = 2),
         "PartonOrbParam≠0" => d -> d.modpara.parton_orb_param = 1,
+        "PartonPairAmpMax=0" => d -> d.modpara.parton_pair_amp_max = 0.0,
+        "PartonPairAmpMax=Inf" => d -> d.modpara.parton_pair_amp_max = Inf,
+        "PartonPairAmpMax<0" => d -> d.modpara.parton_pair_amp_max = -4.0,
+        "PartonOrbAmpMax≠4" => d -> d.modpara.parton_orb_amp_max = 2.0,
         "PartonOccMode≠0" => d -> d.modpara.parton_occ_mode = 1,
         "NExUpdatePath≠6" => d -> d.modpara.nex_update_path = 1,
         "def なし" => d -> (empty!(d.parton_pair_terms); empty!(d.parton_pair_params)),
@@ -217,6 +234,13 @@ end
     data2 = pair_ok_data()
     err2 = try MOI.validate_parton_data(data2; require_mf_inputs = false); nothing catch e; e end
     @test !(err2 isa ErrorException && occursin("only used in PartonMode = 2", err2.msg))
+    # PartonPairAmpMax も Pf でしか読まないので、α・Φ で既定以外なら止める(2026-11-05)
+    data3 = pair_ok_data()
+    empty!(data3.parton_pair_terms); empty!(data3.parton_pair_params)
+    data3.modpara.parton_mode = MOI.PARTON_MODE_MEAN_FIELD
+    data3.modpara.parton_pair_amp_max = 8.0
+    err3 = try MOI.validate_parton_data(data3; require_mf_inputs = false); nothing catch e; e end
+    @test err3 isa ErrorException && occursin("PartonPairAmpMax", err3.msg)
 end
 
 @testset "テンプレートの器を data から組む" begin

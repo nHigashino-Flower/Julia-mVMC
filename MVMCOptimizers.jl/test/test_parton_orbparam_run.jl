@@ -116,6 +116,34 @@ end
     @test ps_seq.state.energy.wc == 24
 end
 
+@testset "|ip| が小さいだけのサンプルは捨てない(上流と同じ基準、threaded=$thr)" for thr in (false, true)
+    # E_loc は比なので Φ 全体のスケールに依らない。2 の冪で縮めると浮動小数点でも厳密に同じ比になる。
+    # 以前の |ip| < 1e-30 の閾値では、縮めた側の全サンプルが捨てられて wc = 0 になっていた(2026-11-05)
+    ps_ref, data_ref = _orb_thread_state(; store = false)
+    ps_small, data_small = _orb_thread_state(; store = false)
+    λ = 2.0^-40
+    mp = data_small.modpara
+    @test λ^(mp.nflavor * mp.nelec) < 1e-30                  # 縮めた側の |ip| は旧閾値を下回る
+    for Φ in ps_small.mfham.orbitals
+        Φ .*= λ
+    end
+    MVMCOptimizers.parton_main_cal!(ps_ref, data_ref; force_threaded = thr)
+    MVMCOptimizers.parton_main_cal!(ps_small, data_small; force_threaded = thr)
+    @test ps_small.state.energy.wc == 24                       # 1 本も捨てない
+    @test ps_small.state.energy.etot == ps_ref.state.energy.etot
+    @test ps_small.state.energy.etot2 == ps_ref.state.energy.etot2
+end
+
+@testset "サンプルを使う基準: ip が 0・非有限、E_loc が非有限のときだけ捨てる" begin
+    @test MVMCOptimizers.parton_ip_usable(1e-200 + 0im)
+    @test MVMCOptimizers.parton_ip_usable(-3.0)
+    @test !MVMCOptimizers.parton_ip_usable(0.0 + 0im)
+    @test !MVMCOptimizers.parton_ip_usable(ComplexF64(NaN, 0))
+    @test !MVMCOptimizers.parton_ip_usable(ComplexF64(0, Inf))
+    @test MVMCOptimizers.parton_eloc_usable(ComplexF64(-3, 1e300))
+    @test !MVMCOptimizers.parton_eloc_usable(ComplexF64(1, NaN))
+end
+
 @testset "PartonOrbParam = 0 の入力は従来の経路を通る" begin
     dir = mktempdir()
     out = joinpath(dir, "out")

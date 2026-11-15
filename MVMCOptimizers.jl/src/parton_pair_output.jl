@@ -32,7 +32,7 @@ end
 
 `<head>_parton_pairdiag.dat` に SR ステップごとに 1 行書く(step 0 で "w"、以降 "a")。
 
-- `n_skipped` — |ip| < 1e−30 で捨てたサンプル数(このランク)
+- `n_skipped` — 捨てたサンプル数(このランク。ip が 0 か非有限、または E_loc が非有限。`parton_ip_usable`)
 - `accept_ratio` / `n_need_recompute` / `n_exact_recompute` — MC の健康診断(α・Φ と同じ定義)
 - `xmax_pre` — D_AmpMax で再スケールする**前**の max|p|
 - `sigma_ratio_a` — そのステップで使った f の行ブロック SVD の σ_N/σ_{N+1}(フレーバーごと)
@@ -78,7 +78,7 @@ function parton_pair_append_runinfo(data::ExpertModeData, dir; init_source::Abst
     open(_parton_out(data, "_parton_runinfo.dat", dir), "a") do f
         @printf(f, "n_pair_idx %d\n", parton_pair_n_idx(data))
         @printf(f, "n_parton_total %d\n", mp.nflavor * mp.nelec)
-        @printf(f, "D_AmpMax %.17g\n", D_AMP_MAX)
+        @printf(f, "D_AmpMax %.17g\n", mp.parton_pair_amp_max)     # PartonPairAmpMax(既定 4 = 上流の D_AMP_MAX)
         println(f, "pair_init $init_source")
         println(f, "PartonGaugeFix not_applicable")
         println(f, "PartonFlavorSymFast not_applicable")

@@ -256,7 +256,7 @@ julia --project=MVMCOptimizers.jl tools/parton_alpha_to_orbparam.jl \
 | 列 | 意味 | 見どころ |
 |---|---|---|
 | `step` | SR のステップ | |
-| `n_skipped` | \|ip\| < 1e−30 で捨てたサンプル数(このランク) | 増え続けたら行列式の桁落ち |
+| `n_skipped` | 捨てたサンプル数(このランク。ip が 0 か非有限、または E_loc が非有限。2026-11-05 までは \|ip\| < 1e−30) | 増え続けたら行列式のあふれ・0 落ち |
 | `accept_ratio` | Metropolis の受理率 | |
 | `n_need_recompute` / `n_exact_recompute` | 高速更新の破綻回数 / 厳密再計算の回数 | 急増したら Φ の条件数の悪化 |
 | `xmax_pre_<組>` | 再スケール前の max\|θ\|(組ごと) | D からのずれ = SR 更新の大きさ |

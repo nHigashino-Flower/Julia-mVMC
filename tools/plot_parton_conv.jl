@@ -33,6 +33,8 @@ E は 1 桁早くノイズ床に沈んで「収束」に見えるが、min_gap �
     julia --project=tools tools/plot_parton_conv.jl <out_dir> [出力.pdf] [--window 100] [--dt 0.003]
 
 <out_dir> に zvo_parton_diag.dat が無く zvo_parton_pairdiag.dat がある場合(Pf モード)は、
+(zvo_parton_orbdiag.dat がある場合(Φ 直接変分モード、2026-11-10)も同じ図。4 枚目は log10 cond(Φ_f)、8 枚目は捨てたサンプル数で、
+構造の判定は「Φ モードは判定しない」と出す)
 min_gap の代わりに次を描く。PartonMode = 1 の図と標準出力は従来と同じ(この経路には入らない)。
   1. E vs step(生 + 移動平均)と σ²/E²(右軸、対数)
   2. log10|E_avg − E_tail|(τ_E の推定は Mode 1 と同じ)
@@ -130,6 +132,10 @@ function main(argv)
     # Pf モード(PartonMode = 2)の出力: min_gap が無いので専用の図にする。Mode 1 はこの分岐に入らない
     if !isfile(joinpath(dir, "zvo_parton_diag.dat")) && isfile(joinpath(dir, "zvo_parton_pairdiag.dat"))
         return main_pair(dir, png, window, dt)
+    end
+    # Φ 直接変分モード(PartonOrbParam = 1)の出力: 同じ図で、特異値比の代わりに cond(Φ_f)・捨てたサンプル数を描く
+    if !isfile(joinpath(dir, "zvo_parton_diag.dat")) && isfile(joinpath(dir, "zvo_parton_orbdiag.dat"))
+        return main_pair(dir, png, window, dt; orb = true)
     end
 
     e = read_col(joinpath(dir, "zvo_out.dat"), 1)
@@ -289,17 +295,41 @@ function find_dt(dir::AbstractString)
     return NaN
 end
 
-function main_pair(dir::AbstractString, png::AbstractString, window::Int, dt::Float64)
+"""
+Pf(`orb = false`)と Φ 直接変分モード(`orb = true`、2026-11-10 追加)の収束図と判定。
+Φ モードは σ_N/σ_{N+1} に当たる量が無く、step ごとの Φ も残らない(zvo_var.dat は Jastrow のみ)ので、
+**構造の判定はせず「構造: Φ モードは判定しない」と出す**(延長ループは dE/dτ だけで判定する。ユーザー判断 2026-11-10)。
+図の 4 枚目は log10 cond(Φ_f)(zvo_parton_orbdiag.dat の 6+F 列目から F 本)と受理率、8 枚目は step ごとの捨てたサンプル数。
+"""
+function main_pair(dir::AbstractString, png::AbstractString, window::Int, dt::Float64; orb::Bool = false)
+    diagfile = joinpath(dir, orb ? "zvo_parton_orbdiag.dat" : "zvo_parton_pairdiag.dat")
     e = read_col(joinpath(dir, "zvo_out.dat"), 1)
     var = read_col(joinpath(dir, "zvo_out.dat"), 4)
-    acc = read_col(joinpath(dir, "zvo_parton_pairdiag.dat"), 3)
+    acc = read_col(diagfile, 3)
     isempty(e) && error("zvo_out.dat が読めません: $dir")
-    sr = Vector{Float64}[]          # フレーバーごとの σ_N/σ_{N+1}(7 列目から)
-    let k = 7
-        while true
-            c = read_col(joinpath(dir, "zvo_parton_pairdiag.dat"), k)
-            isempty(c) && break
-            push!(sr, c); k += 1
+    sr = Vector{Float64}[]          # Pf: フレーバーごとの σ_N/σ_{N+1}(7 列目から)
+    lcond = Vector{Float64}[]       # Φ: フレーバーごとの log10 cond(Φ_f)
+    skipped = Float64[]             # Φ: step ごとの捨てたサンプル数
+    if orb
+        # 列: step n_skipped accept n_need_recompute n_exact_recompute xmax_pre_1..F log10cond_1..F
+        ncol = 0
+        for ln in eachline(diagfile)
+            t = split(strip(ln))
+            (isempty(t) || startswith(t[1], "#")) && continue
+            ncol = length(t); break
+        end
+        nf = (ncol - 5) ÷ 2
+        for a = 1:nf
+            push!(lcond, read_col(diagfile, 5 + nf + a))
+        end
+        skipped = read_col(diagfile, 2)
+    else
+        let k = 7
+            while true
+                c = read_col(diagfile, k)
+                isempty(c) && break
+                push!(sr, c); k += 1
+            end
         end
     end
     n = length(e)
@@ -320,7 +350,7 @@ function main_pair(dir::AbstractString, png::AbstractString, window::Int, dt::Fl
     dE[end-window+1:end] .= NaN     # tail の定義窓と重なる分は落とす(Mode 1 と同じ理由)
     tauE = fit_tau(steps, dE, e_se)
 
-    @printf("step %d  window %d  (PartonMode = 2)\n", n, window)
+    @printf("step %d  window %d  (%s)\n", n, window, orb ? "Φ モード、PartonOrbParam = 1" : "PartonMode = 2")
     @printf("E_tail = %.5f ± %.1e   σ²/E²_tail = %.2e   drift = %+.1e(条件 2: %s)\n",
             e_tail, e_se, v_tail, drift, abs(drift) <= 10e_se ? "満たす" : "破る")
     if isfinite(dt)
@@ -339,7 +369,12 @@ function main_pair(dir::AbstractString, png::AbstractString, window::Int, dt::Fl
         abs(exp(a - b) - 1)
     end
     nsr = isempty(sr) ? 0 : minimum(length, sr)
-    if nsr >= 2window
+    if orb
+        println("構造: Φ モードは判定しない(dE/dτ だけで判定)")
+        isempty(skipped) || @printf("捨てたサンプル: 合計 %d(末尾 window %d)  log10 cond(Φ_f) の末尾: %s\n",
+                                   round(Int, sum(skipped)), round(Int, sum(@view skipped[max(1, end - window + 1):end])),
+                                   join([@sprintf("%.3f", c[end]) for c in lcond if !isempty(c)], " "))
+    elseif nsr >= 2window
         r = sr_rel(nsr)
         @printf("構造: σ_N/σ_{N+1} の window 間の変化 %.1f%%(最大のフレーバー)→ %s\n",
                 100r, r < 0.05 ? "落ち着いた" : "まだ動く")
@@ -393,10 +428,18 @@ function main_pair(dir::AbstractString, png::AbstractString, window::Int, dt::Fl
                   xlabel = "step", ylabel = "|ΔE| / $(stride) step", legend = :bottomleft, title = ttl)
         hline!(p3, [10 * e_se]; color = :crimson, ls = :dash, label = @sprintf("10·SE = %.1e", 10e_se))
 
-        p4 = plot(; yscale = :log10, xlabel = "step", ylabel = "σ_N / σ_{N+1}", legend = :topleft,
-                  title = "flavor row-block singular-value ratio / acceptance")
-        for (a, c) in enumerate(sr)
-            plot!(p4, 0:(length(c) - 1), clean(c); lw = 1.2, label = "flavor $(a - 1)")
+        if orb
+            p4 = plot(; xlabel = "step", ylabel = "log10 cond(Φ_f)", legend = :topleft,
+                      title = "log10 cond(Φ_f) / acceptance")
+            for (a, c) in enumerate(lcond)
+                plot!(p4, 0:(length(c) - 1), c; lw = 1.2, label = "flavor $(a - 1)")
+            end
+        else
+            p4 = plot(; yscale = :log10, xlabel = "step", ylabel = "σ_N / σ_{N+1}", legend = :topleft,
+                      title = "flavor row-block singular-value ratio / acceptance")
+            for (a, c) in enumerate(sr)
+                plot!(p4, 0:(length(c) - 1), clean(c); lw = 1.2, label = "flavor $(a - 1)")
+            end
         end
         if !isempty(acc)
             pa = twinx(p4)
@@ -434,12 +477,20 @@ function main_pair(dir::AbstractString, png::AbstractString, window::Int, dt::Fl
                   title = "criterion 1: |t| < 2")
         hline!(p7, [-2.0, 2.0]; color = :black, ls = :dash, alpha = 0.7, label = "t = ±2")
 
-        # 判定 2(構造): σ_N/σ_{N+1} の window 間の相対変化
-        p8 = plot(; yscale = :log10, xlabel = "step", ylabel = "relative change / window", legend = :bottomleft,
-                  title = "criterion 2: σ_N/σ_{N+1} change < 5%")
-        any(isfinite, j_sr) && plot!(p8, j_steps, clean(j_sr); color = :darkgreen, lw = 1.5, marker = :circle,
-                                     ms = 2, mc = :darkgreen, msw = 0, label = "max over flavors")
-        hline!(p8, [0.05]; color = :black, ls = :dash, alpha = 0.7, label = "5%")
+        if orb
+            # Φ モード: 構造の判定はしない。代わりに step ごとの捨てたサンプル数(0 が健全)
+            p8 = plot(0:(length(skipped) - 1), skipped; color = :darkgreen, lw = 1.2, xlabel = "step",
+                      ylabel = "skipped samples", legend = false,
+                      title = @sprintf("skipped samples per step (total %d); no structure criterion",
+                                       round(Int, sum(skipped))))
+        else
+            # 判定 2(構造): σ_N/σ_{N+1} の window 間の相対変化
+            p8 = plot(; yscale = :log10, xlabel = "step", ylabel = "relative change / window", legend = :bottomleft,
+                      title = "criterion 2: σ_N/σ_{N+1} change < 5%")
+            any(isfinite, j_sr) && plot!(p8, j_steps, clean(j_sr); color = :darkgreen, lw = 1.5, marker = :circle,
+                                         ms = 2, mc = :darkgreen, msw = 0, label = "max over flavors")
+            hline!(p8, [0.05]; color = :black, ls = :dash, alpha = 0.7, label = "5%")
+        end
 
         plt = plot(p1, p2, p3, p4, p5, p6, p7, p8; layout = (4, 2), size = (1400, 1700),
                    left_margin = 8Plots.mm, bottom_margin = 5Plots.mm, right_margin = 14Plots.mm)

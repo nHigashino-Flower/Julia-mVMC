@@ -163,6 +163,7 @@ const DEFAULT_PARTON_FLAVOR_SYM_FAST = 1
 const DEFAULT_PARTON_OCC_MODE = 0
 const DEFAULT_PARTON_ORB_PARAM = 0      # --- parton-mode (fork addition) --- 0 = α(既定)/ 1 = Φ 直接
 const DEFAULT_PARTON_ORB_AMP_MAX = 4.0  # --- parton-mode (fork addition) --- Φ_f の最大振幅(上流 D_AmpMax と同値)
+const DEFAULT_PARTON_PAIR_AMP_MAX = 4.0 # --- parton-mode (fork addition) --- Pf の f(p)の最大振幅(上流 D_AmpMax と同値)
 
 # Error messages
 const ERROR_FILE_NOT_FOUND = "File not found"

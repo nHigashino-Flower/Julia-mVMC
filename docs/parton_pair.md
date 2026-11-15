@@ -52,12 +52,14 @@ DSROptRedCut 1e-8
 PartonBlockUpdateSize 16 # 厳密再計算の周期
 PartonGaugeFix 1         # Pf モードでは使わない(runinfo に「該当なし」)
 PartonFlavorSymFast 0    # 同上
+PartonPairAmpMax 4.0     # 省略可(2026-11-05 追加)。SR 後に max|p| をこの値へそろえる(既定 4 = 上流の D_AmpMax)
 ```
 
-新しい modpara キーは無い。`PartonMode 2` で切り替える。門番が拒否するもの: `NFlavor < 2`、K·N が奇数、
-`NExUpdatePath ≠ 6`、`PartonOrbParam ≠ 0`、`PartonOccMode ≠ 0`、既存スピン Orbital 系、α・Φ の入力
+`PartonMode 2` で切り替える。Pf 専用の modpara キーは `PartonPairAmpMax` だけ(省略可、§9)。門番が拒否するもの:
+`NFlavor < 2`、K·N が奇数、`NExUpdatePath ≠ 6`、`PartonOrbParam ≠ 0`、`PartonOccMode ≠ 0`、
+`PartonPairAmpMax` が正の有限値でない、`PartonOrbAmpMax ≠ 4`(Φ 用のキー。Pf では `PartonPairAmpMax` を使う)、既存スピン Orbital 系、α・Φ の入力
 (PartonMFTrans / PartonMFPara / InPmfPara / InPmfOcc / InPmfOrb / PartonOrbIdx)、`NVMCCalMode ≠ 0`(物理量測定は未対応)。
-逆に PartonMode ≠ 2 の run に PartonPairOrbital / InPartonPairOrbital を書くと、α・Φ 側の共通検査が止める。
+逆に PartonMode ≠ 2 の run に PartonPairOrbital / InPartonPairOrbital / `PartonPairAmpMax ≠ 4` を書くと、α・Φ 側の共通検査が止める。
 `DSROptStaDel = 0` は止めないが、S にゲージの零方向があるので必ず正の値を入れること(§9)。
 
 ### namelist.def
@@ -153,7 +155,7 @@ CB 6×3 ν=1/3 は ED の 3 重項が全部 K = (−0.5, 0) で C2 だけが違�
 
 - **既定は乱数**(InPartonPairOrbital を書かない)。分布は上流と同じ(p = [2(r₁−½) + 2i(r₂−½)]/√2、OptFlag 0 は 0)、
   乱数列は `RndSeed` から作る初期値専用の列で、サンプリングの列を消費しない
-- 読み込んだ値・乱数のどちらも、D_AmpMax(上流の定数 4.0)で max|p| = 4 にそろえてから始める。SR の各ステップ後も同じ
+- 読み込んだ値・乱数のどちらも、max|p| = `PartonPairAmpMax`(既定 4.0 = 上流の D_AmpMax)にそろえてから始める。SR の各ステップ後も同じ
 - `zqp_parton_pair_init.dat` に実際に採用した初期値が出るので、これを In に渡せばビット再現できる
 - PartonMode = 1 の解から始める道具は `tools/parton_alpha_to_pair.jl`(T3・継続の検証用)。並進で共有した def では
   素朴な J だと射影が厳密でない(残差 0.7〜0.9)。厳密にするには J を共有群で平均する(§4)
@@ -262,14 +264,20 @@ QP ごとのスレッド並列は上流の更新を待つ(DESIGN §10)。
 | `zqp_parton_pair_init.dat` / `_opt.dat` | f の値(idx ごと)。InPartonPairOrbital の形式そのもの。往復でビット一致 |
 | `zqp_parton_pair_sv_init.dat` / `_opt.dat` | フレーバーごとの行ブロック SVD の全特異値と σ_N/σ_{N+1} |
 | `zqp_parton_pair_orb_init.dat` / `_opt.dat` | 上位 N 本の左特異ベクトル(InPmfOrb と同じ形式。Φ モードの入力や Chern の計算にそのまま渡せる) |
-| `zvo_parton_pairdiag.dat` | step・捨てたサンプル数・受理率・need_recompute・厳密再計算・再スケール前の max\|p\|・各フレーバーの σ_N/σ_{N+1} |
-| `zvo_parton_runinfo.dat` | 既存の項目 + `PartonMode 2`・n_pair_idx・M・D_AMP_MAX |
+| `zvo_parton_pairdiag.dat` | step・捨てたサンプル数(ip が 0 か非有限、または E_loc が非有限。2026-11-05 以降)・受理率・need_recompute・厳密再計算・再スケール前の max\|p\|・各フレーバーの σ_N/σ_{N+1} |
+| `zvo_parton_runinfo.dat` | 既存の項目 + `PartonMode 2`・n_pair_idx・M・`D_AmpMax`(= 使った `PartonPairAmpMax`) |
 | `zvo_out` / `zvo_SRinfo` / `zvo_parton_time` / `zvo_CalcTimer` / `zqp_opt`(Jastrow) | 既存どおり |
 
 σ_N/σ_{N+1}: 各フレーバーの行ブロック f[(·,a), :] の N 番目と N+1 番目の特異値の比。パートン形(f = ΞJΞᵀ)なら ∞
 (厳密解スタートで 3e11)。乱数スタートで −4 に届いた KM 4×4 の解は 7.5 で、det² そのものではない Pf で厳密エネルギーに届いている。
 
 ## 9. 注意と目安
+
+- **|ip| の大きさと `PartonPairAmpMax`(2026-11-05)**: Pf(λF) = λ^{M/2} Pf F なので、`PartonPairAmpMax` は物理(比・E_loc・O・SR)を
+  変えず、|ip| の絶対値だけを決める。サンプルを捨てるのは上流と同じく ip が 0 か非有限、または E_loc が非有限のときだけ
+  (以前は |ip| < 1e−30 で捨てていて、Li–Wu ν=2/3 6×6(M = 72)で 1 成分の跳び → 再スケールで |Pf| が 10^{−43} 倍 → 全サンプルを
+  捨てて NaN、になった)。今は |ip| が浮動小数点の範囲(〜1e±308)を外れるときだけが問題で、目安は |Pf| ≲ (AmpMax·√M)^{M/2}
+  (あふれ側)。大きい系であふれそうなら上流と同じく下げ、小さすぎて 0 に落ちるなら上げる。`n_skipped` が増えたら疑うこと
 
 - **S の零方向**: パートンゲージ(f → λ_α λ_β f、∏_a λ_(i,a) 一定)・Jastrow の一様シフト・ほとんどサンプルされない対。
   RedCut は対角しか見ないので消せない。**StaDel > 0 が必須**

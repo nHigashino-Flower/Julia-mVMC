@@ -17,6 +17,9 @@ Pfaffian パートンモード(PartonMode = 2)の対軌道 def を作る(DESIGN_
 `--flavor-sym` を付けると、フレーバー対称・空間反対称の def を書く(`gen_pair_def_flavor_sym`)。
 
 最後の引数に α run の pmfpara.def を渡すと、使った並進が α の idx の写像を保つことを検査する。
+
+def と同時に、同じディレクトリへ f の idx 対応表 `partonpair_idxmap.def`・サイト座標 `parton_sites.dat`・
+フレーバーごとの格子図 `partonpair_idx_flavor<a>.pdf` を書く(`write_pair_idx_outputs`。tools/parton_pair_idx.jl)。
 """
 
 using MVMCExpertModeParsers
@@ -24,19 +27,58 @@ using MVMCExpertModeParsers
 const _PHYS = joinpath(@__DIR__, "..", "test", "physics")
 include(joinpath(_PHYS, "checkerboard_model.jl"))
 include(joinpath(_PHYS, "lattice_model.jl"))
+include(joinpath(@__DIR__, "parton_pair_idx.jl"))       # f の idx 対応表・サイト座標・図(確認用の副産物)
 
 """
-    gen_pair_def(path, model, n_flavor, ex, ey; same_flavor = false) -> (n_idx, n_rows, n_forced_zero)
+    pair_site_positions(model) -> (positions, sublattice, periods)
+
+f の idx の図に使うサイトの実空間座標。既定はグリッド座標(KM・cb)。実座標が違う模型(ハニカムなど)は
+この関数のメソッドを足す。
+"""
+function pair_site_positions(model)
+    lx, ly = pl_grid(model)
+    pos = [Float64.(pl_site_to_xy(model, i)) for i = 0:(pl_nsite(model) - 1)]
+    return [(p[1], p[2]) for p in pos], zeros(Int, length(pos)), ((Float64(lx), 0.0), (0.0, Float64(ly)))
+end
+
+"""
+    write_pair_idx_outputs(def_path, model, n_flavor; plot = true)
+
+def と同じディレクトリに `partonpair_idxmap.def`(f の idx 対応表)・`parton_sites.dat` を書き、
+`plot = true` なら `partonpair_idx_flavor<a>.pdf`(フレーバーごとの格子図)も描く(tools 環境の別プロセス)。
+**入力を作ったら必ず呼ぶ**(どの f を同一視したかを目で確かめるため。ユーザー運用 2026-11-04)。
+"""
+function write_pair_idx_outputs(def_path::AbstractString, model, n_flavor::Int; plot::Bool = true)
+    dir = dirname(abspath(def_path))
+    basename(def_path) == "partonpairorbital.def" || @warn "def の名前が partonpairorbital.def でない(図の道具はこの名前を読む)"
+    pos, sub, per = pair_site_positions(model)
+    write_parton_sites(dir, pos; sublattice = sub, periods = per)
+    write_pair_idx_table(dir; nsite = pl_nsite(model), nflavor = n_flavor, def = basename(def_path))
+    plot && plot_pair_idx(dir)
+    return dir
+end
+
+"""
+    gen_pair_def(path, model, n_flavor, ex, ey; same_flavor = false, character = nothing) -> (n_idx, n_rows, n_forced_zero)
 
 平均場を保つ並進の軌道ごとに 1 つの idx を割り当てた def を書く。
+
+`character` を渡すと、並進 T = (tx, ty)(`pl_mf_shifts` のグリッド変位)で **符号 χ_T = character(tx, ty) = ±1 付き**で
+共有する: f[(Tα),(Tβ)] = χ_T f[α, β](行の sgn 列に χ_T を書く)。χ は共有群の上の準同型でなければならない
+(呼ぶ側の責任。例: ⟨3R1, R2⟩ で χ = (−1)^a は N1/3 が偶数のときだけ)。Pf の T の固有値は χ_T^{M/2} になるので
+(docs/parton_pair.md §4)、M/2 が奇数なら χ = −1 で固有値 −1 のセクターを共有したまま表せる。
+同じ対が符号の食い違いで写る軌道(f = −f)は 0 を強制して外す。`character = nothing` なら従来どおり(ビット一致)。
 """
 function gen_pair_def(path::AbstractString, model, n_flavor::Int, ex::Int, ey::Int;
-                      same_flavor::Bool = false)
+                      same_flavor::Bool = false, character = nothing)
     ns = pl_nsite(model)
-    perms = [pl_shift_perm(model, tx, ty) for (tx, ty) in pl_mf_shifts(model, ex, ey)]
+    shifts = pl_mf_shifts(model, ex, ey)
+    perms = [pl_shift_perm(model, tx, ty) for (tx, ty) in shifts]
+    chis = character === nothing ? ones(Int, length(shifts)) : [Int(character(tx, ty)) for (tx, ty) in shifts]
+    all(c -> c == 1 || c == -1, chis) || error("character は ±1 を返すこと")
     n_state = ns * n_flavor
     seen = falses(n_state, n_state)
-    rows = NTuple{5,Int}[]       # (site1, flavor1, site2, flavor2, idx)、すべて 0-based
+    rows = NTuple{6,Int}[]       # (site1, flavor1, site2, flavor2, idx, sgn)、すべて 0-based
     n_idx = 0
     n_forced_zero = 0
     for α = 0:(n_state - 1), β = (α + 1):(n_state - 1)
@@ -45,26 +87,32 @@ function gen_pair_def(path::AbstractString, model, n_flavor::Int, ex::Int, ey::I
         (!same_flavor && a == b) && continue
         seen[α + 1, β + 1] && continue
         orbit = Tuple{Int,Int}[]
+        signs = Int[]
         forced_zero = false
-        for p in perms
+        for (p, χ) in zip(perms, chis)
             Tα = a * ns + p[i + 1]
             Tβ = b * ns + p[j + 1]
             lo, hi = minmax(Tα, Tβ)
             seen[lo + 1, hi + 1] = true
-            if (Tβ, Tα) in orbit
-                forced_zero = true          # 同じ対が逆向きでも現れる: f = −f
-            elseif !((Tα, Tβ) in orbit)
-                push!(orbit, (Tα, Tβ))
+            k_rev = findfirst(==((Tβ, Tα)), orbit)
+            k_same = findfirst(==((Tα, Tβ)), orbit)
+            if k_rev !== nothing
+                # f[Tβ,Tα] = s f と f[Tα,Tβ] = χ f、反対称性 f[Tα,Tβ] = −f[Tβ,Tα] から χ = −s でなければ f = 0
+                signs[k_rev] == -χ || (forced_zero = true)
+            elseif k_same !== nothing
+                signs[k_same] == χ || (forced_zero = true)
+            else
+                push!(orbit, (Tα, Tβ)); push!(signs, χ)
             end
         end
         if forced_zero
             n_forced_zero += 1
             continue
         end
-        for (s, t) in orbit
+        for ((s, t), sg) in zip(orbit, signs)
             fa, si = divrem(s, ns)
             fb, sj = divrem(t, ns)
-            push!(rows, (si, fa, sj, fb, n_idx))
+            push!(rows, (si, fa, sj, fb, n_idx, sg))
         end
         n_idx += 1
     end
@@ -79,8 +127,10 @@ function _write_pair_def(path, n_idx, rows)
         println(io, "ComplexType 1")
         println(io, "=============================================")
         println(io, "=============================================")
-        for (s1, f1, s2, f2, k) in rows
-            println(io, "$s1 $f1 $s2 $f2 $k 1")
+        for r in rows
+            s1, f1, s2, f2, k = r[1:5]
+            sg = length(r) >= 6 ? r[6] : 1
+            println(io, "$s1 $f1 $s2 $f2 $k $sg")
         end
     end
 end
@@ -172,6 +222,7 @@ if abspath(PROGRAM_FILE) == @__FILE__
     rest = filter(!=("--flavor-sym"), rest)
     r = flavor_sym ? gen_pair_def_flavor_sym(out, model, K, ex, ey) : gen_pair_def(out, model, K, ex, ey)
     println("n_idx = $(r.n_idx)  rows = $(r.n_rows)  forced_zero_orbits = $(r.n_forced_zero)")
+    write_pair_idx_outputs(out, model, K)
     if !isempty(rest)
         ok = check_against_alpha(model, ex, ey, rest[1])
         println("alpha の idx 写像を保つ: $ok")

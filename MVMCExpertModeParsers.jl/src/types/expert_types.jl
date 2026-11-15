@@ -145,6 +145,8 @@ mutable struct ModParaParameters
     # --- parton-mode (fork addition) ---
     parton_orb_param::Int         # PartonOrbParam: 0=α(既定) / 1=Φ の全要素を直接変分(DESIGN §12.11)
     parton_orb_amp_max::Float64   # PartonOrbAmpMax: SR 後に max|Φ_f| をこの値へそろえる(上流 D_AmpMax 相当)
+    # --- parton-mode (fork addition) ---
+    parton_pair_amp_max::Float64  # PartonPairAmpMax: PartonMode = 2 で SR 後に max|p| をこの値へそろえる(上流 D_AmpMax 相当)
 
     function ModParaParameters(;
         nsite::Int = 0,
@@ -201,6 +203,8 @@ mutable struct ModParaParameters
         # --- parton-mode (fork addition) ---
         parton_orb_param::Int = DEFAULT_PARTON_ORB_PARAM,
         parton_orb_amp_max::Float64 = DEFAULT_PARTON_ORB_AMP_MAX,
+        # --- parton-mode (fork addition) ---
+        parton_pair_amp_max::Float64 = DEFAULT_PARTON_PAIR_AMP_MAX,
     )
         new(
             nsite,
@@ -256,6 +260,8 @@ mutable struct ModParaParameters
             # --- parton-mode (fork addition) ---
             parton_orb_param,
             parton_orb_amp_max,
+            # --- parton-mode (fork addition) ---
+            parton_pair_amp_max,
         )
     end
 end

@@ -65,7 +65,7 @@ end
 `<head>_parton_orbdiag.dat` に SR ステップごとに 1 行書く(rank 0 のみ、step 0 で "w")。
 §12.11 の「致命的な問題」の判定材料:
 
-- `n_skipped` — |ip| < 1e-30 で捨てたサンプル数(このランク)。増え続けたら桁落ち
+- `n_skipped` — 捨てたサンプル数(このランク。ip が 0 か非有限、または E_loc が非有限。`parton_ip_usable`)。増え続けたら桁落ち
 - `accept_ratio` / `n_need_recompute` / `n_exact_recompute` — MC の健康診断
   (α の `_parton_diag.dat` と同じ定義)
 - `xmax_pre_g` — 再スケールの組 g ごとの、再スケール**前**の max|θ|(= D·(1 + SR 更新の

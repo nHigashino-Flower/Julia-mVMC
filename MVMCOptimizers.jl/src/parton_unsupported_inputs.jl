@@ -324,6 +324,15 @@ function validate_parton_data(data::ExpertModeData; require_mf_inputs::Bool = tr
             "from namelist.def, or set `PartonMode 2` in modpara.def.",
         )
     end
+    # --- parton-mode (fork addition) --- PartonPairAmpMax も Pf でしか読まない(2026-11-05)
+    if data.modpara.parton_mode != PARTON_MODE_PFAFFIAN &&
+       data.modpara.parton_pair_amp_max != MVMCExpertModeParsers.DEFAULT_PARTON_PAIR_AMP_MAX
+        error(
+            "PartonPairAmpMax = $(data.modpara.parton_pair_amp_max) is only used in PartonMode = 2 " *
+            "(Pfaffian parton mode), but PartonMode = $(data.modpara.parton_mode). Remove it, or use " *
+            "PartonOrbAmpMax for the direct orbitals (PartonOrbParam = 1).",
+        )
+    end
 
     # --- required inputs ---------------------------------------------------
     # Φ 直接変分モード(PartonOrbParam = 1)には α の入力が存在しないので、
