@@ -86,6 +86,7 @@ include("parton_pair_types.jl")       # Pfaffian モード(PartonMode = 2、DESI
 include("parton_unsupported_inputs.jl")
 include("parton_orbparam_inputs.jl")  # Φ 直接変分の入力・再スケール・門番
 include("parton_pair_inputs.jl")      # Pfaffian モードの入力・初期値・D_AmpMax・門番
+include("parton_sr_solver.jl")        # SR ソルバの共通の入口(直接法・SR-CG、DESIGN §14)
 include("parton_orbital.jl")
 include("parton_initial_params.jl")
 include("parton_calculate_m_all.jl")

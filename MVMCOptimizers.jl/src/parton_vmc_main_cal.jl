@@ -358,9 +358,8 @@ v3.11(M2 後半)で物理密度 Jastrow が入った。O_p = cnt_p は**実数**
 恒久検証は §8-16-4(虚スロット厳密 0 + S が共役の有無で不変を Jastrow 込みで確認)。
 門番は Gutzwiller / DH / 複素 v を拒否してこの前提を配線で守る。
 
-もう 1 つの前提として、SR-CG 経路(`operate_by_s!`)は全スロットが MF なら偶然
-共役に不変だが、これは偶然にすぎない。門番の `NSRCG = 0` がこのシムの妥当性を
-支えている。
+SR-CG(NSRCG = 1、DESIGN §14)は、このシムを掛けた後の store から S·x を作る。
+直接法の S も同じ store から組むので、両者は同じ計量になる(test_parton_sr_solver.jl)。
 """
 function _parton_conjugate_mf_slots!(
     sr_opt_o::AbstractVector{ComplexF64},
@@ -562,7 +561,13 @@ function parton_main_cal!(pstate::PartonOptimizationState, data::ExpertModeData;
     sr = pstate.state.sr_opt
     energy = pstate.state.energy
 
-    fill!(sr.sr_opt_oo, 0)
+    # SR-CG(NSRCG ≠ 0、DESIGN §14)は ⟨O O†⟩ の先頭行と対角(先頭 2 行ぶん)しか使わない
+    use_cg = parton_sr_use_cg(data)
+    if use_cg
+        fill!(view(sr.sr_opt_oo, 1:(4 * sr.sr_opt_size)), 0)
+    else
+        fill!(sr.sr_opt_oo, 0)
+    end
     fill!(sr.sr_opt_ho, 0)
     fill!(sr.sr_opt_o, 0)
     energy.wc = 0
@@ -575,7 +580,7 @@ function parton_main_cal!(pstate::PartonOptimizationState, data::ExpertModeData;
     gauge_proj = mp.parton_gauge_fix != 0
     α_now = gauge_proj ? parton_alpha_from_terms(data) : ComplexF64[]
 
-    use_store = mp.nstore_o != 0
+    use_store = mp.nstore_o != 0 || use_cg      # SR-CG はサンプルごとの O が必須(上流と同じ)
     n_skipped = 0
     # 実際に蓄積したサンプル数。ノード上のサンプルを飛ばすと s とずれるので、
     # store の書き込み位置と finalize に渡す個数はこちらを使う。前ステップの O が
@@ -654,14 +659,20 @@ function parton_main_cal!(pstate::PartonOptimizationState, data::ExpertModeData;
     if use_store
         ctimer_start!(c_timer, 810)
         # 軌道の器でディスパッチする。α は上流の finalize_oo_store! そのもの(ビット一致)、
-        # Φ 直接変分は BLAS 版(DESIGN §12.10)。門番が NSRCG = 0 を保証している
-        parton_finalize_oo_store!(
-            mfham,
-            sr.sr_opt_oo,
-            sr.sr_opt_o_store,
-            sr.sr_opt_size,
-            n_stored,               # 実際に詰めた個数。wc の母数と揃える
-        )
+        # Φ 直接変分と Pf は BLAS 版(DESIGN §12.10)
+        if use_cg
+            # ⟨O⟩ の行と対角 ⟨|O|²⟩ だけを組む(上流の SR-CG と同じ。行列は作らない)
+            finalize_oo_store!(sr.sr_opt_oo, sr.sr_opt_o_store, sr.sr_opt_size, n_stored;
+                               nsrcg = true)
+        else
+            parton_finalize_oo_store!(
+                mfham,
+                sr.sr_opt_oo,
+                sr.sr_opt_o_store,
+                sr.sr_opt_size,
+                n_stored,               # 実際に詰めた個数。wc の母数と揃える
+            )
+        end
         ctimer_stop!(c_timer, 810)
     end
 

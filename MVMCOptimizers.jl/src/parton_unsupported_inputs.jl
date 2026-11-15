@@ -83,7 +83,7 @@ Rejected or required:
   numbers, so this must be pinned explicitly.
 - `NCond = -1`, `NLocSpin = 0`: the upstream relation
   `NElec = (NLocSpin + NCond) / 2` is meaningless once flavors replace spin.
-- `ComplexType = 1`, `NSRCG = 0`, `NLanczosMode = 0`: the single variant
+- `ComplexType = 1`, `NSRCG = 0/1`, `NLanczosMode = 0`: the single variant
   implemented in M1.
 - `NVMCCalMode ∈ {0, 1}`: 0 = parameter optimization, 1 = physical measurement
   (DESIGN_parton.md §13, which also needs `NDataQtySmp >= 1`).
@@ -224,12 +224,10 @@ function validate_parton_modpara(
             "variant of the determinant engine is not implemented.",
         )
     end
-    if modpara.nsrcg != 0
+    if !(modpara.nsrcg in (0, 1))
         error(
-            "Parton mode implements the direct SR solver only (NSRCG = 0), " *
-            "got NSRCG = $(modpara.nsrcg). The mean-field parameter count is " *
-            "small, so the S matrix is cheap to build explicitly and SR-CG " *
-            "brings no benefit.",
+            "Parton mode supports the direct SR solver (NSRCG = 0) and the " *
+            "standard SR-CG solver (NSRCG = 1) only, got NSRCG = $(modpara.nsrcg).",
         )
     end
     if modpara.lanczos_mode != 0

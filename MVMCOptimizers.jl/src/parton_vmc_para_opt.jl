@@ -244,7 +244,9 @@ function parton_vmc_para_opt!(
         ctimer_stop!(c_timer, 807)
 
         weight_average_we!(ctx, pstate.state)
-        weight_average_sr_opt!(ctx, pstate.state)
+        ctimer_start!(c_timer, 814)
+        parton_weight_average_sr_opt!(ctx, pstate.state, data)
+        ctimer_stop!(c_timer, 814)
         reduce_counter!(ctx, pstate.config.counter)
 
         ctimer_start!(c_timer, 813)
@@ -256,9 +258,9 @@ function parton_vmc_para_opt!(
         # 汎用なので射影(Jastrow)+ MF の全パラメータを 1 本で押さえる。
         para_before = pack_parameters(data)
         ctimer_start!(c_timer, 811)
-        info = stochastic_opt!(data, pstate.state, c_timer;
-                               write_srinfo = diag_dir !== nothing,
-                               srinfo_dir = diag_dir, srinfo_iter = step)
+        info = parton_stochastic_opt!(data, pstate.state, c_timer, ctx;
+                                      write_srinfo = diag_dir !== nothing,
+                                      srinfo_dir = diag_dir, srinfo_iter = step)
         ctimer_stop!(c_timer, 811)
         info = Int(bcast_scalar(ctx, info))
         if info != 0

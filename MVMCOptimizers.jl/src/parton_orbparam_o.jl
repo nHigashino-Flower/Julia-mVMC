@@ -141,17 +141,7 @@ parton_finalize_oo_store!(::PartonMFHamiltonian, sr_opt_oo::Vector{ComplexF64},
                           n_stored::Int) =
     finalize_oo_store!(sr_opt_oo, sr_opt_o_store, sr_opt_size, n_stored; nsrcg = false)
 
-function parton_finalize_oo_store!(::PartonDirectPhi, sr_opt_oo::Vector{ComplexF64},
-                                   sr_opt_o_store::Vector{ComplexF64}, sr_opt_size::Int,
-                                   n_stored::Int)
-    size_2 = 2 * sr_opt_size
-    M = reshape(view(sr_opt_oo, 1:(size_2 * size_2)), size_2, size_2)
-    if n_stored == 0
-        fill!(M, 0)
-        return nothing
-    end
-    A = reshape(view(sr_opt_o_store, 1:(size_2 * n_stored)), size_2, n_stored)
-    mul!(M, A, A')          # ZGEMM
-    M .= conj.(M)
-    return nothing
-end
+parton_finalize_oo_store!(::PartonDirectPhi, sr_opt_oo::Vector{ComplexF64},
+                          sr_opt_o_store::Vector{ComplexF64}, sr_opt_size::Int,
+                          n_stored::Int) =
+    parton_oo_from_store_blas!(sr_opt_oo, sr_opt_o_store, sr_opt_size, n_stored)

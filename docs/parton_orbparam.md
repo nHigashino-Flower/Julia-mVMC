@@ -39,7 +39,7 @@ DSROptStaDel    0.1      # 必ず正の値(下の注意)
   変わらないので、S 行列が厳密な零方向を持つ。0 だと SR の連立方程式が解けない
 - **`PartonOrbParam` のつづりに注意**。modpara の未知キーは黙って無視され、α モードとして
   走り出す(α 側の門番が「pmfpara が無い」と言って止まる)
-- その他の条件は α モードと同じ(`NVMCCalMode 0`、`ComplexType 1`、`NSRCG 0`、
+- その他の条件は α モードと同じ(`NVMCCalMode 0`、`ComplexType 1`、`NSRCG 0` か `1`、
   `NExUpdatePath 6`、`2Sz 0`、`NSplitSize 1` など)
 
 ### namelist.def

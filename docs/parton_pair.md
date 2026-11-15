@@ -255,6 +255,9 @@ JULIA_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 $MPX -n 16 julia --project=. run_case
 (`playground_nozomi/parton_pf/T4/run_case_mpi.jl`)。BLAS を 1 に固定しないと 16 ランク × 16 スレッドがコアを奪い合う。
 QP ごとのスレッド並列は上流の更新を待つ(DESIGN §10)。
 
+> **パラメータが多い run(共有なしなど、数千〜)は `NSRCG 1`(SR-CG)が速い**。直接法は 1 ノード分のコアしか使えないので、
+> 複数ノードの本番も SR-CG で。`docs/parton_run.md` の「SR の解法」節。
+
 > 物理量の測定(NVMCCalMode = 1、⟨b†_i b_j⟩・⟨n_i n_j⟩)は `docs/parton_run.md` の「物理量測定」節。
 
 ## 8. 出力

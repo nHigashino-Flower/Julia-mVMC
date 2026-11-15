@@ -68,7 +68,7 @@ end
         "NCond≠-1" => d -> d.modpara.ncond = 4,
         "NLocSpin≠0" => d -> d.modpara.nlocspin = 2,
         "NVMCCalMode=2" => d -> d.modpara.vmc_calc_mode = 2,
-        "NSRCG≠0" => d -> d.modpara.nsrcg = 1,
+        "NSRCG≥2" => d -> d.modpara.nsrcg = 2,
         "NLanczosMode≠0" => d -> d.modpara.lanczos_mode = 1,
         "NSPGaussLeg≠1" => d -> d.modpara.nsp_gauss_leg = 2,
         "NOrbitalIdx≠0" => d -> d.modpara.n_orbital_idx = 3,

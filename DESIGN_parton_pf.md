@@ -209,7 +209,7 @@ ComplexType          1
   共用する(ユーザー判断 2026-10-31。意味が同じ値を 2 つ作らない。T3 では modpara の違いが PartonMode だけになる)。
   6 はフォークで足したパートン専用の値で、上流が使うのは 0〜3(`vmc_sampling.jl:1187-1215`)。
   将来 Pf 専用の手(2 粒子の交換など。契約 2・3 は |S| 一般で書くので乗る)を足すときは新しい値を割り当てる
-- そのほかの必須設定は PartonMode = 1 の共通検査をそのまま使う(`2Sz = 0`、`ComplexType = 1`、`NSRCG = 0` ほか。本体 §2.1)
+- そのほかの必須設定は PartonMode = 1 の共通検査をそのまま使う(`2Sz = 0`、`ComplexType = 1`、`NSRCG = 0/1` ほか。本体 §2.1。SR-CG は本体 §14)
 - `PartonBlockUpdateSize`(既定 16)を Pf の厳密再計算の周期にもそのまま使う
 - D_AmpMax は modpara キー **`PartonPairAmpMax`**(既定 4.0 = 上流の定数 `D_AMP_MAX`、`parameter_sync.jl:9`)。2026-11-05 にキー化(§4.6・§11)。
   正の有限値でなければ拒否。Φ 用の `PartonOrbAmpMax` が既定以外なら拒否(Pf では読まないので)

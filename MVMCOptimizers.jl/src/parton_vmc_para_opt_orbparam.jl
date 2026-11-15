@@ -189,7 +189,9 @@ function parton_orbparam_vmc_para_opt!(
         n_skipped = mp.nvmc_sample - round(Int, real(pstate.state.energy.wc))
 
         weight_average_we!(ctx, pstate.state)
-        weight_average_sr_opt!(ctx, pstate.state)
+        ctimer_start!(c_timer, 814)
+        parton_weight_average_sr_opt!(ctx, pstate.state, data)
+        ctimer_stop!(c_timer, 814)
         reduce_counter!(ctx, pstate.config.counter)
 
         ctimer_start!(c_timer, 813)
@@ -198,9 +200,9 @@ function parton_orbparam_vmc_para_opt!(
 
         para_before = pack_parameters(data)
         ctimer_start!(c_timer, 811)
-        info = stochastic_opt!(data, pstate.state, c_timer;
-                               write_srinfo = diag_dir !== nothing,
-                               srinfo_dir = diag_dir, srinfo_iter = step)
+        info = parton_stochastic_opt!(data, pstate.state, c_timer, ctx;
+                                      write_srinfo = diag_dir !== nothing,
+                                      srinfo_dir = diag_dir, srinfo_iter = step)
         ctimer_stop!(c_timer, 811)
         info = Int(bcast_scalar(ctx, info))
         if info != 0

@@ -411,7 +411,12 @@ const CTIMER_PARTON_LINES = Tuple{String,Int}[
     ("    contract4 E_loc        [808] ", 808),
     ("    contract5 O            [809] ", 809),
     ("    OO accumulate          [810] ", 810),
+    ("  reduce OO, HO            [814] ", 814),
     ("  SR                       [811] ", 811),
+    ("    SR-CG prepare          [815] ", 815),
+    ("    SR-CG S*d local        [816] ", 816),
+    ("    SR-CG S*d allreduce    [817] ", 817),
+    ("    SR-CG precondition     [818] ", 818),
     ("  sync                     [812] ", 812),
     ("  output                   [813] ", 813),
 ]

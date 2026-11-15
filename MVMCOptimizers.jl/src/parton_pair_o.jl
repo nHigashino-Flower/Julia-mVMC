@@ -109,17 +109,7 @@ store 経路の ⟨O O†⟩ を BLAS の行列積で組む(Φ 版と同じ本�
 上流の素朴な 3 重ループは使わない)。並びは上流と同じく OO[(i−1)·size₂ + j] = Σ_s O[i,s]·conj(O[j,s])。
 Φ のファイルは別セッションで改装中のため本体を複製している。合流後に共通化する(DESIGN_parton_pf.md §10)。
 """
-function parton_finalize_oo_store!(::PartonPairOrbital, sr_opt_oo::Vector{ComplexF64},
-                                   sr_opt_o_store::Vector{ComplexF64}, sr_opt_size::Int,
-                                   n_stored::Int)
-    size_2 = 2 * sr_opt_size
-    M = reshape(view(sr_opt_oo, 1:(size_2 * size_2)), size_2, size_2)
-    if n_stored == 0
-        fill!(M, 0)
-        return nothing
-    end
-    A = reshape(view(sr_opt_o_store, 1:(size_2 * n_stored)), size_2, n_stored)
-    mul!(M, A, A')          # ZGEMM
-    M .= conj.(M)
-    return nothing
-end
+parton_finalize_oo_store!(::PartonPairOrbital, sr_opt_oo::Vector{ComplexF64},
+                          sr_opt_o_store::Vector{ComplexF64}, sr_opt_size::Int,
+                          n_stored::Int) =
+    parton_oo_from_store_blas!(sr_opt_oo, sr_opt_o_store, sr_opt_size, n_stored)
