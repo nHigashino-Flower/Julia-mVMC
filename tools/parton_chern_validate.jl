@@ -113,7 +113,7 @@ function build_canonical(dir)
 end
 ok2 = true
 for seed in ("1008", "1004", "1003")
-    dir = "playground_nozomi/cb_nu12_boson/runs/L08_ef4_s$(seed)"
+    dir = "playground_nozomi/projects/checkerboard/nu12_boson/runs/L08_ef4_s$(seed)"
     isdir(dir) || continue
     H = build_canonical(dir)
     for f in 1:2

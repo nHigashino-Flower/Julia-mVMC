@@ -323,18 +323,18 @@ NSRCG=0 前提で妥当性を確認したもので、`parton_vmc_main_cal.jl:314
 
 ```
 # 候補 C(idx 粒度) ν=1/2 / ν=1/3
-julia --project=MVMCOptimizers.jl <job>/tmp/run_candC.jl      # → playground_nozomi/parton_candC/
-julia --project=MVMCOptimizers.jl <job>/tmp/run_candC13.jl    # → playground_nozomi/parton_candC13/
+julia --project=MVMCOptimizers.jl <job>/tmp/run_candC.jl      # → playground_nozomi/dev/parton_candC/
+julia --project=MVMCOptimizers.jl <job>/tmp/run_candC13.jl    # → playground_nozomi/dev/parton_candC13/
 
 # 正則化因子(RedCut, dt)
-julia --project=MVMCOptimizers.jl <job>/tmp/run_regD.jl       # → playground_nozomi/parton_regD/
+julia --project=MVMCOptimizers.jl <job>/tmp/run_regD.jl       # → playground_nozomi/dev/parton_regD/
 
 # 1 ステップの内訳 / main_cal のプロファイル
 julia --project=MVMCOptimizers.jl <job>/tmp/prof.jl
 julia --project=MVMCOptimizers.jl <job>/tmp/prof2.jl
 
 # 既存の P3 複数シード
-#   → playground_nozomi/parton_p3/{nu12,nu13}_*_out/zvo_out.dat
+#   → playground_nozomi/dev/parton_p3/{nu12,nu13}_*_out/zvo_out.dat
 ```
 
 ---
@@ -747,7 +747,7 @@ diag_max = 9.9e+11、n_cut = 100/184 が 76 回、E も途中で上下しつつ 
   共犯ではある(「漂流」の実体は**凍結**だった)
 - **条件数説は棄却**、**セクター説はこの ansatz には適用不可**
 
-診断コードは `playground_nozomi/diag_sr/`(本体パッケージ非依存、読み出しのみ)。
+診断コードは `playground_nozomi/projects/checkerboard/diag_sr/`(本体パッケージ非依存、読み出しのみ)。
 
 | スクリプト | 役割 |
 |---|---|

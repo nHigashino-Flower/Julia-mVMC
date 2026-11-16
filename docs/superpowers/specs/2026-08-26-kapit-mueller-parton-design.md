@@ -162,7 +162,7 @@ cb は始点の行の偶奇 `y0` のみ、KM は始点の x 座標(Landau ゲー
 
 ### 2.2 run 出力
 
-`playground_nozomi/km/`(git 管理外)。scripts は `cb_nu12_boson/scripts/` の
+`playground_nozomi/projects/kapit_mueller/km/`(git 管理外)。scripts は `cb_nu12_boson/scripts/` の
 `gen_def.jl` / `chain.jl` / `stage_io.jl` / `analyze.jl` を KM 向けに移植する。
 
 ### 2.3 ED 側(別リポジトリ `/home/nozomihigashino/ED`)
@@ -235,7 +235,7 @@ K0〜K5 はスパイクで**全て実測済み**(2026-08-26)。実装後に自�
 1. **ED**: 統計軸 → KM 格子/模型/系 → テスト → 4 系の ED 実行(P0)
 2. **mVMC**: 模型インターフェース抽出 → checkerboard 適合(442 全緑を確認)→
    `km_model.jl` → fixture 一般化 → P1/P2
-3. **run**: `playground_nozomi/km/` に gen_def/chain/submit を用意し、
+3. **run**: `playground_nozomi/projects/kapit_mueller/km/` に gen_def/chain/submit を用意し、
    4 系 × seed で投入 → ED との差を集計
 
 ## 5.5 実装後に判明したこと(2026-08-26、追記)

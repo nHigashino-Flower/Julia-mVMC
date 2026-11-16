@@ -14,7 +14,7 @@ f の要素は SR で直接変分する(上流 mVMC の Pfaffian の f_ij と同
 - K = 2 なら上流の一般スピン Pfaffian と同じ形(スピンをフレーバーと読み替える。f は上流と同じ ×2 規約)
 
 設計の正は `DESIGN_parton_pf.md`(決定ログは §11、実装と試走の記録は §13)。ベンチマークの run は
-`playground_nozomi/parton_pf/T4/`(git 管理外)にある。
+`playground_nozomi/dev/parton_pf/T4/`(git 管理外)にある。
 
 ## 1. PartonMode = 1 との違い
 
@@ -138,16 +138,16 @@ f を並進 T で(符号 χ_T = ±1 付きで)共有すると F(Tr) = χ_T F(r) 
 
 **合わない並進は f の共有から外し(f のセルを大きくする)、QP に入れて重みでセクターを選ぶ**(mVMC の標準どおり)。
 KM 9×4 なら f のセル 9×1 → 9×2、QP は x{0,3,6} × y{0,1} の 6 本で、y の 1 並進に重み −1(Ky = π)。
-作り方は `playground_nozomi/parton_pf/T4/make_sector_inputs.jl`。
+作り方は `playground_nozomi/dev/parton_pf/T4/make_sector_inputs.jl`。
 
 **確かめ方**: 目的の状態(例えば Mode 1 の解)の占有軌道 Φ^a に並進を作用させ、U_T = Φ^a† P_T Φ^a の det の積を見る。
 新しい def と QP で Mode 1 の解が厳密に表せること(異フレーバーのブロックに乱数を詰めた J を共有群で平均し、射影の残差
-≤ 1e−14、ip_Pf / ip_det が配置によらず一定)を確かめたスクリプトは `playground_nozomi/parton_pf/T4/checks/check_sector.jl`、
+≤ 1e−14、ip_Pf / ip_det が配置によらず一定)を確かめたスクリプトは `playground_nozomi/dev/parton_pf/T4/checks/check_sector.jl`、
 運動量の確かめ方は同じ場所の `check_momentum.jl`(DESIGN §13.5 (1))。
 
 注意: 運動量を合わせても、**同じ運動量の位相縮退(トーラス上の多重項)のどれに乗るかは選べない**。
 CB 6×3 ν=1/3 は ED の 3 重項が全部 K = (−0.5, 0) で C2 だけが違い、パートン解は C2 = −1 側に落ちる
-(本体 `playground_nozomi/cb_nu12_boson/REPORT_sector.md`)。この系の ED との差は実装の物差しにならない。
+(本体 `playground_nozomi/projects/checkerboard/nu12_boson/REPORT_sector.md`)。この系の ED との差は実装の物差しにならない。
 
 ## 5. 初期値と SR の設定(★ここが一番効く)
 
@@ -180,7 +180,7 @@ CB 6×3 ν=1/3 は ED の 3 重項が全部 K = (−0.5, 0) で C2 だけが違�
 - 「dt を絞る追い込み」は、虚時間あたりで頭打ちになってから(§6)。まだ下がっているうちに dt を絞ると 1 step の進みが遅くなるだけ
   (KM 4×4 で dt 0.003 → 0.001 にしたら、虚時間あたりの降下は同じで、step あたり 3 倍遅くなった)
 - 継続は前の段の `zqp_parton_pair_opt.dat` を InPartonPairOrbital に、`zqp_jastrow_opt.dat` を 5 行ヘッダに直して InJastrow に渡す
-  (`playground_nozomi/parton_pf/T4/prepare_extend.jl`)
+  (`playground_nozomi/dev/parton_pf/T4/prepare_extend.jl`)
 
 **未検証**: 上の表は 1 seed・KM 4×4(実パラメータ 164、サンプル 2000 で S が十分に決まる)だけ。実パラメータがサンプル数を
 超える系(KM 9×4 は 2052〜3996 > 2000。S の階数が足りない)で StaDel を下げて安定かはまだ確かめていない。短い試走で
@@ -252,7 +252,7 @@ JULIA_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 $MPX -n 16 julia --project=. run_case
 ```
 
 `run_case_mpi.jl` は `BLAS.set_num_threads(1)` してから `parton_run_para_opt_from_namelist` を呼ぶだけ
-(`playground_nozomi/parton_pf/T4/run_case_mpi.jl`)。BLAS を 1 に固定しないと 16 ランク × 16 スレッドがコアを奪い合う。
+(`playground_nozomi/dev/parton_pf/T4/run_case_mpi.jl`)。BLAS を 1 に固定しないと 16 ランク × 16 スレッドがコアを奪い合う。
 QP ごとのスレッド並列は上流の更新を待つ(DESIGN §10)。
 
 > **パラメータが多い run(共有なしなど、数千〜)は `NSRCG 1`(SR-CG)が速い**。直接法は 1 ノード分のコアしか使えないので、

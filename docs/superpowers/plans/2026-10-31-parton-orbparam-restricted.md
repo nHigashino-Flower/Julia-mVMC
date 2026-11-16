@@ -253,7 +253,7 @@ end
 - [ ] **Step 1: 全スイート**:パーサと MVMCOptimizers の `Pkg.test()`、`$JL --project=@. test/physics/runtests.jl`(P 層 1292)。Expected: 全 PASS
 - [ ] **Step 2: d7cc568 の worktree との比較**(手順は前回計画の Task 9 と同じ。サブモジュールはシンボリックリンク、`MVMCOptimizers.jl/Manifest.toml` を複写)
   - α:KM ν=1/2 4×4 の stage1_in を 20 step に縮めた入力。前回と同じ 13 ファイルがバイト一致
-  - Φ(def なし):`playground_nozomi/km/runs_orbparam/L4x4_nu12_randphi_s2026/in` を 20 step に縮めた入力。`zvo_out.dat`・`zvo_var.dat`・`zvo_SRinfo.dat`・`zvo_conv.dat`・`zqp_opt.dat`・`zqp_jastrow_opt.dat`・`zqp_pmforb_init.dat`・`zqp_pmforb_opt.dat`・`zvo_parton_orbdiag.dat` がバイト一致(runinfo は追記 2 行と時刻だけ違う)
+  - Φ(def なし):`playground_nozomi/projects/kapit_mueller/km/runs_orbparam/L4x4_nu12_randphi_s2026/in` を 20 step に縮めた入力。`zvo_out.dat`・`zvo_var.dat`・`zvo_SRinfo.dat`・`zvo_conv.dat`・`zqp_opt.dat`・`zqp_jastrow_opt.dat`・`zqp_pmforb_init.dat`・`zqp_pmforb_opt.dat`・`zvo_parton_orbdiag.dat` がバイト一致(runinfo は追記 2 行と時刻だけ違う)
 - [ ] **Step 3: worktree を畳む**(ディレクトリを消してから `git worktree prune`)
 
 ---
@@ -261,7 +261,7 @@ end
 ### Task 8: 試走(KM ν=1/3 9×4 を Bloch 形で)
 
 **Files:**
-- Modify: `playground_nozomi/km/REPORT_orbparam.md`(git 管理外)
+- Modify: `playground_nozomi/projects/kapit_mueller/km/REPORT_orbparam.md`(git 管理外)
 - Modify: `.claude/CLAUDE.md`
 
 - [ ] **Step 1**:`L9x4_nu13_indep_k0_hm8p0_s1001/stage1` を `--bloch` で変換し、n_idx を確認する(Φ ブロックが 432 → 108 になる見込み)

@@ -95,7 +95,7 @@ LiWuC 3×4 N=6 の Pf(最適化後の状態から 12 step)、MPI 4 ランク × 
 - 全テスト: Parton 4895・Unit 793・Slater 25 が通過(門番の試験は「NSRCG ≥ 2 を拒否」に変更)
 - 実系・MPI 4: 直接法の E が旧コードと 12 step 同じ。SR-CG は `DSROptCGTol 1e-14` で直接法と 3 step の E・sDiagMax・更新の最大成分が 6 桁一致
 - **本番の長さの検証(2026-11-16、PBS 12681)**: LiWuC 3×4 ν=1/2 の Pf(7830 次元、MPI 12 × 334 サンプル、3000 step)を、直接法で済んだ run と
-  同じ入力・同じ seed に `NSRCG 1` だけ足して流した(`playground_nozomi/liwu_pf/runs/lwc_w10s3_n12_3x4_K01_c34_srcg`)。
+  同じ入力・同じ seed に `NSRCG 1` だけ足して流した(`playground_nozomi/projects/liwu/runs/lwc_w10s3_n12_3x4_K01_c34_srcg`)。
 
   | | 直接法(旧コード) | SR-CG(既定の DSROptCGTol) |
   |---|---|---|

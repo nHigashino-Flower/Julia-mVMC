@@ -933,7 +933,7 @@ stochastic_opt!(案 B 後は MF ブロックも解く)/ weight_average / paralle
   壊す、という教訓の 2 例目。参照VMC の orbital(f_ij)は全順序対リスト + 固定係数
   なしなので構造的に免疫、upstream にも波及しない(pmftrans/pmfpara は fork 追加)。
   発見の経緯と解析ツール(`tools/parton_bands.jl` / `tools/parton_band_chern.jl`)は
-  `playground_nozomi/cb_nu12_boson/PROJECT.md` の 2026-08-18 メモを参照
+  `playground_nozomi/projects/checkerboard/nu12_boson/PROJECT.md` の 2026-08-18 メモを参照
 - v3.13 (2026-08-14, 占有の読み戻し): **`InPmfOcc`** を実装(§2.3.1 / §3.3.1 / §8-18)。
   v3.12 の終端検査が `occ_selfcontained = 0` を返した(REPORT §16-5)ため、
   `PartonOccMode = 1` の run は α\* 単独では状態を再現できない。これを埋める。

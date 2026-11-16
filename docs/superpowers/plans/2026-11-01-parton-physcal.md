@@ -152,12 +152,12 @@
 
 **Files:**
 - Create: `tools/parton_physcal_exact.jl`(`<namelist> <out_dir>`。ドライバと同じ初期化で状態を組み、`parton_exact_expectations` の結果を `<head>_cisajs_exact.dat` / `<head>_cisajscktalt_exact.dat` / `<head>_energy_exact.dat` に上流と同じ書式で書く)
-- Create(git 管理外): `playground_nozomi/km/physcal/`(入力・出力・比較スクリプト `compare_exact.jl`・`REPORT_physcal.md`)
+- Create(git 管理外): `playground_nozomi/projects/kapit_mueller/km/physcal/`(入力・出力・比較スクリプト `compare_exact.jl`・`REPORT_physcal.md`)
 
 **Interfaces:**
 - Consumes: Task 1 の `parton_exact_expectations`、Task 4 の入口、Task 5 の生成道具
 
-- [ ] **Step 1: 入力を作る** — α は `playground_nozomi/km/runs/L4x4_nu12_sym_k0_hm8p0_s1001` の段 1 の最適解(`_pmfpara_opt` / `_pmfocc_opt` / Jastrow を段 2 と同じ引き継ぎ方で In 化)、Pf は `playground_nozomi/parton_pf/T4/` の KM 4×4 の最良 run の `_parton_pair_opt.dat`。どちらも `NVMCCalMode 1`・`NDataQtySmp 5`・NVMCSample はランクあたり 2000(合計 32000/ismp)、greenone/greentwo は Task 5 の道具で全対
+- [ ] **Step 1: 入力を作る** — α は `playground_nozomi/projects/kapit_mueller/km/runs/L4x4_nu12_sym_k0_hm8p0_s1001` の段 1 の最適解(`_pmfpara_opt` / `_pmfocc_opt` / Jastrow を段 2 と同じ引き継ぎ方で In 化)、Pf は `playground_nozomi/dev/parton_pf/T4/` の KM 4×4 の最良 run の `_parton_pair_opt.dat`。どちらも `NVMCCalMode 1`・`NDataQtySmp 5`・NVMCSample はランクあたり 2000(合計 32000/ismp)、greenone/greentwo は Task 5 の道具で全対
 - [ ] **Step 2: 厳密値** — `julia --project=MVMCOptimizers.jl tools/parton_physcal_exact.jl <namelist> <out>`(C(16,4) = 1820 配置)
 - [ ] **Step 3: 測定** — MPI 16(`JULIA_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1`、MPI.jl 付属の mpiexec)
 - [ ] **Step 4: 比較** — 合格条件: 全成分で |MC 平均 − 厳密| < 4σ(σ = 5 個の ismp の標準誤差)、各 ismp で Σ⟨n_i⟩ = 4(`1e-10`)、E の再構成(`1e-10`)、E_MC と厳密 E(−4)の一致。外れた成分は表で REPORT に残す

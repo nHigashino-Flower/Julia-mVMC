@@ -23,7 +23,7 @@
      C4 対称なら恒等的に 0
 
 副格子込み C4 が CB の対称性であることの確認や、band_c4 の定量値は
-`playground_nozomi/cb_nu12_boson/scripts/c4_band_asym.jl` を参照。
+`playground_nozomi/projects/checkerboard/nu12_boson/scripts/c4_band_asym.jl` を参照。
 =#
 
 include(joinpath(@__DIR__, "parton_bands.jl"))

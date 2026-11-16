@@ -14,17 +14,21 @@
 ### ★★★引き継ぎ(2026-11-17 04:30)
 
 - **★`playground_nozomi/` は別リポジトリ `git@github.com:nHigashino-Flower/Julia-mVMC-MyData.git`(非公開、ブランチ main)になった**(11-17、ユーザー依頼「重いデータを除いて push、ohtaka でも回す」)。
+  **11-17 に並べ替え(ユーザー「playground をそのままは汚い」)**: トップは `model/`・`projects/{liwu, kapit_mueller/{km,cfl_pf,cfl_orbparam,nu12_holedope_phi}, checkerboard/{nu12_boson,diag_R,diag_sr}}`・`dev/`(実装時の試走、`parton_*`・`parton_pf/T4`)・`docs/`。
+  liwu の中は `scripts/{gen,run,analysis,theory,submit}/`・`diag/<問い>/`(旧 `diag_<問い>`)・`runs/`・`pbs/`・`logs/pbs/`(PBS の .o/.e)。各 README に一覧。
+  **旧名 `playground_nozomi/liwu_pf` は `projects/liwu` への symlink、`projects/liwu/scripts/run_case_mpi.jl` は `run/` への symlink(どちらも待ちジョブ 12674〜12668 のため、git 外)。待ち行列が空になったら消す**。
+  並べ替えのスクリプトと書き換えの控えはセッションの scratchpad(`reorg.py`)。過去の `.log` の中のパスは旧名のまま
   入口 = `playground_nozomi/README.md`(置き場所・環境変数 `JMVMC_ROOT`・`LIWU(C)_ED_DATA`、模型の定義の要点、入れていないもの)。
   `.gitignore` は既定で全除外 → コード・入力・ログ・図・`zqp_*_opt.dat` だけ戻し、1 MB 超は末尾に列挙(作り直しの手順は README)。計算の出力(約 55 GB)は入れない。
   **模型の定義 `GeneralizedLL.jl`・`LiWu.jl` は `playground_nozomi/model/` に移し、`~/SingleParticle/Model/` の同名ファイルは symlink**(ED の `liwu.jl`・`liwuc.jl` もそれ経由で読む。元のファイルの控えはセッションの scratchpad)。
-  `liwu_pf/scripts/common.jl`・`liwuc_common.jl` は相対パス・環境変数で動くように直した。ほかのスクリプトと PBS は絶対パスのまま。
+  `projects/liwu/scripts/gen/common.jl`・`liwuc_common.jl` は相対パス・環境変数で動くように直した。ほかのスクリプトと PBS は絶対パスのまま。
   **新しい計算のスクリプト・記録を足したら MyData 側でもコミットする**。ED パッケージ(`~/ED/Code/test/ExactDiagonalization`、別リポジトリ)は大量の未コミット変更が残っている(未対応)
-- **LiWuC の最近接 V と湯川の比較(11-17、射影あり ED、w_C 1.0、shell 2・3、6×4 と 4×4 ν=1/2)**: `liwu_pf/diag_liwuc/README.md` 末尾と図 `diag_liwuc/nn_vs_yukawa_wC1.pdf`。
+- **LiWuC の最近接 V と湯川の比較(11-17、射影あり ED、w_C 1.0、shell 2・3、6×4 と 4×4 ν=1/2)**: `projects/liwu/diag/liwuc/README.md` 末尾と図 `diag/liwuc/nn_vs_yukawa_wC1.pdf`。
   FCI(ν=1/3・2/3)は最近接でも同じ 3 本・隙間は V 単位で 2 割大きい。**ν=1/2 は最近接で弱い**(6×4 比 1.8、4×4 は 12 本の上に Γ が降りる)= CFL を見るなら湯川。shell 2 と 3 の差は FCI ではほぼ無い。
   動機: ユーザーが別に回している DMRG(PBS の `liwuc_dmrg`、触らない)は短距離が軽い。DMRG は shell 2・湯川 rc = 6.0 の予定(rc 6 での湯川は最近接の値の 2.5%、ED のトーラスはそれより小さいので結果はほぼ同じ)
 - **Φ から始めた Pf の絞った延長(12690・12692)と解析(12695・12697)は完了**: ν=1/2 の差 0.0102 → 0.0078(乱数スタート 0.0043)、ν=2/3 0.0082 → 0.0049(同 0.0045、末尾 500 平均 80.86517)。
   どちらも 250 step ごとにまだ 0.0001〜0.0002 下がる。ν=2/3 は延長でフレーバー 2・3 の殻がさらに開き、f から直接読んだ重なりは 0.49・0.63(延長前 0.65・0.75)。ν=1/2 は 0.93 前後で閉じたまま。
-  **README §2.13 と解説ページへの反映は未実施**(出力 `diag_parton/channel/logs/after_fromphi_{n12,n23}_cont.out`)
+  **README §2.13 と解説ページへの反映は未実施**(出力 `diag/parton/channel/logs/after_fromphi_{n12,n23}_cont.out`)
 - **Φ モードの掘り下げ(12693)は完了**(`runs/_phi_dig.log`): 絞っても 3×4 はほぼ動かず(ν=1/3 0.0018・ν=1/2 0.034・ν=2/3 0.100)、seed で ν=1/2・2/3 は 0.005〜0.014 ずれる(局所解)。
   **6×3 ν=1/3 の Φ は 27.08805 で差 0.0030(乱数スタートの Pf 0.0136 より 4 倍良い)**。README §2.12 への反映は未実施。6×3 の「Φ から始める Pf」は未投入(ユーザー判断待ち)
 - **w_C 1.5 ν=1/3 3×4 の Pf(12670)**: 末尾 500 平均 16.59005、ED 16.57735 との差 0.0127(まだ下がる)
@@ -33,20 +37,20 @@
 
 ### ★★★セッション終了時の引き継ぎ(2026-11-16 14:00)
 
-**走行中・待ちはすべて PBS**(手元の計算・待ち合わせはない。一次記録 `liwu_pf/runs/_pbs_jobs.txt`)。詳しい経緯は下の節の「★「Φ から始める Pf」の結果」以降。
+**走行中・待ちはすべて PBS**(手元の計算・待ち合わせはない。一次記録 `projects/liwu/runs/_pbs_jobs.txt`)。詳しい経緯は下の節の「★「Φ から始める Pf」の結果」以降。
 - **Pf の列(MPI 12、afterany の直列)**: 12670(w_C 1.5 ν=1/3 3×4、直接法、17 時ごろ完了の見込み)→ **12690・12692(Φ から始めた Pf ν=1/2・2/3 の絞った延長)**
   → 12672 → 12674 → 12676(w_C 1.5)→ 12662 → 12664 → 12666 → 12668(shell 2)。12672 以降の 7 本は SR-CG(NSRCG 1)に切り替え済み
-- **延長の後の解析も PBS**: 12695(12690 の後)・12697(12692 の後)、ppn 4。出力 `liwu_pf/diag_parton/channel/logs/after_fromphi_{n12,n23}_cont.out`
+- **延長の後の解析も PBS**: 12695(12690 の後)・12697(12692 の後)、ppn 4。出力 `projects/liwu/diag/parton/channel/logs/after_fromphi_{n12,n23}_cont.out`
   (末尾 500 平均の E、乱数スタートの Pf・Φ の解との重なり、占有、f から直接読んだ軌道の重なり、当てはめ、250 step ごとの E)
-- **Φ モードの掘り下げ 12693(MPI 4、並走)**: 記録 `liwu_pf/runs/_phi_dig.log`(1 本 1 行)。最初の ν=1/3 の絞った延長は 16.58361(元 16.58366、差 0.0018 のまま = 動かず)
-- **再開したらやること**: (1) `cat liwu_pf/runs/_phi_dig.log` と `logs/after_fromphi_*_cont.out` を読む (2) `diag_parton/channel/README.md` §2.12(Φ の掘り下げ)・§2.13(延長)に足す
+- **Φ モードの掘り下げ 12693(MPI 4、並走)**: 記録 `projects/liwu/runs/_phi_dig.log`(1 本 1 行)。最初の ν=1/3 の絞った延長は 16.58361(元 16.58366、差 0.0018 のまま = 動かず)
+- **再開したらやること**: (1) `cat projects/liwu/runs/_phi_dig.log` と `logs/after_fromphi_*_cont.out` を読む (2) `diag/parton/channel/README.md` §2.12(Φ の掘り下げ)・§2.13(延長)に足す
   (3) 解説ページ(`page/make_pf_page.py` → Artifact https://claude.ai/artifact/TY3BxZvk85manPx4u9Sa9D を url 指定で更新。別セッションからは先に read)(4) ユーザーへ報告
-  (5) 12670 以降の w_C 1.5・shell 2 の Pf を ED と比べる(`python3 diag_liwuc/liwuc_summary.py unprojected`、ED の準位は `~/ED/Data/ExactDiagonalization/LiWu/liwuc_yukawa/<系>/spectrum.dat`)
+  (5) 12670 以降の w_C 1.5・shell 2 の Pf を ED と比べる(`python3 diag/liwuc/liwuc_summary.py unprojected`、ED の準位は `~/ED/Data/ExactDiagonalization/LiWu/liwuc_yukawa/<系>/spectrum.dat`)
 - **未コミット**: `.claude/CLAUDE.md` の追記だけ(コミット `afb5195`・`e3001e6` は未 push)
 - **ペンディング(11-17 ユーザー判断「空きがあるときに」)**:
   (a) **LiWuC(w_C 1.0)の最近接 V で FCI・CFL が出るか**: 射影あり・なし × shell 2・3。`run_projected.jl`・`run_spectrum.jl` の `--V`(`--U0` を付けない)で動く、
   最近接 = A–B・B–C・C–A(距離 1/√3、w_C 1.0 では三角格子)。湯川 U0 1.334 の最近接の値は V=2。出力は `~/ED/Data/ExactDiagonalization/LiWu/liwuc_projected/…-V=…`。
-  射影あり一式(`scripts/ed_liwuc_wc1.sh` の系の並び)は 1 つの V・4 スレッドで約 40 分。V の値は未決(案 1・2・4)
+  射影あり一式(`scripts/submit/ed_liwuc_wc1.sh` の系の並び)は 1 つの V・4 スレッドで約 40 分。V の値は未決(案 1・2・4)
   (b) **射影なし 4×4 N=8(ν=1/2、1 セクター 2360 万次元、10 セクター)をマシンを空けて 16 スレッドで**。前回は 4 スレッド・Pf と並走で 107.5 秒/適用、K=(0,0) が 140 回で未収束
   (`--neig 4 --tol 1e-10 --krylov-dim 40`)。まず 1 セクターで 1 回の時間と収束を測る。`--tol 1e-8` で十分の見込み。shell 2 は 1 サイトのホッピング 12 本(shell 3 は 18)で、次元は同じ
 
@@ -69,21 +73,21 @@
 - **LiWuC 3×4 の Φ モードも投入(ユーザー「Φ でどれだけ下がるか、速いかも気になる」)**: 12681 の後に **12682**(ν=1/2 K=(0,1))→ **12683**(ν=1/3 K=(1,2))→
   **12684**(ν=2/3 K=(1,0))、run 名 `lwc_w10s3_n{12,13,23}_3x4_K.._phi_rand`、乱数スタート 3000 step・MPI 12 × 334・直接法(実パラメータ 1404 以下)。
   12660 以降はその後ろ。試走(1 プロセス・334 サンプル)は 0.17 秒/step。比べる相手: Pf ν=1/2 差 0.0043(8.9 秒/step)、ν=1/3 差 0.0141。`gen_phi_inputs.jl` に spec を追加
-- **Pf の σ_N/σ_{N+1} ≈ 1 の調査(ユーザー「ペアリングを作る系ではないのに不思議。冗長性か、ゲージ固定が要るか」11-15)**: `scripts/pair_gauge_balance.jl <run> [出力先]`。
+- **Pf の σ_N/σ_{N+1} ≈ 1 の調査(ユーザー「ペアリングを作る系ではないのに不思議。冗長性か、ゲージ固定が要るか」11-15)**: `scripts/analysis/pair_gauge_balance.jl <run> [出力先]`。
   局所ゲージ f → λ_{r,a} λ_{r',b} f(Π_a λ_{r,a} = 1)の標準形(‖f‖ 最小 = 各サイトでフレーバーの行ノルムが等しい)にそろえても段は出ない
   (ν=1/2 3×4: λ は 0.72〜1.65、比 1.06〜1.09 → 1.04〜1.06。ν=1/3: 1.03〜1.08 → 1.03〜1.05)。BCS の占有も 0.5 以下でなだらか、w_off 0.23〜0.27。
   **上位 N 本に切り詰めた det³ + 同じ Jastrow の E は ν=1/2 46.3(Pf 42.637、ED 42.633、乱数の Φ 48.9)、ν=1/3 19.4(Pf 16.596)= 切り詰めは乱数並みに悪い**。
   **(訂正)最初に書いた「射影の核による冗長性」という解釈は誤り**(K=2 にも当てはまるはずなのに、K=2 は乱数スタートでも比が 20〜280 に育つ。全 run の一覧で確認)。
   ユーザー「K=2 で簡単にできたのに K≥3 で方法が無いのは納得いかない」→ 調べ直した結果:
   - **K≥3 に固有の構造 = 対の相手が複数ある**。フレーバー a は相手 b と N/2 対・相手 c と N/2 対を作り、相手ごとに使う軌道は f の中で別々の自由度。
-    det³ の点で「a の軌道を、b との対と c との対で逆向きにずらす」方向は Ψ を 1 次で変えない(`diag_parton/nullcheck.jl`、‖Jδ‖ 1e−16。普通の軌道の変分は 2e−3)。
-    その数は 3N(Ns−N)−2 で、K=2 には無い(`diag_parton/redund.jl`: 一般の f で Ψ を変えない方向は対角ゲージだけ。det^K の点では K=2 は J の自由度だけ、K=3 はさらにこの分)
+    det³ の点で「a の軌道を、b との対と c との対で逆向きにずらす」方向は Ψ を 1 次で変えない(`diag/parton/nullcheck.jl`、‖Jδ‖ 1e−16。普通の軌道の変分は 2e−3)。
+    その数は 3N(Ns−N)−2 で、K=2 には無い(`diag/parton/redund.jl`: 一般の f で Ψ を変えない方向は対角ゲージだけ。det^K の点では K=2 は J の自由度だけ、K=3 はさらにこの分)
   - (古い案。下の「★★結論」の取り出し方に置き換え)**K≥3 の取り出し方 = 対のブロック f^{ab} ごとの SVD(相手ごとの軌道)+ 相手間の主角**(`pair_gauge_balance.jl` の `channel_report`)。
     行ブロック(相手をまとめたもの)の σ_N/σ_{N+1} は、相手ごとの空間が少しずれただけで 1 に近づくので K≥3 の診断として不適切だった
   - 実例: **KM 8×8 CFL スタート(N=16)は各ブロックに有意な特異値が 16 本(残りは 2% 以下)、相手ごとの空間の余弦は 16 本中 10〜14 本が 1.00・残り 0.7〜0.99**
     (行ブロックの比は 1.05〜5 と出ていた)。Li–Wu 4×4 c21_cont3 はフレーバー 3 が 8/8 一致。**乱数スタート(LiWuC c34、Li–Wu c63・c61)はブロックごとでも段なし・余弦 0.9〜0.04**(未解明。det³ のまわりが平らで階数を下げる力が弱い、という仮説)
   - 参考の観察(未整理): 同じサイトの対の重み(‖f‖² の割合、一様なら 1/Ns)は LiWuC ν=1/2 0.31・Li–Wu c63 0.29・c61 0.26・c31m 0.09・LiWuC ν=1/3 0.02・KM CFL 0.012
-  - **★続き(ユーザー「いいヒント。どんどん考えて。分かったらレポートやアーキテクチャに」11-15 夜)。作業場所 `liwu_pf/diag_parton/channel/`**:
+  - **★続き(ユーザー「いいヒント。どんどん考えて。分かったらレポートやアーキテクチャに」11-15 夜)。作業場所 `projects/liwu/diag/parton/channel/`**:
     - 定式化: K=3 の Pf = 3 種の対 (12)(13)(23) を N/2 個ずつ詰めた状態 ∝ (P†₁₂)^{N/2}(P†₁₃)^{N/2}(P†₂₃)^{N/2}|0⟩ を Gutzwiller 射影したもの。det³ = 各フレーバーの軌道空間(相手ごとの空間の和)が N 次元 = 閉殻
     - `t1_second_order.jl`: 逆向きにずらすと 1 − 重なり ∝ ε⁴(Ψ の変化は ε²)。普通の方向は ε²。**状態が η 変わるのに f は √η 動く → σ 比は過敏**
     - `t2_occupations.jl`(厳密)・`parton_rdm_mc.jl`(モンテカルロ、`t4_validate_mc.jl` で厳密値と一致): **正しい読み方 = 射影前のパートンの状態でのフレーバーごとの 1 体密度行列の固有値(占有数)と固有ベクトル(自然軌道)**。
@@ -94,14 +98,14 @@
       フレーバー 2・3 は 6〜10 本が 0.93 以上で残りが 0.8 → 0.5 | 0.46 … となだらか**。乱数スタート(E −12.82)は 0.70 → 0.40 | 0.39 … で段なし。
       = 理論スタートは殻の構造を保ったまま乱数スタートより低い E に着く
     - **★★結論(11-15 22 時、雑音なし最適化が完了)= 冗長性の問題だった(ユーザーの最初の見立てが正しい。上の「乱数スタートは本当に開殻」は f の話で、物理の状態の話ではない)**。
-      入口 = **`liwu_pf/diag_parton/channel/README.md`**(レポート)、解説ページ https://claude.ai/artifact/TY3BxZvk85manPx4u9Sa9D(元の HTML と生成スクリプトは `diag_parton/channel/page/`。`python3 make_pf_page.py <出力> …`)。LiWuC 3×4 N=4(`exact_liwuc.jl`、`logs/exact_n13_3x4.log`):
+      入口 = **`projects/liwu/diag/parton/channel/README.md`**(レポート)、解説ページ https://claude.ai/artifact/TY3BxZvk85manPx4u9Sa9D(元の HTML と生成スクリプトは `diag/parton/channel/page/`。`python3 make_pf_page.py <出力> …`)。LiWuC 3×4 N=4(`exact_liwuc.jl`、`logs/exact_n13_3x4.log`):
       A = Φ(det³)E − E_ED 0.002038・ED との重なり 0.99890 / B = A を f に埋めて Pf 0.000004・1.00000、行ブロック比 7〜8、占有 0.990 0.977 0.951 0.913 | 0.022 /
       C1・C2 = 乱数から Pf 0.000014・0.000007、行ブロック比 1.03〜1.14、占有 0.40 0.39 0.33 0.29 | 0.25。**B – C1 の重なり 0.999996 = 同じ物理の状態を、姿の違う f が表す**
     - 仕組み: Ψ を厳密に変えない f の変形は対角ゲージだけ(連続なゲージは増えていない)。f → Ψ が多対 1 に近く「枝」がいくつもあり、出発点で枝が決まる。
       K=2 は Ψ(x) = det f[x,x](主小行列式)で f が一意。K=3 は 3 つの f^{ab} を同時に対角化する基底が無い(2 者の Schmidt 分解が 3 者に無いのと同じ)。
       `t3_fit_det.jl`: 乱数の f を厳密な det^K の目標に当てはめると K=2 は 1e−16 で階数 N に戻る、K=3 は殻の開いたまま 1 − 重なり 1e−2(N=6)・3e−4(N=4)で止まる。
       `t5_saddle.jl`: det³ の最適解から「逆向きにずらす」向きに E − E0 = −A ε² cos(2θ − θ0) + c ε⁴(A は ε によらず一定)= **Φ の最適解は Pf の中では鞍点**、開き方は利得の平方根
-    - **取り出し方(確定)**: (1) Φ モードで最適化 → (2) **`scripts/phi_to_pair.jl <Φ の run> <新しい Pf の run> [def を借りる run]`** で f = ΞJΞᵀ と Jastrow を初期値に
+    - **取り出し方(確定)**: (1) Φ モードで最適化 → (2) **`scripts/gen/phi_to_pair.jl <Φ の run> <新しい Pf の run> [def を借りる run]`** で f = ΞJΞᵀ と Jastrow を初期値に
       (Li–Wu 6×3 で動作確認、写しの残差 1.6e−16。試しに作った `runs/n13_6x3_V2.0_K30_c63_fromphi` は未投入)→ (3) Pf を回す → (4) `run_occupations.jl` で占有数と自然軌道
       (`parton_occupations` の orb は φ_k(r) の向き = ρ の固有ベクトルの複素共役。11-15 に修正)。
       `exact_extract.jl`(`logs/extract_n13_3x4.log`): f から読んだ軌道で作った det³ と元の状態の重なりは、B で 行ブロック SVD 0.9929・自然軌道 0.9939・当てはめ 0.9991(その Φ と A の重なり 0.9997)、
@@ -128,7 +132,7 @@
       ν=1/2 0.0355・581 秒(Pf 0.0042)、ν=2/3 0.1015・916 秒(Pf 0.0045、ED 80.86026)。**ν=1/3 は Φ が乱数から始めた Pf より低い = その Pf は最適化が届いていない**。
       乱数スタートの Pf の解と Φ の解の重なりは 0.995・0.980・0.938。
       **「Φ から始める Pf」(SR-CG)を 3 充填で投入**: 12686(ν=1/2、03:40 開始、2.4 秒/step、05:45 ごろ完了の見込み、出だしの E 42.6675)→ **12687**(ν=1/3)→ **12688**(ν=2/3)→ 12660 以降。
-      終わったあとの解析は `diag_parton/channel/after_fromphi.sh <ジョブ番号> <接頭辞> <ラベル>`(ジョブの完了を待ち、乱数スタートの Pf・Φ の解との重なり、占有数、det³ への当てはめを `logs/{overlap_fromphi,occ_fromphi}_<ラベル>.log`・`logs/fitmc_<接頭辞>_c34_fromphi.log` に出す)。
+      終わったあとの解析は `diag/parton/channel/after_fromphi.sh <ジョブ番号> <接頭辞> <ラベル>`(ジョブの完了を待ち、乱数スタートの Pf・Φ の解との重なり、占有数、det³ への当てはめを `logs/{overlap_fromphi,occ_fromphi}_<ラベル>.log`・`logs/fitmc_<接頭辞>_c34_fromphi.log` に出す)。
       3 本とも解析まで完了(11-16 09 時)
     - **★「Φ から始める Pf」の結果(11-16 09 時、3 充填とも完了。README §2.13、解説ページ Version 4 に反映済み。12686 ν=1/2・12687 ν=1/3・12688 ν=2/3)**:
       ED との差(末尾 500 平均)と全体の実時間は **ν=1/3 0.0003・38 分(乱数スタート 0.0141・8.7 時間、Φ の解 0.0019)**、
@@ -197,13 +201,13 @@
 
 ### ★★★セッション終了時の引き継ぎ(2026-11-15 01:45)
 
-**走行中・待ちはすべて PBS**(手元の計算はない。一次記録 `liwu_pf/runs/_pbs_jobs.txt`)。方針は下の節の「★現在の優先」(wang 対応 = LiWuC w_C 1.0・shell 3、湯川、w_C 1.5 も)。
+**走行中・待ちはすべて PBS**(手元の計算はない。一次記録 `projects/liwu/runs/_pbs_jobs.txt`)。方針は下の節の「★現在の優先」(wang 対応 = LiWuC w_C 1.0・shell 3、湯川、w_C 1.5 も)。
 - **ED(並走中)**: 12653 射影なし w_C 1.0(3×4 N=4・6 済み、6×3 N=6 走行)/ 12654 射影なし 3×4 N=8 / 12655 多体 Chern(6×3 ν=1/3 → 1.000000・ν=2/3 → 2.000000、6×4 N=8 済み、6×4 N=16 走行、その後 ν=1/2 4×4 の 12 本)/
-  12656 shell 2 の一式(射影あり 6×4 N=16 まで来た)/ 12677 射影なし w_C 1.5(3×4 N=4・6 済み、6×3 N=6 走行)。ログ `liwu_pf/runs/_ed_liwuc_{wang_unproj_small,wang_unproj_3x4N8,wang_chern,wang_shell2,w15_unproj_small}.log`(`grep -a -o "=== .*"`)。
-  要約 `python3 diag_liwuc/liwuc_summary.py [projected|unprojected]`
+  12656 shell 2 の一式(射影あり 6×4 N=16 まで来た)/ 12677 射影なし w_C 1.5(3×4 N=4・6 済み、6×3 N=6 走行)。ログ `projects/liwu/runs/_ed_liwuc_{wang_unproj_small,wang_unproj_3x4N8,wang_chern,wang_shell2,w15_unproj_small}.log`(`grep -a -o "=== .*"`)。
+  要約 `python3 diag/liwuc/liwuc_summary.py [projected|unprojected]`
 - **Pf(afterany の直列、MPI 12)**: 12657 `lwc_w10s3_n13_3x4_K12_c34` 走行中(01:41 で 253 step、E 16.656、ED 16.5818 との差 0.074。ED と並走で約 12 秒/step → 3000 step は 11-15 昼ごろの見込み)
   → 12658(ν=1/2)→ 12659(ν=2/3)→ 12660(6×3)→ 12670・12672・12674・12676(w_C 1.5)→ 12662・12664・12666・12668(shell 2)。
-- **再開したらやること**: (1) ED の結果を `diag_liwuc/README.md` にまとめる(射影なしで FCI・CFL の形が残るか、Chern)(2) Pf の各 run を ED の同じ K の最低と比べる。
+- **再開したらやること**: (1) ED の結果を `diag/liwuc/README.md` にまとめる(射影なしで FCI・CFL の形が残るか、Chern)(2) Pf の各 run を ED の同じ K の最低と比べる。
   `analyze.jl` の LiWuC(3 サイト)対応と延長(make_pbs_extend/tighten)は未着手 (3) ED パッケージの LiWuC の DESIGN §13・試験は未記載
 - **SingleParticle の w_C 走査(shell 3、w_C 0〜10)**: `~/SingleParticle/Data/QuantumGeometry/liwuc_shell3_wC_scan.{pdf,dat}`(`run/QuantumGeometry/run_liwuc_wC_scan.jl`)。
   σ_Ω は w_C 1.0 で最小 0.136、w_C 0 で 0.65、w_C 10 で 3.0。大きい w_C は Γ の Ω だけが伸び、間隔 Δ が 0.9 → 0.16 に縮み幅 W が 0.5 まで広がる(w_C ≈ 6 で W > Δ)= shell 3 のままでは w_C ≳ 5 は孤立した平坦バンドでなくなる
@@ -212,38 +216,38 @@
 ### ★★★2026-11-14: CFL の調査は切り上げ、次は湯川で ν=2/3 が出るか
 
 - **CFL(Li–Wu ν=1/2 射影 ED)は切り上げ**(ユーザー「秩序が無いなら CFL の可能性が高い。ED のサイズでは深追いしても分からない」)。
-  まとめ = `liwu_pf/diag_cfl/README.md` 末尾「まとめ(2026-11-14)」: 結晶・普通の Fermi 液体・FCI 型の縮退がどれも見えない = **消去法では CFL が最有力、
-  積極的な証拠(ギャップが閉じる・2k_F)はない**。S(q) の 2k_F は `diag_cfl/sq_radial.jl`(julia 1.8)で調べ、大きい点は拡張ゾーンの M' に集まる。
+  まとめ = `projects/liwu/diag/cfl/README.md` 末尾「まとめ(2026-11-14)」: 結晶・普通の Fermi 液体・FCI 型の縮退がどれも見えない = **消去法では CFL が最有力、
+  積極的な証拠(ギャップが閉じる・2k_F)はない**。S(q) の 2k_F は `diag/cfl/sq_radial.jl`(julia 1.8)で調べ、大きい点は拡張ゾーンの M' に集まる。
   このグリッドでは参照の自由な Fermi 海でも 2k_F は見えない。S(q) は b1+b2 だけずらしても変わらない(A・B の位相がそろう)
 - **6×5 の 12644・12645 は qdel**(未開始)。12643(7×4 湯川 sh4)は最後まで回し、**12646(afterany)が `projected_analysis.jl`・`sq_radial.jl` を出し直す**
-  (ログ `diag_cfl/logs/{cfl_final_analysis,projected_analysis_final,sq_radial_final}.log`)。**7×4 湯川(12643)は 11-14 18:26 完了、12651 が図を出し直し、数値はサイズ列の表へ足した(基底 Γ、gap 0.045、Δn 0.14、S_max 0.115 = NN と同じ形)。CFL の残り作業なし**
+  (ログ `diag/cfl/logs/{cfl_final_analysis,projected_analysis_final,sq_radial_final}.log`)。**7×4 湯川(12643)は 11-14 18:26 完了、12651 が図を出し直し、数値はサイズ列の表へ足した(基底 Γ、gap 0.045、Δn 0.14、S_max 0.115 = NN と同じ形)。CFL の残り作業なし**
 - **次の方向(ユーザー 2026-11-14)**: 湯川で ν=2/3 の FCI が出るか。論文(arXiv:2607.08702)は「最低バンドへ射影・相互作用だけ(平坦バンド、真空に対する正規順序)・
   湯川 κ=0.25」の ED で ν=1/3・2/3 とも 3 重の準縮退 + ギャップ、C_avg = 1/3・2/3 と報告(クラスターは Ns = 27・30・36・42・54 のどれか、本文では未特定)。
   手元の道具: 射影 ED `~/ED/Code/run/LiWu/run_projected.jl <N1> <N2> <N> 0 --U0 1.334 --kappa 0.25 --shell <0|3|4>`(shell 0 = 全ホッピング = 平坦)、
   射影なし `run_spectrum.jl --U0 --kappa`。射影なしで届くのは k 点 15 個まで(3×4 N=8・3×5 N=10)。
-  **ユーザー判断(2026-11-14)**: 通常モード、**shell 4、射影あり・なしの両方**、射影は 9×3 N=18 まで、U0 1.334 だけ。入口 = **`liwu_pf/diag_nu23/README.md`**。
+  **ユーザー判断(2026-11-14)**: 通常モード、**shell 4、射影あり・なしの両方**、射影は 9×3 N=18 まで、U0 1.334 だけ。入口 = **`projects/liwu/diag/nu23/README.md`**。
   投入: **12647**(射影あり 3×4 N=8・3×5・6×3・7×3・6×4・9×3 N=18、ppn 4、11:05 開始、ログ `runs/_ed_nu23_yukawa_sh4_projected.log`)→
   **12648**(射影なし 3×4 N=8・3×5 N=10、ppn 4、afterany、3×5 は 3〜4 時間の見込み、ログ `runs/_ed_nu23_yukawa_sh4_unprojected.log`)。
-  まとめ `/opt/julia-1.8.5/bin/julia diag_nu23/nu23_summary.jl`(下から 3 本の幅・ギャップ・比、(1,3) の根配置から数えた K との照合)。
+  まとめ `/opt/julia-1.8.5/bin/julia diag/nu23/nu23_summary.jl`(下から 3 本の幅・ギャップ・比、(1,3) の根配置から数えた K との照合)。
   PBS のログは `tee /dev/stderr` が頭を上書きするので `grep "^==="` が効かない → `grep -a -o "=== .*"` で見る
 - **★ν=2/3 の結果(射影あり、12 時に全部そろった)**: 追加で shell 0(平坦、12649)と最近接 V=2 の 6×4(shell 4・0、12650)も回した(ユーザー依頼)。
   **湯川は 6×4 N=16 だけ FCI の形**(下から 3 本 (2,0)(4,0)(0,0) が根配置と一致、比 = ギャップ / 3 本の幅 が shell 4 で 16.7・shell 0 で 11.3)。
   辺が 3〜5 の細いクラスター(3×5・6×3・7×3・9×3)と 3×4 は shell によらず出ない(Γ + b/2 の 2 本など)。
   **最近接 V=2 の 6×4 は shell 4・0 とも M 点 (0,2) の 1 本が基底**(次も M 点 (3,2))= FCI の形にならない。
   → **決めているのは相互作用の形で、バンドの平坦さではない**。VMC の ν=2/3 V=2 は FCI でない模型を見ていた可能性が高い。
-  表は `diag_nu23/README.md`「まとめ」。射影なし 12648(3×4・3×5)は 17:08 完了(下の保留の項)。図 `diag_nu23/nu23_spectra.pdf` は射影なしまで入れて出し直し済み。
+  表は `diag/nu23/README.md`「まとめ」。射影なし 12648(3×4・3×5)は 17:08 完了(下の保留の項)。図 `diag/nu23/nu23_spectra.pdf` は射影なしまで入れて出し直し済み。
 - **多体 Chern 数(Resta の分極、ユーザー提案)を射影 ED に実装**(ED パッケージ、DESIGN §11.5・PLAN 追補 Task 15・SDD_LEDGER・test_18、全体 19/19)。
   陽性対照 ν=1/3 6×3 で C_total = 1.000000。本番 **12652**(6×4 湯川 shell 4 → shell 0、θ 24 点、1 点約 4 分、ログ `runs/_ed_chern_nu23_6x4.log`、
   出力は射影 ED のディレクトリの `chern_twist2.{dat,pdf}`・`chern_summary_twist2.dat`)。
   **shell 4 は C_total = 2.000000(C_avg = 2/3、論文と一致)**、閉じ −3.9e−14、min |det M| 0.053、θ を通したほかのセクターとの最小の隙間 0.037(14:07 完了)。
-  **shell 0 も C_total = 2.000000**(15:38 完了、min |det M| 0.055、隙間 0.042)。表は `diag_nu23/README.md`「多体 Chern 数」。
+  **shell 0 も C_total = 2.000000**(15:38 完了、min |det M| 0.055、隙間 0.042)。表は `diag/nu23/README.md`「多体 Chern 数」。
   **1 本ずつ(ユーザー「1 本なら傾き 2/3、それも図に」)**: U が 3 本を (0,0)→(4,0)→(2,0) と巡回させるので 1 本の ⟨U⟩ は厳密に 0 →
   U³ で P_a = arg⟨(PUP)³⟩/(2π·3)(`~/ED/Code/run/LiWu/run_chern_single.jl`、陽性対照 = 満ちたバンドで冪 1・3 とも C = 1)。
-  shell 4・0 とも **各状態 C_a = 0.666667**(巻き数 2)。図 `diag_nu23/chern_6x4_yukawa_sh{4,0}.pdf`(傾き 2 の組と傾き 2/3 の 1 本ずつを重ねたもの)
-- **ν=1/2 の多体 Chern 数(ユーザー「CFL か分からんけど ν=1/2 でやったら」、`diag_cfl/README.md`「多体 Chern 数」)**: 1 本で U とひねりが閉じるのは
+  shell 4・0 とも **各状態 C_a = 0.666667**(巻き数 2)。図 `diag/nu23/chern_6x4_yukawa_sh{4,0}.pdf`(傾き 2 の組と傾き 2/3 の 1 本ずつを重ねたもの)
+- **ν=1/2 の多体 Chern 数(ユーザー「CFL か分からんけど ν=1/2 でやったら」、`diag/cfl/README.md`「多体 Chern 数」)**: 1 本で U とひねりが閉じるのは
   N mod N1 = N mod N2 = 0 の 4×4 N=8・6×4 N=12 だけ。**4×4 は 4 模型(NN・湯川 × shell 3・4)とも M 点 3 重項の各状態で C = 0**(整数としてきちんと決まる)。
   ひねりで 3 重項が分かれ((2,0)(2,2) が上がり (0,2) はほぼ平ら)、Γ が大きく下りてきて **3 模型でひねりの途中に基底のセクターが入れ替わる**(NN shell 4 は θ/2π ≈ 0.39 で Γ が (0,2) を追い越す、`run_twist_spectrum.jl`)= 境界条件に敏感。1 サイズの C = 0 では CFL と CDW を分けられない。
-  6×4 N=12 は未実施(1 模型 1〜1.5 時間の見込み)。実行 `liwu_pf/scripts/chern_nu12_4x4.sh`、図 `diag_cfl/chern_4x4_*.pdf`
+  6×4 N=12 は未実施(1 模型 1〜1.5 時間の見込み)。実行 `projects/liwu/scripts/submit/chern_nu12_4x4.sh`、図 `diag/cfl/chern_4x4_*.pdf`
 - **★tMoTe2 の異常 CFL(Goldman et al. PRL 131, 136501)を ED と SingleParticle に実装・再現(ユーザー 2026-11-14 夜、通常モードの既定案)**:
   入口 = `~/ED/CLAUDE.md`「進捗更新 (2026-11-14 夜)」と ED の DESIGN §12。1 体 `~/SingleParticle/Model/TwistedTMD.jl`、射影 ED
   `~/ED/Code/test/ExactDiagonalization/src/continuum_projection.jl`(test_19、スイート 20/20)、実行 `~/ED/Code/run/TwistedTMD/`。
@@ -252,10 +256,10 @@
   Chern 数の全体の符号は論文と逆(FHS の向きの規約)。「副格子」は層で読んだ(MX・XM の領域の分解は未実施)。
   **注意**: 1 本の巻き数は有限系では状態によらず整数。4.5° の C = +1 は局所の傾き 0.41〜2.47 の平均で、熱力学極限の自由 Fermi 海の見積もりは 0.15。
   2° の 1/2 は自由 Fermi 海でも 0.48 になる(LLL 的な一様な Berry 曲率)ので CFL の決め手ではない(決め手は基底の運動量と n(k))
-- **n(k)・S(q) の定義と副格子の分解(ユーザー 2026-11-14、`diag_cfl/README.md`「n(k)・S(q) の定義と副格子の分解」)**: n(k) = ⟨d†_k d_k⟩(最低バンドの占有)、
+- **n(k)・S(q) の定義と副格子の分解(ユーザー 2026-11-14、`diag/cfl/README.md`「n(k)・S(q) の定義と副格子の分解」)**: n(k) = ⟨d†_k d_k⟩(最低バンドの占有)、
   S(q) = (1/N_site)[⟨ρ̄ρ̄†⟩ − |⟨ρ̄⟩|²]、ρ̄ = **射影した**全密度(実際の位置の位相、N_site = 2N1N2)。副格子は後処理
   `~/ED/Code/run/LiWu/run_sublattice_observables.jl` が `nk_sublattice.dat`・`sq_sublattice.dat`(S = S_AA + S_BB + 2ReS_AB と、素の密度で測った Sfull)を
-  各射影 ED の出力に書く(全 40 個済み)。S の最大(M' 点)の 17〜33% は A・B の干渉、S_AA + S_BB は 0.10〜0.14 でサイズで伸びない。図 `diag_cfl/sq_sublattice.pdf`
+  各射影 ED の出力に書く(全 40 個済み)。S の最大(M' 点)の 17〜33% は A・B の干渉、S_AA + S_BB は 0.10〜0.14 でサイズで伸びない。図 `diag/cfl/sq_sublattice.pdf`
 - **★現在の優先(ユーザー 2026-11-15 0:20)**: **wang 対応(LiWuC w_C = 1.0・shell 3)を優先**。全ホッピングはやめて shell 3 に絞る。計算はできるだけ PBS で。
   ED で ν = 1/3・2/3 の FCI と 1/2 の CFL を確認できたら、それらを **VMC の Pf で最適化**(3 サイトの def の生成から、未着手)。
   **以前の Li–Wu の Pf は中止**(12575・12576・12582・12631 を qdel。気になったらまたやる程度)。手元の ED(比較用の全ホッピング・shell 1〜4、Reddy 対応の射影なし)も停止。
@@ -267,11 +271,11 @@
   w_C = 1.5 の ν=2/3 3×4 は基底が (0,0)(w_C = 1.0 は (1,0)(2,0))。
   **相互作用はメインは湯川型のまま(ユーザー 11-15)**: トイ模型から一般的性質を議論する方針。tMoTe2(wang)のゲート遮蔽 tanh(qd) は実空間で湯川と近い
   (減衰長 3.5 a_M と 4 a、値は湯川が 7〜31% 小さい)。tanh の形(鏡像電荷の和)は後で気になったら試す程度。
-  **Pf を投入(11-15 00:48)**: 入口 = `liwu_pf/diag_liwuc/README.md`。入力 `scripts/gen_inputs_liwuc.jl`・`liwuc_common.jl`、検算 `check_inputs_liwuc.jl` は PASS
+  **Pf を投入(11-15 00:48)**: 入口 = `projects/liwu/diag/liwuc/README.md`。入力 `scripts/gen/gen_inputs_liwuc.jl`・`liwuc_common.jl`、検算 `check_inputs_liwuc.jl` は PASS
   (3×4 N=4 の全セクターで def の H = 射影なし ED、5e−13)。**12657**(ν=1/3 3×4 N=4 K=(1,2))→ **12658**(ν=1/2 3×4 N=6 K=(0,1))→ **12659**(ν=2/3 3×4 N=8 K=(1,0))→
   **12660**(ν=1/3 6×3 N=6 K=(3,0)、R2 で共有)。MPI 12 × 334、乱数スタート 3000 step、afterany の直列。run 名 `lwc_w10s3_…`。延長・analyze.jl の LiWuC 対応は未着手。shell 2 の Pf(参考・優先度低)も同じ 4 系で後ろに並べた(`lwc_w10s2_…`、12662 → 12664 → 12666 → 12668)。
   投入済み(11-15 00:28): **12653**(射影なし 3×4 N=4・6 → 6×3 N=6)・**12654**(射影なし 3×4 N=8)・**12655**(多体 Chern 数: ν=1/3・2/3 の 6×3・6×4 の 3 本の組、ν=1/2 4×4 の 12 本)。
-  ログ `liwu_pf/runs/_ed_liwuc_wang_{unproj_small,unproj_3x4N8,chern}.log`、PBS `liwu_pf/pbs/ed_liwuc_wang_*.pbs`。射影ありは済み(要約 `python3 diag_liwuc/liwuc_summary.py projected`)。
+  ログ `projects/liwu/runs/_ed_liwuc_wang_{unproj_small,unproj_3x4N8,chern}.log`、PBS `projects/liwu/pbs/ed_liwuc_wang_*.pbs`。射影ありは済み(要約 `python3 diag/liwuc/liwuc_summary.py projected`)。
   射影なしは LiWuC では重い(1 サイト 18 本、3×4 N=8 で行列 25 GB/セクター、行列の組み立てが 1 スレッド)。ν=1/2 の射影なし 4×4 N=8(2400 万次元)は投入していない。
   wang 対応の 0.136 は wang の模型の θ = 3.60° と 3.87° の値(図 `~/SingleParticle/Data/TwistedTMD/wang/tmote2_wang_sigma_vs_theta_with_liwuc_wC1p0.pdf`)
 - **★方針(ユーザー 2026-11-14 深夜〜11-15)**: 実験に近い tMoTe2 の模型は **Wang・Dong の模型**(`wang`: V 20.8・ψ −107.7°・w −23.8 meV・m 0.6、ゲート遮蔽の Coulomb ε 15・d 300 Å、
@@ -281,39 +285,39 @@
   対応: **`reddy` 2° ↔ w_C = 1.50・shell 3(σ 0.221)、`wang` 3.7°〜3.89° ↔ w_C = 1.0・shell 3(σ 0.136 が shell 3 での最小。wang の 0.116〜0.141 の範囲として確定、ユーザー判断 11-15)**。山と谷の位置は合わない
   (wang: 山 m・谷 κ、LiWuC: 山 Γ・K、谷 M)が、同じ σ で山谷を入れ替えた w_C 1.415 と 0.663 の ED は基底の構造が同じ(隙間の差 1〜10%)。
   見取り図と注意事項 = **`~/SingleParticle/Data/README_tMoTe2_LiWuC.md`**(ファイル名に模型・角度・w_C・殻を必ず入れる運用)。
-  w_C = 1.0 shell 3 の射影 ED: FCI は全サイズで非常にきれい(比 400〜36 万)、ν=1/2 は 4×4 で 12 本(幅 0.0004・隙間 0.063)・6×4 で 6 本。一式 `scripts/ed_liwuc_wc1.sh`。
+  w_C = 1.0 shell 3 の射影 ED: FCI は全サイズで非常にきれい(比 400〜36 万)、ν=1/2 は 4×4 で 12 本(幅 0.0004・隙間 0.063)・6×4 で 6 本。一式 `scripts/submit/ed_liwuc_wc1.sh`。
   **Pf は今の LiWuC の設定(w_C 1.5・shell 3)でもやる(ユーザー 11-14 深夜、いったん中止 → 再開の指示)**。3 サイトの def の生成から(未着手)
 - **量子幾何の設計(ユーザー 2026-11-14 夜)**: 理想条件を保って Berry 曲率を変えられるのはサイトの位置と重みだけ。ハニカム 2 サイトは λ = 1(Li–Wu)が最も一様(σ 0.75)。
   **六角形の中心 C を重み w_C で足す 3 サイト模型**で σ 0.75 → 0.12(w_C = 1)、**w_C = 1.415 で tMoTe2 2°(σ 0.222、山が Γ)と同じ分布**。
   `~/SingleParticle/Model/GeneralizedLL.jl`・`run/QuantumGeometry/run_geometry_design.jl`・`Data/QuantumGeometry/`、解説 https://claude.ai/artifact/Lqq99jjARPife5X6B4DEdh。
   **LiWuC 模型として ED に実装(`~/ED/.../src/liwuc.jl`、`run_projected.jl`・`run_spectrum.jl` に `--wC`)。ユーザー判断: 射影あり・なしの両方、通常モード
   (gap 1、湯川 U0 1.334 κ 0.25、トーラスで厳密な平坦バンド)**。4×4 N=8 射影で **基底が 6 セクター × 2 本 = CFL の数え上げ**。
-  本番 `liwu_pf/scripts/ed_liwuc.sh`(11-14 23 時前に開始、手元 8 スレッド、ログ `liwu_pf/diag_liwuc/logs/ed_liwuc.log`): 射影あり ν=1/2・1/3・2/3(6×4・9×3 まで)→
+  本番 `projects/liwu/scripts/submit/ed_liwuc.sh`(11-14 23 時前に開始、手元 8 スレッド、ログ `projects/liwu/diag/liwuc/logs/ed_liwuc.log`): 射影あり ν=1/2・1/3・2/3(6×4・9×3 まで)→
   射影なし 3×4 N=4・6・8、6×3 N=6。射影なし 4×4 N=8(1 セクター 2400 万次元)は未投入。兆候が出たら Pf(3 サイトの def の生成から)。
   **★本番系(ユーザー 2026-11-14 深夜): LiWuC の第 3 殻打ち切り + w_C = 1.50 に再調整**(shell 3 で σ_Ω が tMoTe2 2° の 0.222 に合う値、二分法で 1.503)。
   `--wC 1.5 --hop-shell 3`。バンド: 幅 0.104・上との最小の間隔 0.881(W/Δ12 = 0.107、tMoTe2 2° は 0.325)、T 0.0023(tMoTe2 0.086)、Ω は Γ 1.84・K 1.19・M 0.74
   (tMoTe2 2.30・1.07・0.95)。比較図 `~/SingleParticle/Data/QuantumGeometry/liwuc_production_vs_tmote2.pdf`(`run_liwuc_production.jl`)。
-  ED 一式 `liwu_pf/scripts/ed_liwuc_production.sh`(ログ `diag_liwuc/logs/ed_liwuc_production.log`)、要約 `python3 diag_liwuc/liwuc_summary.py [projected|unprojected]`。
+  ED 一式 `projects/liwu/scripts/submit/ed_liwuc_production.sh`(ログ `diag/liwuc/logs/ed_liwuc_production.log`)、要約 `python3 diag/liwuc/liwuc_summary.py [projected|unprojected]`。
   以前の判断: **本番系(VMC を見据えた模型)は今のところ shell 3**(`--hop-shell 3`、1 サイトから 18 本、最低バンドの幅 0.096・間隔 0.89、
   Ω のばらつき 0.201・理想からのずれ 0.002。SingleParticle の殻ごとの比較 `Data/QuantumGeometry/liwuc_shells.{pdf,dat}`)。shell 0(全部)・4 は比較用。
-  shell 3・4 の ED 一式 `liwu_pf/scripts/ed_liwuc_shells.sh`、shell 1・2 も `ed_liwuc_shells12.sh`(ユーザー「一応」、その後に続く)(ログ `diag_liwuc/logs/ed_liwuc_shells.log`、shell 0 の一式の後に自動で続く)。
+  shell 3・4 の ED 一式 `projects/liwu/scripts/submit/ed_liwuc_shells.sh`、shell 1・2 も `ed_liwuc_shells12.sh`(ユーザー「一応」、その後に続く)(ログ `diag/liwuc/logs/ed_liwuc_shells.log`、shell 0 の一式の後に自動で続く)。
   PBS は 12630 を qdel・12631 を qhold(ユーザー「残りは保留」)。ED の既定の図は [[ed-default-plots]]
-- **Li–Wu 4×4 N=8 shell 4 の励起状態の Chern 数**(`~/ED/Code/run/LiWu/run_chern_levels.jl`): 基底の M 点 3 重・その上の 3 本・6 本の組・第 1 励起の 6 重、どれも C = 0(`diag_cfl/README.md`)
-- **★`scripts/analyze.jl` の `lanczos_ground`(と `spectral_weight.jl`・`mismatch.jl` の同じ Lanczos)を修正(2026-11-14)**: P を `H q` に掛けて
+- **Li–Wu 4×4 N=8 shell 4 の励起状態の Chern 数**(`~/ED/Code/run/LiWu/run_chern_levels.jl`): 基底の M 点 3 重・その上の 3 本・6 本の組・第 1 励起の 6 重、どれも C = 0(`diag/cfl/README.md`)
+- **★`scripts/analysis/analyze.jl` の `lanczos_ground`(と `spectral_weight.jl`・`mismatch.jl` の同じ Lanczos)を修正(2026-11-14)**: P を `H q` に掛けて
   再直交化の後に掛けていなかったため、セクター外の丸め誤差が 1 段ごとに α/β 倍に育ち、P H の固有値 0 が偽の Ritz 値として出た。
   E が負の模型(これまでの全部)では 0 が基底より上なので最低の値には効かなかったが、**湯川の全対(E ≈ +73)では偽の 0 を基底と誤った**
   (yukawa_def_check.jl の 1 回目が「def から 0、ED 72.6」で FAIL)。修正 = `w = H q` → 再直交化 → `w = P(w)`。修正前は scratchpad に控え。
-  修正後は湯川 3×4 N=2・3 の全 12 セクターで密行列(P H P + c(1−P))と 2e−13 で一致。本番の検算のやり直しは `diag_nu23/logs/yukawa_def_check_20261114.log`
+  修正後は湯川 3×4 N=2・3 の全 12 セクターで密行列(P H P + c(1−P))と 2e−13 で一致。本番の検算のやり直しは `diag/nu23/logs/yukawa_def_check_20261114.log`
 - **射影なしの ν=2/3(ED・VMC)は保留(ユーザー判断 2026-11-14)**: 射影なし ED は 6×4 に届かない。射影 ED と射影なし VMC はエネルギーを比べられない
   (射影で E0 が 0.2〜0.8 ずれ、**3×4 ν=2/3 では射影の有無で並びが入れ替わる**: 射影あり (0,0) 0・(0,2) 0.002・(1,0)(2,0) 0.052、
   射影なし (0,2) 0・(1,0)(2,0) 0.029・(0,0) 0.045。**3×5 でも入れ替わる**: 射影あり (0,0) 0・(2,2)(1,3) 0.039、射影なし (2,2)(1,3) 0・(0,0) 0.013・隙間 0.030(比 2.28)。組 {(0,0),(2,2),(1,3)} は同じだが K は根配置の予想と合わない = 3×5 は射影なしでも FCI の形ではない。ν=1/2 では並びは保たれていた)。「この計算機だと大きい系は厳しい」。
   VMC は 6×4 か 6×6(f の拡大セル 3×3)を考えたが保留。準備だけ済み: `common.jl` の `write_coulombinter_yukawa`(ED の yukawa_pair と同じ鏡像和)、
-  `gen_inputs.jl` の spec に `yukawa = (U0 = …, kappa = …)`、検算 `scripts/yukawa_def_check.jl`(3×4 N=8・N=6 の全セクターで def の H と射影なし ED を比べる)は **PASS**(差 1.5e−12 以内、Lanczos 修正後の 2 回目)。
+  `gen_inputs.jl` の spec に `yukawa = (U0 = …, kappa = …)`、検算 `scripts/gen/yukawa_def_check.jl`(3×4 N=8・N=6 の全セクターで def の H と射影なし ED を比べる)は **PASS**(差 1.5e−12 以内、Lanczos 修正後の 2 回目)。
   再開するなら候補: 上のバンドに 1 粒子まで許す ED(6×4 で 1 セクター約 130 万次元、新機能)、VMC 6×4・6×6
 
 ### ★★途中経過(2026-11-13 15:30)
 
-- **湯川の射影なし 12641・ホールドープ (1,0) 12640 は完了**、下の 2・3 は済み(`diag_cfl/README.md`「途中経過」、`diag_holedope/README.md`「基底以外のセクター」の表)。
+- **湯川の射影なし 12641・ホールドープ (1,0) 12640 は完了**、下の 2・3 は済み(`diag/cfl/README.md`「途中経過」、`diag/holedope/README.md`「基底以外のセクター」の表)。
   ホールドープの 4 セクターは並びが ED と同じ、誤差 0.0065〜0.0093、間隔は ED の 1.0〜1.4 倍。(0,1)・(1,0) は延長 3 回でまだ下がる(exit 3 = 未収束のまま上限)。図と重なりは未実施
 - **射影 ED 12642: 3×4〜8×3 は 4 模型とも済み、7×4 は 1 セクター 58〜82 分(見込みの数分〜十数分より 1 桁遅い)**。反転で 15 セクター = 1 模型約 16.5 時間、
   4 模型で 11-15(日)夜。6×5 は 1 セクター約 5 時間 × 約 16 × 2 模型 ≈ 1 週間(推定・未実測)。
@@ -329,14 +333,14 @@
 ### ★★セッション終了時の引き継ぎ(2026-11-12 21:35)
 
 **走行中はすべて PBS**(手元の計算・待ち合わせはない)。再開したら:
-1. **射影 ED の本番 12642**(`liwu_pf/pbs/ed_projected_nu12.pbs`、ログ `runs/_ed_projected_nu12.log`、`LC_ALL=C grep -a "^===" <ログ>` で進み具合):
+1. **射影 ED の本番 12642**(`projects/liwu/pbs/ed_projected_nu12.pbs`、ログ `runs/_ed_projected_nu12.log`、`LC_ALL=C grep -a "^===" <ログ>` で進み具合):
    3×4・4×4 は 4 模型とも済み、6×3 → 5×4 → 6×4 → 8×3 → 7×4(行列を持たない適用)→ 6×5。終わった分から
-   `julia --project=/home/nozomihigashino/Julia-mVMC/tools liwu_pf/diag_cfl/projected_analysis.jl`(ギャップの外挿・n(k)・S(q)、図 `diag_cfl/projected_analysis.pdf`)
-   → 計画 4.4 の表(`~/.claude/plans/mellow-meandering-lamport.md`)で CFL・Fermi 液体・結晶・FCI を判定 → `diag_cfl/README.md` に。7×4 は 1 セクター数分〜十数分の見込み(未実測)
-2. **湯川の射影なし 12641**(明朝 2 時ごろ): 終わったら `julia liwu_pf/diag_cfl/compare_projection.jl`(4×4 湯川 shell 3 の射影 vs 射影なし)。
+   `julia --project=/home/nozomihigashino/Julia-mVMC/tools projects/liwu/diag/cfl/projected_analysis.jl`(ギャップの外挿・n(k)・S(q)、図 `diag/cfl/projected_analysis.pdf`)
+   → 計画 4.4 の表(`~/.claude/plans/mellow-meandering-lamport.md`)で CFL・Fermi 液体・結晶・FCI を判定 → `diag/cfl/README.md` に。7×4 は 1 セクター数分〜十数分の見込み(未実測)
+2. **湯川の射影なし 12641**(明朝 2 時ごろ): 終わったら `julia projects/liwu/diag/cfl/compare_projection.jl`(4×4 湯川 shell 3 の射影 vs 射影なし)。
    ED compare の図は `plot_ed_vmc.jl --edroot fermion_yukawa --ed '^N1=(3|4)-N2=4-' --novmc --ncol 2 <出力>`(射影は `--edroot fermion_projected` など)
 3. **ホールドープの (1,0)**(12639 → 12640、今夜): 終わったら `plot_ed_vmc.jl --match '^n13h1.*sh4' ../ed_vmc_compare_holedope_sectors.pdf` と
-   `diag_holedope/README.md`「基底以外のセクター」に表を(今の値は下の行)
+   `diag/holedope/README.md`「基底以外のセクター」に表を(今の値は下の行)
 4. **Pf N=4**(12627 shell 4 → 12628〜12631): 前からの手順どおり(図の更新、`analyze.jl --exact`、`spectral_weight.jl --nlow`)
 - 射影 ED の熟議はフェーズ 5 まで済み(S0〜S8 実装・文書済み)。残りは S9(本番の解析と判定)
 
@@ -346,37 +350,37 @@
   0.000023(hd_j4)・0.000055(hd_n4)、各自の出発点から 99.3〜99.9%。1|23 の λ1 0.92〜0.96(ランク 1 に近い)、ΔF のノルム² の 25〜35% は
   オンサイト + 最近接の外で特定の型に集中しない。ただし F は 7776 複素(セクター次元の 7%)、DP の表は Σ_k C(N,k)³(N=12 で 20 億)= 大きい系には使えない上限
 - **ホールドープ Φ(N=5)完了**(9000 step で頭打ち): shell 4 は差 0.0065・E0_K の重み 0.974・7 本の多様体へ 0.987、shell 3 は 0.0240・0.831・0.922。
-  どちらも E − E0 の 9 割以上が多様体の外への漏れ(N=6 と同じ形)。表は `liwu_pf/diag_holedope/README.md`「結果」
-- **新しい図 `liwu_pf/ed_vmc_compare_holedope.pdf`**(ユーザー依頼「ドープ相も ED compare」): `plot_ed_vmc.jl --match '^n13h' <出力>`。
+  どちらも E − E0 の 9 割以上が多様体の外への漏れ(N=6 と同じ形)。表は `projects/liwu/diag/holedope/README.md`「結果」
+- **新しい図 `projects/liwu/ed_vmc_compare_holedope.pdf`**(ユーザー依頼「ドープ相も ED compare」): `plot_ed_vmc.jl --match '^n13h' <出力>`。
   plot_ed_vmc.jl に `--match`・Laughlin の数え上げの色分け(青 = 下から D 本、破線)・ラベルの絶対差を追加。全条件の `ed_vmc_compare.pdf` は未更新
 - `spectral_weight.jl` に `--nlow n`(まとまりの本数、既定 3)を追加
-- **Li–Wu ν=1/2 4×4 の ED は CFL か(ユーザーの問い)→ 手元の 2 サイズでは決まらない**(`liwu_pf/diag_cfl/README.md`、`cf_counting.jl`)。
+- **Li–Wu ν=1/2 4×4 の ED は CFL か(ユーザーの問い)→ 手元の 2 サイズでは決まらない**(`projects/liwu/diag/cfl/README.md`、`cf_counting.jl`)。
   4×4 V=2 は下から 15 本(M 点 3・(1,1) 型 6・Γ 2・M 点 3・Γ 1)の上に隙間 0.068 で、最近接の殻 (0,1) 型だけが隙間の上。
   CF の Fermi 海の数え上げは上位 4 族で 16 個の運動量を全部覆い(予言力なし)、素朴な順(3 番目が最近接の殻、基底の M 点は 4 番目)は ED と合わない。
   論文は N=2 模型の ν=1/2 を CFL とは言っていない。決めるには k 点の多い系(バンド射影の ED、`~/ED/Code/Model/ProjectedCB_clean.jl` が手本)
 - **★射影 ED を実装(2026-11-12 夜、ユーザー「もう最後までやって」)**: ExactDiagonalization パッケージの拡張 C-1(`~/ED/Code/test/ExactDiagonalization`
   の DESIGN §11・test_17・SDD_LEDGER・PLAN 追補 Task 14、`~/ED/CLAUDE.md` 進捗更新)。**スイート 18/18**、実空間の H を最低バンドへ数値射影した
   B†HB と要素ごとに 1e−14 で一致(NN・湯川、shell 3・4)。実行 `~/ED/Code/run/LiWu/run_projected.jl`、本番 PBS 12642(`pbs/ed_projected_nu12.pbs`、
-  ログ `runs/_ed_projected_nu12.log`、3×4〜8×3 → 7×4 → 6×5)。解析 `liwu_pf/diag_cfl/projected_analysis.jl`(ギャップ外挿・n(k)・S(q))、
+  ログ `runs/_ed_projected_nu12.log`、3×4〜8×3 → 7×4 → 6×5)。解析 `projects/liwu/diag/cfl/projected_analysis.jl`(ギャップ外挿・n(k)・S(q))、
   `compare_projection.jl`(射影 vs 射影なし)。**射影の近似**: 3×4 ν=1/2 で NN V=2 は E0 +0.59・励起 2〜2.7 倍(運動量の並びは同じ)、
   湯川は E0 +0.20・低い励起は 10〜15% 以内で一致 → 湯川の方が射影に向く。ν=1/3 6×3 V=2 は射影で 3 重項の幅 0.0045 → 0.041
 - **CFL の判定方針(ユーザー 2026-11-12)**: 殻構造は使わない。ギャップのサイズ外挿・n(k)・S(q)(メモリ `cfl-diagnosis-criteria`)
 - 湯川の射影なし ν=1/2(12641、3×4 済み・4×4 は明朝 2 時ごろ)
 - ホールドープの他セクター: VMC の最低 − 全体の E0 は (1,2) 0.0065・(3,0) 0.0125・(0,1) 0.0168・(1,0) 約 0.029(走行中)で、
   ED(0・0.0046・0.0075・0.0154)と並びは同じ、間隔は約 1.4 倍
-- **3×4 ν=1/2 の ED を shell 4 でも計算(V 0.5・1・2・4)、図 `liwu_pf/ed_compare_3x4_nu12.pdf`**(左 shell 3・右 shell 4)。
+- **3×4 ν=1/2 の ED を shell 4 でも計算(V 0.5・1・2・4)、図 `projects/liwu/ed_compare_3x4_nu12.pdf`**(左 shell 3・右 shell 4)。
   V ≥ 1 は shell によらず基底 (2,1)(1,3)・次 (0,1)(0,3) +0.017〜0.019。V=0.5 だけ shell 3 は基底 Γ で密、shell 4 は (2,1)(1,3) が 0.012 下。
-  `plot_ed_vmc.jl` に `--ed <正規表現>`(ED だけの条件もパネルに)・`--novmc`・`--ncol` を追加(引数なしの出力表は前と同じことを確認)。数値は `diag_cfl/README.md`
+  `plot_ed_vmc.jl` に `--ed <正規表現>`(ED だけの条件もパネルに)・`--novmc`・`--ncol` を追加(引数なしの出力表は前と同じことを確認)。数値は `diag/cfl/README.md`
 - **走行中(15:24 投入)**: ホールドープ Φ N=5 shell 4 の基底以外のセクター (3,0)・(0,1)・(1,0)(ユーザー判断「代表 3 つを今すぐ」)、
   12632〜12640 の直列(MPI 4、Pf と並走、5 時間前後)。目的 = 準空孔の分散(ED のセクターごとの最低は全部 0.015 の中、基底の VMC の誤差 0.0065)を
-  VMC がなぞるか。`scripts/submit_20261112_holedope_sectors.sh`、README「基底以外のセクター」
+  VMC がなぞるか。`scripts/submit/submit_20261112_holedope_sectors.sh`、README「基底以外のセクター」
 - **走行中**: Pf N=4 shell 3(12626、step ~2050 で差 0.025、16 時 15 分ごろ 3000 step)→ 12627(shell 4)→ 延長・絞る(12628〜12631)。
   終わったら `plot_ed_vmc.jl --match '^n13h'` で図を更新、`analyze.jl --exact` と `spectral_weight.jl --nlow <セクターの本数>`(N=4 は 20〜22 本、セクターで違うので ED の spectrum.dat で数える)
 
 ### 前回の引き継ぎ(2026-11-11 19:45、セッション終了時)
 
-- **走行中はすべて PBS**(手元の nohup の計算はない。`qstat`、ジョブ番号の一次記録は `liwu_pf/runs/_pbs_jobs.txt`):
-  - HyperDet 12615 hd_j3・12616 hd_n3(23:45 頃に hd_opt.jl の 8 時間の上限で止まり `diag_hyperdet/F_<tag>.bin` を保存)→ 12617 hd_j4・12618 hd_n4(shell 4、明朝 8 時頃まで)。
+- **走行中はすべて PBS**(手元の nohup の計算はない。`qstat`、ジョブ番号の一次記録は `projects/liwu/runs/_pbs_jobs.txt`):
+  - HyperDet 12615 hd_j3・12616 hd_n3(23:45 頃に hd_opt.jl の 8 時間の上限で止まり `diag/hyperdet/F_<tag>.bin` を保存)→ 12617 hd_j4・12618 hd_n4(shell 4、明朝 8 時頃まで)。
     19:39 で hd_j3 は 619 反復 E − E0 0.000112・F 0.999985、hd_n3 は 0.000359・F 0.999938
   - ホールドープ Φ(N = 5、MPI 4、19:27 開始、約 0.5 秒/step): 12620 → 12621(延長)→ 12622(絞る)が shell 3、12623 → 12624 → 12625 が shell 4。
     1250 step の時点で ED(同じ K の最低)との差 shell 3 0.034・shell 4 0.009(N = 6 の Φ 乱数スタートは同じ時点で 0.015、3000 step で 0.0132)
@@ -386,15 +390,15 @@
   1. HyperDet: `julia hd_svd.jl F_hd_j3.bin F_hd_n3.bin`・`hd_loc.jl` → REPORT10 にステップ 1・4 と確認事項 3。shell 4(hd_j4・hd_n4)も同様
   2. ホールドープ: `cat runs/_extend.log`、`analyze.jl <run> --exact`(同じ K の最低との重なり)。加えて**低い準位のまとまりへの重み**
      (shell 4 は準空孔の本数 = N=5 で各セクター 7 本・N=4 で 20〜22 本、shell 3 は近い準位)。`spectral_weight.jl` は 3 重項(`w[1:3]`)の決め打ちなので本数を引数にする改修が要る。
-     まとめは `diag_holedope/README.md` に。N = 6 の同じ方法の値(Pf c63_cont2 0.0075、Φ 0.0124)と比べる
+     まとめは `diag/holedope/README.md` に。N = 6 の同じ方法の値(Pf c63_cont2 0.0075、Φ 0.0124)と比べる
   3. 湯川の次(VMC・細かい走査)は未決
 - **重なりの定義**(ユーザーの問い 2026-11-11 に答えたもの): Ψ = VMC の最終パラメータ(f または Φ と Jastrow、QP の運動量射影込み)で全 N 粒子配置の振幅を
   本体の振幅ルーチンで組んだ多体の状態ベクトル(厳密列挙、MC の雑音なし)を規格化したもの。固有状態は ED のファイルではなく、同じ def から組んだ H を
   Ψ から始めた Lanczos(毎反復でセクター K へ射影、全再直交化)の Ritz ベクトル(最低の Ritz 値が ED の E0 と一致することを確認)。
   「1 本との重なり」= |⟨E0_K|Ψ⟩|²、「3 重項への重み」= Σ_{i=1..3} |⟨E_i|Ψ⟩|²(= 3 本の張る空間への射影のノルム²。空間の中の基底の取り方によらない)、
   REPORT10 の F はその平方根。Ψ と直交する固有状態は Krylov 空間に現れないが、重みは 0 なので合計は正しい
-- 今日の新しい道具: `scripts/set_sector.jl`(run の K を書き換え)、`scripts/holedope_check.jl`(運動量の規約と初期状態の検算)、
-  `scripts/submit_20261111_holedope.sh`、`gen_phi_inputs.jl` に N の上書き、`pbs/ed_holedope_6x3.pbs`、`~/ED/Code/run/LiWu/yukawa_sq.jl`
+- 今日の新しい道具: `scripts/gen/set_sector.jl`(run の K を書き換え)、`scripts/gen/holedope_check.jl`(運動量の規約と初期状態の検算)、
+  `scripts/submit/submit_20261111_holedope.sh`、`gen_phi_inputs.jl` に N の上書き、`pbs/ed_holedope_6x3.pbs`、`~/ED/Code/run/LiWu/yukawa_sq.jl`
 
 ### ★2026-11-11: HyperDet(REPORT10 ステップ 1・4)と湯川を並行(ユーザー判断「両方」・HyperDet は既定案で通常モード・湯川 U0 は V=2 相当を中心に)
 
@@ -411,7 +415,7 @@
   既定案: 出発点は Φ の phi_theory_cont2(shell 4 も同じ状態から出発)、全配置の厳密列挙 + L-BFGS、運動量射影は QP と同じ形、
   ステップ 1.3(J·HyperDet、J は Φ run の最終 Jastrow)と 1.1(J なし)。balanced gauge = 各脚の Gram 行列の白色化を巡回(付録 G)、
   1|23 の特異値はサイトごと・フレーバー平均。評価はサイトの木(前半を共有する DP)で約 2.6e10 積和/全配置の見込み(未実測)。
-  作業場所 **`playground_nozomi/liwu_pf/diag_hyperdet/`(入口 = README.md)**。ダウンロードした HyperDet_DP のコードは読むだけで実行しない(DP は自前)。
+  作業場所 **`playground_nozomi/projects/liwu/diag/hyperdet/`(入口 = README.md)**。ダウンロードした HyperDet_DP のコードは読むだけで実行しない(DP は自前)。
   検算 T1〜T6 PASS(確認事項 3 = チャンネル和と融合テンソルの HyperDet が 8e−16 で一致、Φ モードの Ψ0 で)。出発点の振幅は本体の Φ モードと 1.2e−15 で一致。
   6×3 の全配置 4.9 秒・勾配 10.9 秒(8 スレッド、サイトの木)。**本番 12615 hd_j3(J あり)・12616 hd_n3(J なし)走行中、12617・12618(shell 4)が afterany**、
   各 8 スレッド・最大 8 時間。**途中経過(19:00 頃、544 反復): hd_j3 は E − E0 0.0124 → 0.000119(r 99.0%)、hd_n3(J なし)は 0.000374
@@ -419,24 +423,24 @@
   ステップ 4: 79 本の局所フィットは一意に決まらない(N = 6 で近所の行が一次従属)→ 脚ごとの分解(一意)+ 最近接に絞った 64 本に変更。
   試走の F(3 反復)では ΔF の重みは k = 2・3 の脚の相関したずれ(5e−4・1.2e−3)で、k = 1 は 6e−5。最近接の 64 本は ΔF の残差 0.78 しか下げない
   結果が出たら: `julia hd_svd.jl F_hd_j3.bin F_hd_n3.bin` と `julia --project=…/MVMCOptimizers.jl hd_loc.jl F_hd_j3.bin …`、REPORT10 にステップ 1・4 を追記
-- **★ホールドープ(ユーザー依頼 2026-11-11 夜「ν=1/3 のホールドープ相がどれくらいの精度で計算できるか、ED と Pf で」)**。入口 = `liwu_pf/diag_holedope/README.md`。
+- **★ホールドープ(ユーザー依頼 2026-11-11 夜「ν=1/3 のホールドープ相がどれくらいの精度で計算できるか、ED と Pf で」)**。入口 = `projects/liwu/diag/holedope/README.md`。
   **ED(12619、`pbs/ed_holedope_6x3.pbs`、ログ `runs/_ed_holedope_6x3.log`、各 1 分)**: 6×3 V=2 で N = 5(1 ホール = 準空孔 3 個、トーラスの
   Laughlin の数え上げ 126 本 = 各セクター 7 本)と N = 4(2 ホール = 準空孔 6 個、378 本)。**shell 4 は数え上げどおり**(N=5 は全 18 セクターで 7 本の上に隙間 0.0035、
   N=4 は 378 本目と 379 本目の間が最大の隙間 0.0146)。**shell 3 は数え上げの隙間なし**(N=5 は (3,0)・(1,2)・(5,1) の 3 本が下に、隙間 0.0114)。
   最低: N=4 shell 3 = (1,0)・(5,0)、shell 4 = (0,1)(0,2)(2,2)(4,1) の 4 重。N=5 shell 3 = (3,0)、shell 4 = (1,2)・(5,1)。
   **Pf(K=3)は K·N が奇数だと Pf = 0(門番が止める)ので N = 5 は Pf で不可**。ユーザー判断: N=4 を Pf(c63、N=6 の c63_cont2 の f と Jastrow から)、
   N=5 を Φ(乱数から)、shell 3・4 の両方、Pf は HyperDet の後。shell 4 の N=6 の解 c61_sh4_cont3 は R2 で共有した f で ny ≠ 0 への射影が厳密に 0 なので使わず、
-  shell 4 も c63_cont2 から(def は shell によらず同じ)。検算 `scripts/holedope_check.jl`(ログ `diag_holedope/check_inputs.log`): N=4・5 とも
+  shell 4 も c63_cont2 から(def は shell によらず同じ)。検算 `scripts/gen/holedope_check.jl`(ログ `diag/holedope/check_inputs.log`): N=4・5 とも
   common.jl の P_K の Lanczos が ED の同じ K の最低と一致(奇数 N の並進の符号も ED と同じ)。初期の Pf の E − E0_K は shell 3 0.119・shell 4 0.230。
-  投入 `scripts/submit_20261111_holedope.sh`: Φ 12620→12621→12622(shell 3)・12623→12624→12625(shell 4)は MPI 4 で 19:27 開始(約 0.7 秒/step)、
+  投入 `scripts/submit/submit_20261111_holedope.sh`: Φ 12620→12621→12622(shell 3)・12623→12624→12625(shell 4)は MPI 4 で 19:27 開始(約 0.7 秒/step)、
   Pf 12626(shell 3)→12627(shell 4)→12628・12629(shell 3 の延長・絞る)→12630・12631(shell 4)は afterany:12617:12618。
-  新しい道具: `scripts/set_sector.jl`(run の K を書き換え)、`gen_phi_inputs.jl` に N の上書き
+  新しい道具: `scripts/gen/set_sector.jl`(run の K を書き換え)、`gen_phi_inputs.jl` に N の上書き
 
 ### 前回の引き継ぎ(2026-11-10 23:55)
 
 - **走行中のジョブはない**(マシンは 11-10 23:37 から空いている)。**12575・12576(6×3 c63_sh4)・12582(4×4 c44 をさらに絞る)は qhold のまま**(再開は `qrls`)
 - **11-10 にやったこと**(詳細は下の各節): Φ モード 6×3 の到達点 −5.9607(差 0.0124)・4×4 0.0633 / CFL 4×4 スタートはやめた(候補は全部 K=(0,0))/
-  RBM・固定相 GFMC・6×3 のスペクトル分解 / **REPORT9**(`liwu_pf/diag_phase/REPORT9.md`)/ **REPORT10**(`liwu_pf/diag_channel/REPORT10.md`)
+  RBM・固定相 GFMC・6×3 のスペクトル分解 / **REPORT9**(`projects/liwu/diag/phase/REPORT9.md`)/ **REPORT10**(`projects/liwu/diag/channel/REPORT10.md`)
 - **今日の結論**: 安い変分の補正(局所 Jastrow・局所融合チャンネル・backflow・RBM)は ED との差の 0〜22% で頭打ち。効くのは射影型だけ
   (Lanczos 1 段 61〜63%、固定相 GFMC 28〜31%)。足りない部分は非局所的(K の向き、Pf の比が絡む)。下の「精度の見通しの整理」
 - **次の一手は未決**(提案の AskUserQuestion はユーザーが中断し、CFL の現状を聞かれたところで終了)。候補:
@@ -447,13 +451,13 @@
   KM ν=1/2 フェルミオンの 8×8 Pf 最良はストライプ型 CDW 寄りで、模型の再検討(D・A・B・C)は未着手。下の「KM ν=1/2 フェルミオンの CFL」節と「検討待ち」
 - **未コミット**(ユーザーの指示待ち): Pf のサンプルの扱いの修正と `PartonPairAmpMax`(パーサ・MVMCOptimizers・DESIGN・docs)、
   `tools/plot_parton_conv.jl` の Φ 分岐、`tools/parton_gen_pair_def.jl`、新規 `tools/parton_pair_idx.jl`・`tools/plot_parton_pair_idx.jl`
-- `playground_nozomi/` の診断コード(git 管理外)に 11-10 に足したもの: `liwu_pf/scripts/rbm_exact.jl`・`fp_exact.jl`、`liwu_pf/diag_phase/`、
-  `liwu_pf/diag_channel/`(`step3.jl --envfree` を最後に追加)
+- `playground_nozomi/` の診断コード(git 管理外)に 11-10 に足したもの: `projects/liwu/scripts/analysis/rbm_exact.jl`・`fp_exact.jl`、`projects/liwu/diag/phase/`、
+  `projects/liwu/diag/channel/`(`step3.jl --envfree` を最後に追加)
 
 ### 前回の引き継ぎ(2026-11-09 12:50): Li–Wu を Φ モードと湯川へ
 
 **ユーザー判断(2026-11-09)**: 「Pf でどこまで行けるか大体見えてきた」ので、**6×3・4×4 の Φ モードと湯川型を優先**。進め方は通常モード
-(Claude の既定案で進め、判断が要る所だけ確認)。場所はすべて `playground_nozomi/liwu_pf/`。
+(Claude の既定案で進め、判断が要る所だけ確認)。場所はすべて `playground_nozomi/projects/liwu/`。
 
 - **待ち行列**: **12566(3×5 c35 の延長ループ)は 11-09 15:14 に完走**(実時間 3:54、c35_cont で頭打ち判定)。**マシンは 11-09 15:14 から空いている**。
   **12575・12576・12582 は qhold 済み**(`Hold_Types = su`、再開は `qrls`)
@@ -475,24 +479,24 @@
   6×3 phi_rand −5.95993(0.0132、延長なしで頭打ち)、4×4 phi_rand_cont −7.04319(0.0663、0.933%)。捨てたサンプル 0。
   6×3 は Pf c63 を絞った 0.0075 に届かない(Φ ⊂ Pf なので理屈どおり)、4×4 は Pf c44 0.0105 の 6 倍以上。
   **絞る延長(dt 0.005・StaDel 0.001・RedCut 1e−10・500 サンプル/ランク、+3000 step + 延長ループ)を投入**: 12592 theory → 12593 rand 6×3 → 12594 rand 4×4(14:38 開始)。
-  並走で 12595 = 6×3 の 2 本の `analyze.jl --exact`(ppn=1、ログ `diag_spectral/phi_6x3_exact.log`)
+  並走で 12595 = 6×3 の 2 本の `analyze.jl --exact`(ppn=1、ログ `diag/spectral/phi_6x3_exact.log`)
 - **Φ 6×3 の厳密列挙(12595)**: phi_theory_cont 厳密 E −5.960309・|⟨E0|Ψ⟩|² = 0.80143、phi_rand −5.960096・0.76671(MC と一致)。
   E0 だけとの重なりは c63_cont2(0.786)・c61(0.775)と同程度以上だが、3 重項は準縮退なので比べるなら 3 重項への重みの合計で(spectral_weight.jl)
 - **Φ 6×3 の絞った延長(phi_theory_cont2)**: −5.960651(差 0.0125、0.209%)。0.0130 からほとんど動かず、3000 step の最初から平ら → Φ では頭打ちが近い
 - **Φ の絞る延長の最終(16:14 完了)**: 6×3 phi_rand_cont2 −5.960756(0.0124)= phi_theory_cont2 −5.960651 と同じ所 → **Φ 6×3 の到達点は約 −5.9607**。
   4×4 phi_rand_cont2 −7.046171(0.0633、0.0663 から)
-- **★RBM の厳密試験(`scripts/rbm_exact.jl`、2026-11-10)**: Ψ_パートン(固定)× 並進不変な複素 RBM を、代表配置(build_sector)の上の厳密な E・力・S と
+- **★RBM の厳密試験(`scripts/analysis/rbm_exact.jl`、2026-11-10)**: Ψ_パートン(固定)× 並進不変な複素 RBM を、代表配置(build_sector)の上の厳密な E・力・S と
   直線探索つき SR で最小化。理想の相関因子 F* = Φ_T/Ψ(Φ_T = Ψ を低い準位 ntarget 本へ射影)を |F*| ≤ M で頭打ちにしたときの E も出す。
   検算(3×4 N=4): 代表の E = 全配置の E(差 4e−16)、勾配 = 中心差分(1e−10)。12597 で 6×3 の c63_cont2・phi_theory_cont2 を α 1,2,4
-  (ppn=2、ログ `diag_rbm/<run>.log`)。
+  (ppn=2、ログ `diag/rbm/<run>.log`)。
   **c63_cont2 の結果**: 理想の相関因子 F* はおとなしい(|F*| の 99% 分位 1.17・99.9% 1.93、Ψ の零点付近の重み 2.5e−4)。|F*| ≤ M の頭打ちで
   M = 1.5 / 2 / 3 → 83 / 91 / 96%(理想の上限 = 3 重項の外への漏れ分 = 不足の 87%)= **零点の問題ではなく、対角の因子で原理的に足りる**。
   **RBM は α = 1 / 2 / 4 で 8.6 / 19.3 / 22.3%**(α = 1・4 は 600 回の上限、α = 2 は収束)。Lanczos 1 段 63% に遠く、α で飽和。
   解釈: 必要な因子は 1 + μ e_K(x) 相当(Ψ 自身の情報が要る)で、占有だけの浅いネットでは組み立てにくい。スピン液体で RBM が効かなかった経験と整合
-- **固定相 GFMC の極限(`scripts/fp_exact.jl`、2026-11-10、ユーザーの問い「GFMC はどうか、コストも」)**: Ψ_T の位相で回した h(x,x') = Re[e^{−iφ} H e^{iφ'}] の
+- **固定相 GFMC の極限(`scripts/analysis/fp_exact.jl`、2026-11-10、ユーザーの問い「GFMC はどうか、コストも」)**: Ψ_T の位相で回した h(x,x') = Re[e^{−iφ} H e^{iφ'}] の
   符号を破る非対角を対角へ移した h_eff(ten Haaf 型の固定節を位相へ)の基底 E_FP を Lanczos で。E0 ≤ E_FP ≤ E_VMC。
   混合推定量の収束 τ、脱出率、Re E_loc の分散、ギャップも出す。検算(3×4 N=4): ⟨ρ_T|h_eff|ρ_T⟩ = E_VMC(4e−16)、Ψ_T = ED 基底で E_FP = E0。
-  12598 で 6×3 の c63_cont2・phi_theory_cont2・c61_cont3(ログ `diag_fp/fp_exact_6x3.log`)。
+  12598 で 6×3 の c63_cont2・phi_theory_cont2・c61_cont3(ログ `diag/fp/fp_exact_6x3.log`)。
   コストの材料: c63_cont2(MPI 16、500 サンプル/ランク)の CalcTimer で E_loc 1 回 = 1781.5 s / 150 万サンプル ≈ 1.2 ms(ランク 0)、run 全体 36074 s × 16 コア。
   **結果(6×3、取れた割合 = (E_VMC − E)/(E_VMC − E0))**:
 
@@ -509,7 +513,7 @@
   Φ の理想の相関因子は c63 より荒い(|F*| の 99% 分位 1.86・99.9% 6.5、M = 2 で 54%)。fp_exact.jl の三重対角の固有値は stegr が c61 で失敗したので密行列に
 - **`spectral_weight.jl` の [4] p = 1 の誤りの原因 = Julia 1.10 の `eigmin(SymTridiagonal)` が 2×2 で eigmax と入れ替わる**
   (eigvals・eigen は正しいので Ritz 値と重みには影響なし)。密行列に直した。
-- **★6×3 のスペクトル分解(12596、ログ `diag_spectral/spectral_6x3_20261110.log`)**:
+- **★6×3 のスペクトル分解(12596、ログ `diag/spectral/spectral_6x3_20261110.log`)**:
 
   | run | E − E0 | 3 重項の重み | 外への漏れ(E − E0 のうち) | Lanczos p=1 後の E − E0(利得) | p=2 | p=3 |
   |---|---|---|---|---|---|---|
@@ -526,7 +530,7 @@
   Lanczos と同じ構造(示量的でない。段数を固定した Lanczos の利得は σ ∝ √N、不足は ∝ N なので割合は 1/√N で落ちる見込み。3×4 → 6×3 の 72〜88% → 46〜63% は ν・N・V が違うのでサイズ依存の証拠ではない)。指数・積の形で示量的にすると Ψ の零点で発散する。
   大規模系での候補は未決(B の 6×3 での見積もりと系の大きさ依存を見るのが次の判断材料)
 - **CFL 4×4 の eval(12585)は失敗**: phys 1/2,1/2,0 の候補 9 本(f₃ の閉殻ひねり 3 × 振り分け 3)とも K=(2,0) への射影のノルム² 1e−29。
-  **候補は別の運動量セクターにいる**。`parton_cfl_4x4.jl kscan` を足して 16 個の K を測る 12591 を投入(ログ `diag_spectral/cfl_4x4_kscan.log`、
+  **候補は別の運動量セクターにいる**。`parton_cfl_4x4.jl kscan` を足して 16 個の K を測る 12591 を投入(ログ `diag/spectral/cfl_4x4_kscan.log`、
   セクターごとの最良を `theory_phi/n12_4x4_cfl_K<nx><ny>/`)。**phi_cfl の入力は QP の重みが K で変わるので、結果を見てユーザーと決める**。
   4×4 の ED のセクター最低: (0,2)(2,0)(2,2) −7.10950、(1,1)(1,2)(2,1)(2,3)(3,2)(3,3) −7.08921、(0,0) −7.07913、(0,1) など −6.97562
 - **★kscan の結果(12591、21 分)**: 候補 9 本は**すべて K=(0,0) の厳密な固有状態**(ノルム² 1.0000)。E は −6.3912 か −6.4460 で、
@@ -538,16 +542,16 @@
   Pf の c44(0.0105)・c44_sh4(0.0095)よりずっと悪い
 - **前セッションの手元の計算 2 本は 11-09 12:39〜12:46 にセッション終了で SIGTERM**: CFL 4×4 の eval(並進の表を作った直後で止まり、`theory_phi/n12_4x4_cfl/` は未作成)と
   c61_cont3 のスペクトル分解(振幅の列挙の直後)。**やり直すときは PBS か nohup で**
-- **Φ の入力**(`scripts/gen_phi_inputs.jl`、未投入): `runs/n13_6x3_V2.0_K30_phi_theory`(磁束 (2/3, 2/3, −1/3)・最近接、`theory_phi/` の軌道、全配置で E −5.7599)、
-  `n13_6x3_V2.0_K30_phi_rand`、`n12_4x4_V2.0_K20_phi_rand`。def は c63・c44 からコピー、QP は全並進、Φ は制限なし(648・768 複素)。PBS は `scripts/make_pbs.sh <run> 16`
+- **Φ の入力**(`scripts/gen/gen_phi_inputs.jl`、未投入): `runs/n13_6x3_V2.0_K30_phi_theory`(磁束 (2/3, 2/3, −1/3)・最近接、`theory_phi/` の軌道、全配置で E −5.7599)、
+  `n13_6x3_V2.0_K30_phi_rand`、`n12_4x4_V2.0_K20_phi_rand`。def は c63・c44 からコピー、QP は全並進、Φ は制限なし(648・768 複素)。PBS は `scripts/run/make_pbs.sh <run> 16`
   (make_pbs.sh は Pf と同じ入口で動くはずだが、Φ で通しては未確認)。**試走**(phi_theory、1 プロセス・2000 サンプル・dt 0.02・StaDel 0.01・40 step): E −5.746 → −5.915、捨てたサンプル 0、log10 cond 0.02〜0.03、約 2 秒/step。3000 step は MPI 16 で 1 時間未満の見込み(未実測)
-- **4×4 の CFL 初期状態**: `scripts/parton_cfl_4x4.jl`。`scan` の結果: 最近接のみの φ = 1/2 は時間反転対称で C = 0・ギャップなし(使えない)、物理の振幅 |J| なら C = +1(ひねり 0 では E[8] = E[9] で接する)。
+- **4×4 の CFL 初期状態**: `scripts/theory/parton_cfl_4x4.jl`。`scan` の結果: 最近接のみの φ = 1/2 は時間反転対称で C = 0・ギャップなし(使えない)、物理の振幅 |J| なら C = +1(ひねり 0 では E[8] = E[9] で接する)。
   ゼロ磁束の f₃ は |J| でひねり (1/2, 0)・(1/2, 1/2)・(0, 1/2) が閉殻(ギャップ 0.0775)。`eval phys 1/2,1/2,0 2,0` が全配置で候補 9 本の E を測って最良を `theory_phi/n12_4x4_cfl/` に書く。
-  **12:30 頃に開始、ログ `diag_spectral/cfl_4x4_eval.log`。セッションを閉じると止まる可能性あり**。完了後 `gen_phi_inputs.jl n12_4x4_V2.0_K20_phi_cfl` で入力を作る(4×4 K=(2,0) の ED E0 は −7.10950、固有ベクトルは未保存)
+  **12:30 頃に開始、ログ `diag/spectral/cfl_4x4_eval.log`。セッションを閉じると止まる可能性あり**。完了後 `gen_phi_inputs.jl n12_4x4_V2.0_K20_phi_cfl` で入力を作る(4×4 K=(2,0) の ED E0 は −7.10950、固有ベクトルは未保存)
 - **湯川(未完)**: 文献は V(r) = U0 exp(−κr/a)/(r/a)、κ = 0.25(バンド射影。U0 の値は射影なら全体のスケールだけで本文に無い)。**Claude の既定案**: 全対、トーラスの鏡像和(遮蔽長 4a がトーラスより長いので最小像にしない)、自分の鏡像の定数は入れない。
   `~/ED/Code/test/ExactDiagonalization/src/liwu.jl` に `LiWuModel(; yukawa = (U0, kappa))` と `yukawa_pair`、`~/ED/Code/run/LiWu/run_spectrum.jl` に `--U0`・`--kappa`(出力は `.../LiWu/fermion_yukawa/`)を追加済み。既存テスト(test_16 の L1〜L5)は liwu.jl の変更後に緑。
   **test_16 に足した L6(`check_yukawa`)は未実行**。**6×3 の U0 = 0.5・1・2 の ED 走査はコマンドをユーザーが中断した(理由は未確認。CPU の取り合いか U0 の選び方の可能性、次に聞く)**。VMC 用の全対 `coulombinter.def` の生成は未作成で、ED と同じ式にして E0 を突き合わせること
-- **★「なぜ 6×3 で 3 重項に届かないか」の答え**(`scripts/spectral_weight.jl`、ログ `diag_spectral/spectral_6x3.log`、全配置の厳密列挙、ψ は `diag_spectral/psi_<run>.bin`):
+- **★「なぜ 6×3 で 3 重項に届かないか」の答え**(`scripts/analysis/spectral_weight.jl`、ログ `diag/spectral/spectral_6x3.log`、全配置の厳密列挙、ψ は `diag/spectral/psi_<run>.bin`):
   c63_cont2 は厳密 E −5.965658(MC −5.965723)、E − E0 = 0.007502。**3 重項への重みは合計 99.549%**(0.786272 / 0.000004 / 0.209216)で、**外への漏れは 0.451%、その平均エネルギーは E0 の 1.455 上**(セクターの 4 本目 0.0836 の重みは 9e−5)。
   E − E0 の 87.4%(0.006558)が漏れ、12.6%(0.000944)が 3 重項の中の配分。帯ごとでは E − E0 ≥ 2 の成分が 65%。**FCI の多様体には乗っていて、足りないのは高エネルギー側の小さな尾**(ν=2/3 3×4 のずれの分解・接空間の判定と同じ型)。
   2 本目の重みがほぼ 0 なのは理論状態のひねり (0,0);(0,1);(0,2) でも同じ(0.0000)で、対称性の違いの可能性があるが未確認。
@@ -558,14 +562,14 @@
 
 ### ★2026-11-10 夜: REPORT9 = 位相誤差の診断と「位相のみ最適化」、REPORT10 = 局所融合チャンネル(Li–Wu 6×3、どちらも完成)
 
-**入口 = `playground_nozomi/liwu_pf/diag_phase/README.md`**(依頼の定義・ファイル・検算・踏んだもの)。依頼文はユーザーが貼ったもの(diag_R 続報の形だが
+**入口 = `playground_nozomi/projects/liwu/diag/phase/README.md`**(依頼の定義・ファイル・検算・踏んだもの)。依頼文はユーザーが貼ったもの(diag_R 続報の形だが
 **対象はまず Li–Wu**とユーザー指示)。系は 6×3 の c63_cont2・c61_cont3・phi_theory_cont2。本番コードは触らない。
 
 - 確認事項 1〜3 とタスク A(12599〜12601、`logs/taskAC_<run>.log`): 1 は 0.9〜1.7 σ で一致、2 は純粋な固有状態で E_sign = E_FP = E0、3 は fp_exact と同値。
   **r(E_sign(φ0)) / r(E_FP(φ0)) = 47.6 / 31.2%(c63)、43.5 / 27.6%(c61)、24.6 / 9.9%(Φ)**。
   **E_A = E(|Ψ_ED| e^{iφ0}) は VMC より悪い**(r −24% / −67% / −195%)= Ψ0 の振幅と位相は互いに合わせ込まれていて、厳密な振幅に今の位相を付けると悪化。
   タスク C(φ0 から、2 体のみ)は L が 4% しか減らず、E_FP はむしろ悪化(c61 27.6 → 24.4%、Φ 9.9 → 6.2%)
-- **★REPORT9 完成(2026-11-10 19:45、`diag_phase/REPORT9.md`)**。タスク B(c63、L-BFGS 40 回で上限): 目的 E_FP で E_FP 31.2 → 43.6%、目的 E_sign で E_sign 47.6 → 65.4%、E_VMC は +0.0007〜0.0011、|Δφ| の中央値 0.003〜0.006 rad。ボンドごとの平均の位相差 ±0.004 以下(配置ごとの rms 0.06〜0.15)、小三角形の一周 ±0.005 以下。タスク C(2 体・3 体、直した距離で出し直し)は残差の位相を 2〜5% しか説明せず E は改善しない。**結論: (i) 位相だけを E_FP 用に最適化しても GFMC で埋まるのは 4 割強(大半は埋まらない、Pf で表せる位相の自由度が足りない)。(ii) 残りは局所的な複素 Jastrow では取れない = 非局所的(Pf の比が絡む、K の向きが効くことと整合)**
+- **★REPORT9 完成(2026-11-10 19:45、`diag/phase/REPORT9.md`)**。タスク B(c63、L-BFGS 40 回で上限): 目的 E_FP で E_FP 31.2 → 43.6%、目的 E_sign で E_sign 47.6 → 65.4%、E_VMC は +0.0007〜0.0011、|Δφ| の中央値 0.003〜0.006 rad。ボンドごとの平均の位相差 ±0.004 以下(配置ごとの rms 0.06〜0.15)、小三角形の一周 ±0.005 以下。タスク C(2 体・3 体、直した距離で出し直し)は残差の位相を 2〜5% しか説明せず E は改善しない。**結論: (i) 位相だけを E_FP 用に最適化しても GFMC で埋まるのは 4 割強(大半は埋まらない、Pf で表せる位相の自由度が足りない)。(ii) 残りは局所的な複素 Jastrow では取れない = 非局所的(Pf の比が絡む、K の向きが効くことと整合)**
 - **次: REPORT10(ユーザー依頼「渦のずれを担う局所融合チャンネルの検証」、REPORT9 の後)。ユーザー判断(2026-11-10)**: 通常モードで既定案。
   (1) 双極子(重心を保つ)は**ハニカムに読み替えて両方の型**: 最近接の 3 方向へ散る (e1,e2,e3)(e1+e2+e3 = 0)と次近接 a の (0,+a,−a)。
   比較用(重心を保たない)は (0,+e,+e) と (0,+a,+a)。λ は副格子と向きのクラスで共有(最近接の −e は A から格子点にならないので (0,+e,−e) は作れない)
@@ -573,9 +577,9 @@
   (3) **HyperDet(ステップ 1・4)と確認事項 3 は後回し**(ステップ 0・2・3 を先に)。HyperDet_DP のコードは
   `/tmp/claude-1004/.../scratchpad/ext_hyperdet/repo` に取得済み(Julia、超行列式の値と勾配だけ、未実行。参照論文は知識の範囲外で未読)
   (4) **追加の指示(ユーザー、2026-11-10)**: 基底多様体への重なり F(= √Σ_i |⟨Ψ|Ψ_ED,i⟩|²)から ε_eff = √(−ln F / N) を出し、(E_Ψ0 − E_ED)/Δ と記録(Δ = 同じセクターの基底多様体と最低励起のギャップ。shell 3 は 4 本目 − 3 本目 = 0.0791(E0 から 0.0836)、shell 4 は 0.0474(0.0860)。どちらの Ψ0 もすでに E − E0 < Δ を満たすので、3 重項の上端より下か(shell 3 で 0.0045)も並べる)。ステップ 2 は **k=1 の指数形を最優先**、k=2 との差で打ち切り誤差を見積もる。目標 E − E_ED < Δ
-- **REPORT10 の実装(2026-11-10 夜、`playground_nozomi/liwu_pf/diag_channel/`)**: `chan_common.jl`(行ごとのサイトで Pf の QP 和、型の決まった表 PfTab、ハニカムの方向表、1 粒子 51 チャンネル)・`chan_opt.jl`・`step02.jl`(確認 1・2・4、ステップ 0、k=1 線形 = 一般化固有値問題、指数形 = L-BFGS)・`step2_k2.jl`(k=2、クラスの組ごとに足す)・`step3.jl`(backflow、フレーバー依存 108 / 共通 36 複素、解析的な勾配 + 厳密 SR、η = 0 から)。3×4 の小さい系で確認 1(ビット単位)・2(比 −1)・4(3e−14)と backflow の勾配を照合済み。**PfEval の dp・src は型注釈なしで、そのまま参照すると Pf 1 回 20 µs → PfTab で 16 倍速く**。投入: 12606(c61_cont3)・12607(c61_sh4_cont3)、各 8 スレッド、タスク B の後、step02 → step3 → step2_k2(k=2 は 3〜4 時間)。ログ `diag_channel/logs/step2_<run>.log`・`step3_<run>.log`・`step2k2_<run>.log`
+- **REPORT10 の実装(2026-11-10 夜、`playground_nozomi/projects/liwu/diag/channel/`)**: `chan_common.jl`(行ごとのサイトで Pf の QP 和、型の決まった表 PfTab、ハニカムの方向表、1 粒子 51 チャンネル)・`chan_opt.jl`・`step02.jl`(確認 1・2・4、ステップ 0、k=1 線形 = 一般化固有値問題、指数形 = L-BFGS)・`step2_k2.jl`(k=2、クラスの組ごとに足す)・`step3.jl`(backflow、フレーバー依存 108 / 共通 36 複素、解析的な勾配 + 厳密 SR、η = 0 から)。3×4 の小さい系で確認 1(ビット単位)・2(比 −1)・4(3e−14)と backflow の勾配を照合済み。**PfEval の dp・src は型注釈なしで、そのまま参照すると Pf 1 回 20 µs → PfTab で 16 倍速く**。投入: 12606(c61_cont3)・12607(c61_sh4_cont3)、各 8 スレッド、タスク B の後、step02 → step3 → step2_k2(k=2 は 3〜4 時間)。ログ `diag/channel/logs/step2_<run>.log`・`step3_<run>.log`・`step2k2_<run>.log`
 - **★距離の規約の取り違え(2026-11-10 19:10 に修正)**: `liwu_hop_distance(si, sj, dm, dn)` は「セル (dm, dn) の副格子 si」と「原点の副格子 sj」の距離(physhop の最近接 A(0,0)→B(0,1) と照合)。逆に読んでいたため、(1) REPORT10 の最近接の表が最近接でない B を指していた → 直して `check_neighbors`(表と physhop の最近接の一致)を毎回確かめる。12606 は直す前のコードで 19:09 に始まったので qdel → **12608** で再投入。(2) REPORT9 の `phase_fit.jl`・`task_ac.jl` の site_dist(タスク C の 3 体の三角形とボンドの一周の和)→ phase_fit.jl を直して `rerun_c3.jl`(12609、12602 の後)で出し直し。2 体項・確認事項・タスク A・B の値は影響なし(同じ副格子の距離は対称)
-- **★REPORT10 完成(2026-11-10 23:50、`diag_channel/REPORT10.md`)**。12607・12608(step02 → step3 → k=2)、12610・12611(λ 独立 102 クラス、`step2_fine.jl`)、
+- **★REPORT10 完成(2026-11-10 23:50、`diag/channel/REPORT10.md`)**。12607・12608(step02 → step3 → k=2)、12610・12611(λ 独立 102 クラス、`step2_fine.jl`)、
   12612・12613(環境によらない backflow、`step3.jl --envfree`)。r = ED との差のうち取れた割合(shell 3 c61_cont3 / shell 4 c61_sh4_cont3):
   **λ を副格子 × 型で共有(8 クラス)は 0.1〜0.35%、チャンネルごとに独立(102 複素)で 5.7 / 4.4%(双極子 48 だけで 2.2 / 1.7%、比較用 54 で 2.8 / 2.2%)、
   backflow フレーバー依存(108)4.6 / 7.4%・共通(36)2.3 / 2.9%、そのうち環境によらない部分(= f の付け替え)は 1.1 / 0.8%**。
@@ -590,7 +594,7 @@
 
 ### ★進行中: Li–Wu N=2 模型(ハニカム)のフェルミオン FCI / CFL を Pf で(2026-11-04 開始)
 
-**入口 = `playground_nozomi/liwu_pf/README.md`**(「実行状況」節が再開手順、「結果」節が数値。文献 arXiv:2607.08702 は
+**入口 = `playground_nozomi/projects/liwu/README.md`**(「実行状況」節が再開手順、「結果」節が数値。文献 arXiv:2607.08702 は
 `playground_nozomi/docs/` の PDF)。射影なし・第三近接までのホッピング・最近接斥力 V で、ν = 1/3・2/3(FCI)と 1/2(CFL)が
 出るかを Pf(K = 3)で調べる。アンザッツはユーザー指定: f の共有セルは ν=1/3・2/3 が x 方向 3 倍 (3,1)、ν=1/2 が 2 倍 (2,1)、V=2。
 
@@ -613,28 +617,28 @@
   `pbs/n13_6x3_V2.0_K30_c63_tighten.pbs` は make_pbs_tighten.sh の生成物から「延長ログの最後が収束」の前提だけ手で外したもの
 - 待ち(この順): 12583 → 12565・12566(共有なしの 3×5 c35)→ 12575・12576(6×3 c63_sh4)→ **12582(4×4 c44 を dt 0.0025・1000 サンプル/ランクでさらに絞る、
   約 13 h + 延長ループ。置き場所はユーザー判断 2026-11-08「最後に回す」)**。
-  絞る対象の基準は「ED があり、同じ系でいちばん広いアンザッツで、目標 0.01 未達」。投入は `scripts/submit_20261107.sh`。
+  絞る対象の基準は「ED があり、同じ系でいちばん広いアンザッツで、目標 0.01 未達」。投入は `scripts/submit/submit_20261107.sh`。
   重いものはユーザー判断「最後に回してそのまま流す」。
   3000 step あたりの見込み(CalcTimer の外挿)c63 6〜9 h・c44 4〜7 h・c35 3〜5 h、c61 をさらに絞るのは約 2.3 h。延長ループ込みで最大 4 倍。
   共有なしの 5 本は実パラメータ数(約 7800・6200・5400)が 1 step のサンプル数 4000 を超える。**最初の数百 step で E の跳び・NaN を見る**
-- 初期値: c44_sh4 は 12577 が c44 の最終解(ε 0)から作る(`scripts/make_pbs_embed.sh`。旧初期値 c22_cont + ε 0.05 は `in_prev_from_c22/`。今の in/ に In ファイルは無く、失敗すると 12573 はエラーで止まる)。c63_sh4 は c31m_sh4_cont の f + ε 0.05。def は c63・c44(f・QP)と c61_sh4・c21_sh4(physhop)に
+- 初期値: c44_sh4 は 12577 が c44 の最終解(ε 0)から作る(`scripts/run/make_pbs_embed.sh`。旧初期値 c22_cont + ε 0.05 は `in_prev_from_c22/`。今の in/ に In ファイルは無く、失敗すると 12573 はエラーで止まる)。c63_sh4 は c31m_sh4_cont の f + ε 0.05。def は c63・c44(f・QP)と c61_sh4・c21_sh4(physhop)に
   バイト一致(全配置列挙の check_inputs.jl は走行中のジョブと CPU を取り合うので省いた)
 - **c63 の初期値は c61_cont2(0.228%)+ ε 0.05 に、c44 は c22_cont(0.675%)+ ε 0.05 に作り直した**(ユーザー判断、
   2026-11-05 23:40 頃。旧初期値は各 run の `in_prev_from_c61/`・`in_prev_from_c21/`)
-- **「dt 0.005 で頭打ちに見えたら、さらに絞って投げる」(ユーザー判断 2026-11-05)**: `scripts/make_pbs_tighten.sh <run> 16` で
+- **「dt 0.005 で頭打ちに見えたら、さらに絞って投げる」(ユーザー判断 2026-11-05)**: `scripts/run/make_pbs_tighten.sh <run> 16` で
   `pbs/<run>_tighten.pbs` を作る。最新の続きが dt 0.005 で `_extend.log` に「収束 →」と出ていれば、dt 0.0025・StaDel 0.0005・
   RedCut 1e−10・1000 サンプル/ランクで +3000 step を回し、同じジョブで延長ループへ渡す。前提を満たさなければ何もしない。
   値は Claude の選択(前回の絞り方と同じ向きにもう一段)
 - 待ち行列の付け替えは `qalter -W depend=afterany:<新しい親> <子>` で効く(逆向きの beforeany も Torque が付け替える。2026-11-05 に確認)
-- 状況は `cat runs/_extend.log` と `ed_vmc_compare.pdf`(`scripts/plot_ed_vmc.jl` で更新)
+- 状況は `cat runs/_extend.log` と `ed_vmc_compare.pdf`(`scripts/analysis/plot_ed_vmc.jl` で更新)
 
 **再開時**:
 
 ```bash
-cd /home/nozomihigashino/Julia-mVMC/playground_nozomi/liwu_pf
+cd /home/nozomihigashino/Julia-mVMC/playground_nozomi/projects/liwu
 qstat; cat runs/_extend.log; tail runs/_pbs_jobs.txt
 J=~/.julia/juliaup/julia-1.10.2+0.x64.linux.gnu/bin/julia
-$J --project=/home/nozomihigashino/Julia-mVMC/MVMCOptimizers.jl scripts/analyze.jl <run> [--exact]   # ED との比較(少数系は --exact で重なり)
+$J --project=/home/nozomihigashino/Julia-mVMC/MVMCOptimizers.jl scripts/analysis/analyze.jl <run> [--exact]   # ED との比較(少数系は --exact で重なり)
 ```
 
 #### 確定した結果(数値の表は README「結果」節)
@@ -669,7 +673,7 @@ $J --project=/home/nozomihigashino/Julia-mVMC/MVMCOptimizers.jl scripts/analyze.
 - **VMC(2026-11-08 昼、ED との差、末尾 500 step 平均)**: 絞った 3 本はすべて頭打ち判定。**4×4 c44_sh4_cont3 −7.11578 で差 0.0095(ED −7.12525)、
   6×3 c61_sh4_cont3 −5.95745 で差 0.0085(ED −5.96599)= 目標 0.01 以下に到達**。4×4 c44_cont2(shell 3)は −7.09899 で差 0.0105(0.0127 から、目標まであと 0.0005)。
   6×3 c63_cont(走行中、step 1213)は −5.96528 で差 0.0079(3 重項の上端 −5.96865 よりまだ 0.0034 高い)
-- **★接空間の判定と backflow(2026-11-08、ν=2/3 3×4 の全配置、`scripts/tangent_space.jl`・`scripts/tangent_backflow.jl`、ログ `diag_tangent/`、README「接空間の判定と backflow」節)**:
+- **★接空間の判定と backflow(2026-11-08、ν=2/3 3×4 の全配置、`scripts/analysis/tangent_space.jl`・`scripts/analysis/tangent_backflow.jl`、ログ `diag/tangent/`、README「接空間の判定と backflow」節)**:
   ユーザーの問い「下がりきらない理由」「backflow はホントに効かないの? step 数が少ないとかじゃなく?」への答え。
   **(1) 既定の SR 設定(dt 0.02・StaDel 0.01・125〜250 サンプル/ランク)で「頭打ち」と判定した run は停留点に着いていない**:
   (H−E)Ψ の接空間 T(f + Jastrow)への射影が 23〜40%、T の 1 次の利得 27〜46%。絞った K=(2,0) c31_cont4 だけがほぼ停留(3.5%・4.7%)。
@@ -677,7 +681,7 @@ $J --project=/home/nozomihigashino/Julia-mVMC/MVMCOptimizers.jl scripts/analyze.
   **(2) それでも E−E0 の 54〜95% は T の外**。Lanczos 1 段は 72〜88%、T + HΨ は 88〜95%。
   **(3) フレーバー依存 backflow(1 次、792 複素)は効く**: 既定の設定の 3 本で T に足して 16〜32 pt(f 固定の見積もり 22〜32 pt とほぼ同じ足し算)、
   **ほぼ停留の K=(2,0) では 54 pt**(f 固定 41 pt)。それでも係数 1 個の Lanczos(72〜88%)に届かず、Lanczos に足すと 1〜4 pt。フレーバー共通は 6〜27 pt。
-  **(4) Lanczos の利得は物理の運動項 K を 1 回かけた向きそのもの(`scripts/tangent_corrhop.jl`、ログ `diag_tangent/corrhop_*.log`)**:
+  **(4) Lanczos の利得は物理の運動項 K を 1 回かけた向きそのもの(`scripts/analysis/tangent_corrhop.jl`、ログ `diag/tangent/corrhop_*.log`)**:
   素のホップ c†_r c_s を並進の軌道ごとに独立な係数(24 本)で足すと、Ψ + Jastrow + P = 73〜88% で Lanczos(係数 1 個)と 0.4〜0.8 pt 差、
   最適な係数は t に比例(比は殻 1〜3 でそろう、虚部 ≈ 0)。P 単独は 3〜10% で、対角の Jastrow と組んで初めて効く。f を一緒に緩めると +5〜17 pt。
   相関ホップ n_k c†_r c_s(264 本、T と組んで 75〜88%)は K の劣った近似で、**「占有つき」は本質ではなかった(同日の解釈を訂正)**。
@@ -685,20 +689,20 @@ $J --project=/home/nozomihigashino/Julia-mVMC/MVMCOptimizers.jl scripts/analyze.
   **backflow への含意**: 占有によらない行の混合は f の付け替えで Pf の多様体に全次数で入り、その η³ の項は P そのものだが、停留点で P の利得は取れていない。
   高次に含まれることは取れることを意味しないので、backflow の見込みは 1 次の B 程度(T に足して 16〜54 pt)で K の向き(47〜83 pt)に届かない。
   すべて 1 次の空間の評価で、本物の最適化の到達点ではない
-- **★ずれの分解(2026-11-07、ν=2/3 3×4 の全配置、`scripts/mismatch.jl`、ログ `diag_mismatch/`、README「ずれの分解」節)**: V=0.5 c32・V=2 c32・c34・K=(2,0) c31 の 4 本。
+- **★ずれの分解(2026-11-07、ν=2/3 3×4 の全配置、`scripts/analysis/mismatch.jl`、ログ `diag/mismatch/`、README「ずれの分解」節)**: V=0.5 c32・V=2 c32・c34・K=(2,0) c31 の 4 本。
   **ずれは高エネルギーの成分**: E 超過のうち ED の基底から 2 以上の成分が V=2 で 96〜97%(K=(2,0) は 86%)、V=0.5 で 69%。V=0.5 は重みの約半分が 0.2〜0.5 の低い成分。
   **効いたのは Lanczos 1 段だけ**: E−E0 は c34 0.0038 → 0.00046、c32 0.0123 → 0.0015、V=0.5 0.0043 → 0.0012、K20 0.0272 → 0.0053。T_g(1 体 46 本)単独・D_c(2 体 24 本)単独はほぼ効かず、
   両方(70 本)でも Lanczos より約 1 割しか下がらない(cb13 の「独立係数で 30 pt」とは違い km13 に近い)。**対角演算子は 4 体まで・実虚とも効かず、バンド射影は悪化**(全粒子が最低バンドにいる多体の重みは V=0.5 で 0.95、V=2 で 0.60)。
-  **1 粒子あたりの上バンド占有**(`scripts/band_occ.jl`、演算子の直接作用): ν=2/3 3×4 の ED 基底で V=0.5/1/2/4 が 0.75/2.55/7.19/14.6%、ν=1/3 6×3 V=2 の FCI 3 重項は 0.26〜0.38%。「40%」は多体の重みで占有率ではない。複素の扱いは検算済み(Slater が運動項の固有状態、⟨T⟩+⟨V⟩ = E が 1e−13)。
-  **backflow の 1 次の見積もり**(`scripts/backflow_bound.jl`、f 固定、線形の空間なので厳密な上限ではない): E−E0 の減り方は、フレーバー依存 792 本で 22〜23%、フレーバー共通 264 本で 7〜8%、物理の相関ホップ 264 本で 16〜17%、Lanczos 1 段(係数 1 個)で 72〜88%。Lanczos に足しても 21〜28% 減。行の混合(f の変分の中、72 本)は 2〜3% で、f は少なくともこの方向ではほぼ停留。
+  **1 粒子あたりの上バンド占有**(`scripts/analysis/band_occ.jl`、演算子の直接作用): ν=2/3 3×4 の ED 基底で V=0.5/1/2/4 が 0.75/2.55/7.19/14.6%、ν=1/3 6×3 V=2 の FCI 3 重項は 0.26〜0.38%。「40%」は多体の重みで占有率ではない。複素の扱いは検算済み(Slater が運動項の固有状態、⟨T⟩+⟨V⟩ = E が 1e−13)。
+  **backflow の 1 次の見積もり**(`scripts/analysis/backflow_bound.jl`、f 固定、線形の空間なので厳密な上限ではない): E−E0 の減り方は、フレーバー依存 792 本で 22〜23%、フレーバー共通 264 本で 7〜8%、物理の相関ホップ 264 本で 16〜17%、Lanczos 1 段(係数 1 個)で 72〜88%。Lanczos に足しても 21〜28% 減。行の混合(f の変分の中、72 本)は 2〜3% で、f は少なくともこの方向ではほぼ停留。
   **ゼロ点がずれる仮説(オンサイト分解の z³ の縛り)は未判定**: 最近接の対は VMC が ED より多い(+0.18〜+1.08%)が、対の数は実 Jastrow で調整できる量なので判定にならない。実 Jastrow は正の因子なので位相も零点の位置も変えられない。arg(Φ/Ψ) は 4 体まで当てはめても埋まらないが f 固定の評価。零点の位置を直接見るには、N−1 粒子を固定して Φ/Ψ の小さいループの巻き数を測る(未実施)。
   同じ c32 で 1−F は V=0.5 3.7e−3 → V=2 2.6e−3 と**むしろ小さい**。すべて f 固定の評価で、3×4 だけ(Lanczos の倍率は系が大きいと小さくなるはず)
-- **★f からパートン量を読む(2026-11-07、`scripts/parton_from_f.jl`・`scripts/parton_fhs_f.jl`、ログ `diag_parton/`。**K > 2 は定義の妨げではない**)**: K = 2 の不変な定義は `~/VMC/src/Quantity/Topology` の親 BdG 射影子 P_occ(Q = (1, −F))と、その粒子ブロック G = ρ の k ごとの固有値。これは K によらず作れて、局所 SU(K) で不変(検算は `fhs_controls.txt`)。パートン形なら Nambu の FHS = 2 Σ_a C_a(陽性対照 K=2 で +4、K=1 で +2、理論状態の Bott で +6)。
+- **★f からパートン量を読む(2026-11-07、`scripts/analysis/parton_from_f.jl`・`scripts/analysis/parton_fhs_f.jl`、ログ `diag/parton/`。**K > 2 は定義の妨げではない**)**: K = 2 の不変な定義は `~/VMC/src/Quantity/Topology` の親 BdG 射影子 P_occ(Q = (1, −F))と、その粒子ブロック G = ρ の k ごとの固有値。これは K によらず作れて、局所 SU(K) で不変(検算は `fhs_controls.txt`)。パートン形なら Nambu の FHS = 2 Σ_a C_a(陽性対照 K=2 で +4、K=1 で +2、理論状態の Bott で +6)。
   **読めない原因はセルと出発点**: (1) k を解像するには f の共有セルが要り、共有なし(c63・c44・c34)は κ が 1 点。(2) FHS は各方向 3 点以上が要る。**1 点・2 点の方向があると FHS は構造的に 0**(リンクと逆向きが打ち消す。KM 厳密解 1×4 も 0。K=2 の README の aliasing と同じ)。ν=1/3 の手元の run は c31m 2×3 が最大で、有効な格子の Chern はまだない。6×3 c21(3×3)は 1675 step で止めて f が残っていない(`zvo_var.dat` は Jastrow のみ)。(3) 乱数スタートの解は占有が広がる。**KM 8×8 K=3 の CFL スタートは E −13.05 でも ρ(κ) が 1, 1, Fermi 海の段(0.986 0.618 0.108 0.019 …)を保つ**のに、乱数スタート(E −12.82)は 0.4〜0.6 で段がない。
   Li–Wu の ρ(κ): c31m_cont5 は 0.92〜0.96 / 0.80〜0.92 / 0.31〜0.59 / 0.13〜0.48 / 0.08〜0.14、c22_cont は 0.96〜0.99 / 0.81〜0.93 / 0.32〜0.58(各 2 重)。
   **K > 2 で本当に変わること**: K=2 は F = UΣV† でフレーバーが 2 つに分かれ Nambu が U(1) で 2 ブロックに割れるが、K=3 は対のブロックが 3 つで三角形になり分かれない(不変なのは全体の和だけ。ただし def は同フレーバー対を 0 にしているので、def のフレーバーの枠は意味を持つ。下の「K=3 のフレーバー分解」)。**K が奇数だと k = −k の点で対の行列が 3×3 反対称になり階数が 1 落ちる**(並進不変な対照で階数 52、M = 54)。K=2 はこれがない。
   **注意**: 𝓡 は f の定数倍 s に依る(Pf F は定数倍なので物理に効かない)。⟨粒子数⟩ = K·N で s を決めると対照で正解(K=2 の s = 1 の規約は同じ対照で 0)。多バンドの FHS は固有位相の和で測る(行列式の位相にまとめると折り返す)。Bott は小さい系で位置演算子の取り方に敏感(K=2 の README も同じ注意)。`parton_from_f.jl` の n_a(k)(物理の BZ の Fourier)は K=2 の n(k) とは別物でゲージ依存。`physhop.def` の (i, j, t) は t c†_j c_i
-- **K=3 のフレーバー分解(2026-11-07、`scripts/parton_flavor.jl`・`parton_flavor_frame.jl`、ログ `diag_parton/flavor*.txt`)**: Pf F の物理の配置ではフレーバーごとに N 個なので、対の本数は (12, 13, 23) = (N/2, N/2, N/2) に固定される。BCS の見方ではこの保存が破れて ρ^{ab}(a ≠ b)が出る(K=3 の最適解で非対角の重み w_off 0.14〜0.26、K=2 は対が 1 種類なので厳密に 0)。定数の非ユニタリゲージで Tr ρ^{aa} = N に合わせた **n_a(κ) = Tr ρ^{aa}(κ)** はバンドの並べ替えに依らず読める。**KM 8×8 CFL は def のフレーバーのままで分解できる**: 初期値はフレーバー 1,2 が一様 1、3 が 2 2 1 0 0 0 1 2。段 2B(E −13.05)でもフレーバー 3 が 1.72 1.69 0.91 0.55 0.48 0.19 0.82 1.37 と段を残し、1,2 は 0.6〜1.4。乱数スタートは 3 本とも段がない。Li–Wu 4×4 c21 はフレーバー 3 だけ κ=(·,0) で 0.60(1,2 は 1.3)と形が違うが段ではない。
+- **K=3 のフレーバー分解(2026-11-07、`scripts/analysis/parton_flavor.jl`・`parton_flavor_frame.jl`、ログ `diag/parton/flavor*.txt`)**: Pf F の物理の配置ではフレーバーごとに N 個なので、対の本数は (12, 13, 23) = (N/2, N/2, N/2) に固定される。BCS の見方ではこの保存が破れて ρ^{ab}(a ≠ b)が出る(K=3 の最適解で非対角の重み w_off 0.14〜0.26、K=2 は対が 1 種類なので厳密に 0)。定数の非ユニタリゲージで Tr ρ^{aa} = N に合わせた **n_a(κ) = Tr ρ^{aa}(κ)** はバンドの並べ替えに依らず読める。**KM 8×8 CFL は def のフレーバーのままで分解できる**: 初期値はフレーバー 1,2 が一様 1、3 が 2 2 1 0 0 0 1 2。段 2B(E −13.05)でもフレーバー 3 が 1.72 1.69 0.91 0.55 0.48 0.19 0.82 1.37 と段を残し、1,2 は 0.6〜1.4。乱数スタートは 3 本とも段がない。Li–Wu 4×4 c21 はフレーバー 3 だけ κ=(·,0) で 0.60(1,2 は 1.3)と形が違うが段ではない。
   **Fermi 液体のフレーバーと元のユニットセル**: f の要素の共有ではフレーバー 3 だけ元のセルにできない(f^{13} は 1 と 3 の積)。できるのは射影並進 T̃ = T·diag(G_a(r))、Π_a G_a = 1 を符号つき係数で課す形(φ = 1/2 系なら G = ±1 で def に書ける)で、変分空間は c21 より狭い。KM CFL 段 2B の |ρ^{aa}| の T(2,0) の残差はフレーバー 3 が最小(0.27、1,2 は 0.44・0.36)だが 0 ではない(この状態はストライプ寄りなので弱い検定)
 - **湯川のコスト(2026-11-07 実測)**: c63 と同じ系・1 ランク・20 step で最近接 54 対 と全対 630 対(U0 exp(−κr)/r、κ 0.25、最小像)を比較。E_loc も全体もノイズの範囲で差なし(`parton_diag_energy` は対角で足すだけ、E_loc 自体が c63 全体の 2.8%)。コストの問題は VMC の 1 step ではなく、(1) 遮蔽長 a/κ = 4a が 3×4・6×3 のトーラスより長く、最小像か鏡像和かで模型が変わる (2) ED が最近接のみ(`~/ED/.../liwu.jl` の LiWuModel は V だけ)で拡張が要る (3) 論文はバンド射影なので U0 の取り方が別問題
 - **ν=1/2 4×4 の ED は低い準位が密**(0.05 の中に 11 本: M 点 3 重 −7.10950、6 重 −7.08921、K=(0,0) 2 本 …)。K=(2,0) の中は
@@ -707,8 +711,8 @@ $J --project=/home/nozomihigashino/Julia-mVMC/MVMCOptimizers.jl scripts/analyze.
 - **f の共有を減らすほど E が下がる**(6×3: c21 −5.933 < c31m −5.935 < c61 −5.957)。3×4 ν=1/3 でも共有なしが大きく下回った
 - **★パートン det³ の重なりが低かった原因はカイラリティ**: 磁束を物理と同じ向きに 1/3 ずつ配るとパートンのバンドは C = −1
   (物理の平坦バンドは +1)で、det³ は反 Laughlin。**磁束 (2/3, 2/3, −1/3)**(和 1、最近接には 2/3 ≡ −1/3)で 3 枚とも C = +1 になり、
-  6×3 で E −5.760・3 重項への重み 0.661(パラメータ 0)。`scripts/parton_flux_split.jl`。
-  Pf の初期値は `scripts/theory_init.jl`(フレーバーごとのゲージ D_a で各パートンを共有群で不変にし、Π_a D_a = 1)で作れて、
+  6×3 で E −5.760・3 重項への重み 0.661(パラメータ 0)。`scripts/theory/parton_flux_split.jl`。
+  Pf の初期値は `scripts/gen/theory_init.jl`(フレーバーごとのゲージ D_a で各パートンを共有群で不変にし、Π_a D_a = 1)で作れて、
   射影の残差 8.8e−15。**`runs/n13_6x3_V2.0_K30_c61_theory/` と `pbs/…_theory.pbs` は準備済み・未投入**
   (ユーザー判断:「初期解はあまりいいのがなさそう」。乱数スタートの c61 −5.957 より初期値が悪い)
 - QP の重み w_R = e^{−iK·R} が ED の MomentumSector と同じ K。f を共有する並進の上で K は自明でなければならない。
@@ -728,7 +732,7 @@ $J --project=/home/nozomihigashino/Julia-mVMC/MVMCOptimizers.jl scripts/analyze.
 - **修正の確認済み**(12523 を step 616 で qdel): step 491 まで元の run とビット一致、step 492 で分岐。**元の run は rank 0 以外が step 492 から
   サンプルを捨てていた**(`zvo_parton_pairdiag.dat` の n_skipped は **rank 0 の数だけ**。全ランクの合計は出ていない)。修正後は step 616 まで
   捨てたサンプル 0・NaN なし。E は 0 付近の踊り場のままで、max|f| や E の跳ねは起きるが戻る
-- `scripts/run_case_mpi.jl` は status を終了コードに返していなかった(失敗しても PBS は exit 0)。`exit(st == 0 ? 0 : 1)` を足した
+- `scripts/run/run_case_mpi.jl` は status を終了コードに返していなかった(失敗しても PBS は exit 0)。`exit(st == 0 ? 0 : 1)` を足した
 - 厳密列挙(`analyze.jl --exact`)は 6×3 で 1 本 12 分・13.6 GB。4×4 ν=1/2(配置 1050 万)は Lanczos の基底だけで約 50 GB なので未実施
 
 #### 次の一手(TODO)
@@ -742,7 +746,7 @@ $J --project=/home/nozomihigashino/Julia-mVMC/MVMCOptimizers.jl scripts/analyze.
       さらに絞った 2 本(12571・12572)・共有なしの 5 本は結果待ち(少数系は `analyze.jl --exact` で重なりも)
 - [ ] c63 は c61_cont2 から作った。12571(c61_cont3)の方が良ければ、c63(12563)が始まる前に作り直す案もある(未提案)
 - [x] **共有を減らすと ν=1/2 4×4 が縮むか**(c22・c41 → c44)→ 縮む(c22 0.048 → c44 0.0127、0.179%)
-- [~] **4×4 c44・c44_sh4、6×3 c61_sh4 の絞る延長**(12578〜12581)。c61_sh4 は dt 0.005 で 0.0108 の頭打ち、12581 でさらに絞る。結果が出たら `scripts/plot_ed_vmc.jl` で図を更新(c63・c61_sh4_cont2 までは 2026-11-07 18:28 に反映済み)
+- [~] **4×4 c44・c44_sh4、6×3 c61_sh4 の絞る延長**(12578〜12581)。c61_sh4 は dt 0.005 で 0.0108 の頭打ち、12581 でさらに絞る。結果が出たら `scripts/analysis/plot_ed_vmc.jl` で図を更新(c63・c61_sh4_cont2 までは 2026-11-07 18:28 に反映済み)
 - [ ] (保留)理論スタート c61_theory の投入。ν=2/3・1/2 の理論状態は未作成で、作るなら**向きの組を Chern で確かめてから**
 - [~] ν=2/3 3×4 V=2 を基底セクター K=(0,2) に届くセルで回す → c32・c34 を投入済み(12555〜12558)
 - [ ] **(後々、ユーザー判断 2026-11-05)点群の射影**。ν=1/2 4×4 だけ ED との差が 1 桁大きい(0.098)原因の候補。QP は任意のサイト置換を
@@ -760,7 +764,7 @@ $J --project=/home/nozomihigashino/Julia-mVMC/MVMCOptimizers.jl scripts/analyze.
       さらに +5〜17 pt。SR のループ内に入れると 1 step が 4〜10 倍の見込み(2 粒子移動の Pf 比は未実測)。
       **ユーザーの関心(2026-11-08)**: Lanczos はいずれ実装するが、物理的描像が得られる最適化の改良を探したい。次に諮る候補:
       雑音なしの非線形最適化(3×4、熟議モード)/ K を最近接だけにしてコストを下げる試験 / T + HΨ の後処理の設計 / 零点の巻き数(6×3)
-- [x] backflow の 1 次の見積もり(2026-11-07、`scripts/backflow_bound.jl`)。Lanczos 1 段の方がずっと効くので、backflow の実装は優先しない
+- [x] backflow の 1 次の見積もり(2026-11-07、`scripts/analysis/backflow_bound.jl`)。Lanczos 1 段の方がずっと効くので、backflow の実装は優先しない
 - [ ] (候補)**物理の n(k)・S(q)**: `NVMCCalMode 1` は Pf 対応済み(`tools/parton_gen_green_def.jl`、InPartonPairOrbital・InJastrow が必須)。走行中の run と重なるので待ち行列に入れる。n(k) の後処理は未作成。3×4 は全配置列挙(`band_occ.jl` の `one_rdm`)でも出せる
 - [ ] (候補)**有効な格子の K=3 Chern**: 6×3 c21(κ 3×3)を完走させて最終の f を残す(1675 step で 7 分だった。Lx ≥ 9 の c31 も候補)
 - [ ] (候補)**フレーバー数射影の ρ^{aa}**: BCS の代わりに (N,N,N) へ射影した 1 体密度行列(ゲージ角の積分、K 一般、K=2 では今の定義に戻る)。n_a(κ) の定義を厳密にする
@@ -784,7 +788,7 @@ $J --project=/home/nozomihigashino/Julia-mVMC/MVMCOptimizers.jl scripts/analyze.
 - **検証**: 全配置列挙が Fock 空間の密行列と 1e−12 で一致(α F=2/F=3・Φ・Pf F=2/F=3。**F 奇数のフェルミオン符号も正しい**)。
   配置ごとの恒等式 E_loc = Σ t·G1 + Σ V·G2。小さい系の厳密値は `MVMCOptimizers.parton_exact_expectations`
 - 測定ループは逐次(スレッド並列なし)。並列は MPI
-- **実系検証済み**(`playground_nozomi/km/physcal/REPORT_physcal.md`): KM ν=1/2 4×4 の α(厳密解)と Pf(途中の状態)で、
+- **実系検証済み**(`playground_nozomi/projects/kapit_mueller/km/physcal/REPORT_physcal.md`): KM ν=1/2 4×4 の α(厳密解)と Pf(途中の状態)で、
   MPI 16 の測定 512 成分が全配置列挙の厳密値と統計誤差の範囲で一致。1 run 約 25 秒
 - **★次の一手**: C4 を課した 8×8 の解(`runs_c4L08/L08_ef4_fsym_c4n2_s1002`)と対照(`runs_orientfix/L08_ef4_s1009`)で
   ⟨b†_i b_j⟩・⟨n_i n_j⟩ を測り、射影後の状態の物理量が C4 対称になるかを見る。n(k)・S(q) の後処理はそのとき書く
@@ -796,7 +800,7 @@ fast-forward)。本体ディレクトリでそのまま使える。**ユーザ�
 開発用の worktree `/home/nozomihigashino/Julia-mVMC-pf` は 2026-11-01 に片付けた(ブランチ `parton-pf` は履歴として残す)。
 
 - **入口 = `docs/parton_pair.md`**(運用マニュアル)。設計 = `DESIGN_parton_pf.md`(唯一の正、
-  決定ログ §11、実装と試走 §13、結論 §13.6)。ベンチマークの run と道具 = `playground_nozomi/parton_pf/T4/`
+  決定ログ §11、実装と試走 §13、結論 §13.6)。ベンチマークの run と道具 = `playground_nozomi/dev/parton_pf/T4/`
 - 波動関数は Ψ = Σ_qp w_qp Pf F_qp(x)、F_IJ = f[(r_I,a_I),(r_J,a_J)]、M = K·N。**f = ΞJΞᵀ なら Pf F = ±Pf J ∏ det Φ^a**
   なので PartonMode = 1 を厳密に含む。f は def の idx ごとに SR で直接変分(上流の Pfaffian と同じ ×2 規約、未記載の対は構造的 0)
 - 入力: `PartonMode 2`・`NExUpdatePath 6`・`NFlavor ≥ 2`、namelist に `PartonPairOrbital`(必須、上流 orbitalidxgen と同じ列)と
@@ -822,9 +826,9 @@ fast-forward)。本体ディレクトリでそのまま使える。**ユーザ�
 
 ### ★新規: Φ 直接変分モード(上流型・第 1 段)を実装(2026-10-31)
 
-**入口 = `playground_nozomi/km/REPORT_orbparam.md`**。設計 = `DESIGN_parton.md` §12.11(優先)、
+**入口 = `playground_nozomi/projects/kapit_mueller/km/REPORT_orbparam.md`**。設計 = `DESIGN_parton.md` §12.11(優先)、
 計画 = `docs/superpowers/plans/2026-10-31-parton-orbparam-direct.md`、実装中の判断と後回しの一覧 =
-`playground_nozomi/km/orbparam_ledger.md`(Ruling / minor (deferred) の行)。
+`playground_nozomi/projects/kapit_mueller/km/orbparam_ledger.md`(Ruling / minor (deferred) の行)。
 **コミット済み: `d7cc568`**(parton-mode)。再開手順と次の一手は TODO リストの先頭。
 
 - `PartonOrbParam = 1` で Slater 行列式の軌道行列 Φ_f[s,n] の全要素を SR で直接変分する。
@@ -840,7 +844,7 @@ fast-forward)。本体ディレクトリでそのまま使える。**ユーザ�
   - (b′) KM ν=1/3 9×4 indep を α 最良解から: E は α と**統計誤差の範囲で同じ**(−3.9399、ED −3.9411)。
     Φ の列空間は 2000 step で 0.9° しか回らない(dt 0.003・StaDel 0.1 では動きが遅い)。cond = 1.0035 で漂流は無視できる
   - **判定: 致命的な問題なし**。α を下回るかは未確認(次は dt を上げる・StaDel を下げる・step を延ばす)
-  - 出力は `playground_nozomi/km/runs_orbparam/`(入力ごと)
+  - 出力は `playground_nozomi/projects/kapit_mueller/km/runs_orbparam/`(入力ごと)
 - **⟨O O†⟩ の組み立てを Φ モードだけ BLAS(ZHERK)に差し替えた**(`parton_finalize_oo_store!`)。
   上流 `finalize_oo_store!` は素朴な 3 重ループで、Φ モード(n_para 486)では実行時間の 91% を占めていた。
   1 step 4.3 s → 0.22 s。α は上流関数のまま(ビット一致)。上流の docstring は「行列積」と書くが実装はループ(upstream 報告候補)
@@ -857,7 +861,7 @@ fast-forward)。本体ディレクトリでそのまま使える。**ユーザ�
 
 ### ★新規: R(s) 診断(2026-09-05 更新)— バンド射影仮説は否定
 
-**入口 = `playground_nozomi/diag_R/` の REPORT.md → REPORT2 → … → `REPORT6.md`(最新)。
+**入口 = `playground_nozomi/projects/checkerboard/diag_R/` の REPORT.md → REPORT2 → … → `REPORT6.md`(最新)。
 後のものが前を撤回している。読むなら REPORT6 → REPORT5 → REPORT4 の順。**
 
 **一行結論(第6〜8次)**: **バンド射影でも内部構造でも CF 実効磁束でもない**。効くのは
@@ -968,9 +972,9 @@ C_{kl} の rank / 2 体項の局所性 / サイズ依存(ED データなし)/ cb
 
 ### ★新規: KM ν=1/2 フェルミオンの CFL を c = f₁f₂f₃ で(2026-10-23 更新)
 
-**入口 = `playground_nozomi/km/REPORT_cfl.md`**(§13 = ED、§14 = VMC 設計)。
+**入口 = `playground_nozomi/projects/kapit_mueller/km/REPORT_cfl.md`**(§13 = ED、§14 = VMC 設計)。
 
-#### 2026-11-02: 8×8 の Pf 最適解の物理量(軽い検討、`playground_nozomi/km_cfl_pf/physcal/NOTE.md`)
+#### 2026-11-02: 8×8 の Pf 最適解の物理量(軽い検討、`playground_nozomi/projects/kapit_mueller/cfl_pf/physcal/NOTE.md`)
 
 - **最良の変分状態(E −13.05)に CFL の形は見えない**。S/ρ が Q = (π/2, π) に 3.52 と集中し(C4 の相方 (π, π/2) は 1.28)、
   ED のサイズ列(N = 4/6/8 で 1.29/1.65/1.92、ほぼ N に線形)の外挿(約 3.2)と整合する = **ストライプ型 CDW 寄り**
@@ -1022,7 +1026,7 @@ f₃ = ゼロ磁場フェルミ海 = CFL。総和則・統計(F=3 奇数)・フ�
 
 ### ★新規: KM FCI への 1 粒子ドープ(エニオン)の VMC vs ED(2026-09-16 更新)
 
-**入口 = `playground_nozomi/km/REPORT_doping.md`**。N_φ を固定して粒子数だけ N0 ± 1 にした。
+**入口 = `playground_nozomi/projects/kapit_mueller/km/REPORT_doping.md`**。N_φ を固定して粒子数だけ N0 ± 1 にした。
 ED・VMC ともすべて PBS 経由(スクリプトは §ファイル参照)。
 
 #### 一行結論
@@ -1105,8 +1109,8 @@ ED・VMC ともすべて PBS 経由(スクリプトは §ファイル参照)。
 
 | 対象 | パス |
 |---|---|
-| VMC run | `playground_nozomi/km/runs/L*_hm8p0_{h1,e1}_s1001/` |
-| 解析の出力 | `playground_nozomi/km/qh_analysis/*.log` |
+| VMC run | `playground_nozomi/projects/kapit_mueller/km/runs/L*_hm8p0_{h1,e1}_s1001/` |
+| 解析の出力 | `playground_nozomi/projects/kapit_mueller/km/qh_analysis/*.log` |
 | VMC 側の道具 | `scripts/` の `km_doped_analyze.jl` / `km_overlap.jl` / `km_qh_span.jl` / `km_mf_spectrum.jl` / `km_flux.jl` |
 | PBS 投入 | `scripts/pbs_doped_vmc.sh` / `pbs_qh_overlap.sh` / `pbs_mf_spectrum.sh` / `pbs_flux.sh` / `pbs_improve.sh` |
 | ED 側 | `~/ED/Code/run/KapitMueller/` の `run_doped.jl` / `dense_momentum_count.jl` / `dense_vecs_doped.jl` / `variational_improve.jl` / `span_energy.jl` / `check_trans_sign.jl`、投入は `pbs_doped.sh` ほか |
@@ -1257,16 +1261,16 @@ n_idx 比例部分が支配する(積の項は (96,16) の 5.184 秒のうち 0.
   modpara の `NMPTrans` から来る。`qptransidx.def` とは独立経路だが
   `validate_parton_qp` が起動時に整合を検証する
 
-**道具**(すべて `playground_nozomi/cb_nu12_boson/scripts/`、git 管理外):
+**道具**(すべて `playground_nozomi/projects/checkerboard/nu12_boson/scripts/`、git 管理外):
 `c4_mf_symmetry.jl`(実空間ゲージ不変量)/ `c4_band_asym.jl`(バンドの C4 非対称度)/
 `check_c4_ucs.jl`(G_orb の C4 閉性)/ `pure_c4.jl`(どの操作が対称性か)/
 `costtest.sh`(n_qp × n_idx のコスト実測)/ `submit_c4_L08.sh`(本走の投入)
 
 ### Kapit-Mueller 模型を追加(2026-08-26)
 
-**入口 = `playground_nozomi/km/REPORT.md`**(中間レポート、現時点で見えているものの記録)。
+**入口 = `playground_nozomi/projects/kapit_mueller/km/REPORT.md`**(中間レポート、現時点で見えているものの記録)。
 設計 = `docs/superpowers/specs/2026-08-26-kapit-mueller-parton-design.md`(唯一の正)。
-判断ログ = `playground_nozomi/km/PROJECT.md`。
+判断ログ = `playground_nozomi/projects/kapit_mueller/km/PROJECT.md`。
 
 **一行結論**: **ν=1/2 はパートンアンザッツが厳密解**(E = −4.000000000000 /
 −6.000000000000、分散 0、ED と完全一致、最適化不要)。ν=1/3 は 9×4 で不足
@@ -1297,7 +1301,7 @@ n_idx 比例部分が支配する(積の項は (96,16) の 5.184 秒のうち 0.
 - **`tools/plot_parton_lattice.jl`**(2026-08-26): 参照実装 `lattice_EF.pdf` 相当の
   アンザッツ格子図。def 生成時に書かれる `parton_lattice.dat`(コアは読まない副産物)を
   読む。`plot_runs.jl` が **conv 図と一緒に生成**するので各 run の標準出力
-- run 出力 = `playground_nozomi/km/`(git 管理外)。
+- run 出力 = `playground_nozomi/projects/kapit_mueller/km/`(git 管理外)。
   scripts = `km_defs.jl` / `km_chain.jl` / `run_chain.sh` / `km_analyze.jl` / `km_overlap.jl`
 
 #### 拡大ユニットセルの取り方
@@ -1323,7 +1327,7 @@ n_idx 比例部分が支配する(積の項は (96,16) の 5.184 秒のうち 0.
   ν=1/3 では非自明だが 3 セクターの ⟨H⟩ は 1e−4 以内。**F 重の位相縮退を分離するには
   パートン境界条件のひねり**が要る(REPORT_sector.md と同じ構造)
 
-#### 踏んだ罠(詳細は `playground_nozomi/km/REPORT.md` §8)
+#### 踏んだ罠(詳細は `playground_nozomi/projects/kapit_mueller/km/REPORT.md` §8)
 
 1. **QP セクターの重みが常に 1 になっていた**(修正済み)。`kx = ksec·q` → 正しくは
    `kx = ksec`。3 セクターの E が 13 桁一致していたのは物理ではなくこれが原因
@@ -1344,7 +1348,7 @@ n_idx 比例部分が支配する(積の項は (96,16) の 5.184 秒のうち 0.
   9×5 `sym`、ν=1/2 の 4 本(hopmax 8.0 / 2.0)がすべて 3 段そろっている
 - **走行中**: 9×5 `indep` の 3 段(2026-08-27 09:58 投入、約 2.3 h)。
   ログ = `runs/_logs/9x5_indep_s1001.log`。集計は
-  `julia --project=. playground_nozomi/km/scripts/km_analyze.jl`
+  `julia --project=. playground_nozomi/projects/kapit_mueller/km/scripts/km_analyze.jl`
 - **どの run も段 1 が最良で、段 2/段 3 でわずかに悪化する**(9×5 で
   −4.92200 → −4.92181、差 1.9e−4 に対し MC 誤差 8.4e−5)。すでにプラトーなので
   段を重ねる利得はない。**比較は段 1 で採ること**
@@ -1365,7 +1369,7 @@ n_idx 比例部分が支配する(積の項は (96,16) の 5.184 秒のうち 0.
 ### checkerboard(従来の作業)
 
 
-### ★最優先で読む: `playground_nozomi/cb_nu12_boson/REPORT_sector.md`
+### ★最優先で読む: `playground_nozomi/projects/checkerboard/nu12_boson/REPORT_sector.md`
 
 2026-08-26 の一連の検証(seed 不安定性の診断 → セクター不変量 → 厳密列挙 →
 トーラス位相セクター → Step 5 再最適化)を**再開可能な形でまとめた唯一の入口**。
@@ -1380,7 +1384,7 @@ n_idx 比例部分が支配する(積の項は (96,16) の 5.184 秒のうち 0.
 - **アンザッツ比較キャンペーンは 2026-08-26 18:39 に停止**(135/170 run 完了、残り 35)。
   解析にコアを回すためのユーザー判断。再開は
   `submit_ansatz.jl --nu 1/3 --wave 1 --k13 -0.5 0`
-- **新しい道具**(すべて `playground_nozomi/cb_nu12_boson/scripts/`、git 管理外):
+- **新しい道具**(すべて `playground_nozomi/projects/checkerboard/nu12_boson/scripts/`、git 管理外):
   `sector_scan.jl`(セクター不変量)/ `exact_enum.jl` + `step2_exact.jl`(全配置の厳密列挙)/
   `torus_sector.jl`(境界ひねり)/ `step5_*.jl`(2 セクターアンザッツの厳密勾配最適化)
 - **ED 固有ベクトルを素のバイナリに抽出済み**(`ed_nu13_6x3_vecs.bin` /
@@ -1411,7 +1415,7 @@ n_idx 比例部分が支配する(積の項は (96,16) の 5.184 秒のうち 0.
 　診断の結果、**ef4 当たり解は 2×2 フラックス結晶で射影対称性を自発破壊
 　(gap 0.0016 のほぼギャップレス)し、QP 射影が対称性を復元していた**。
 　4×4 では対称多様体が破れ解に大差で負ける。詳細・開問題は
-　`playground_nozomi/cb_nu12_boson/PSG_NOTES.md`(唯一の正)。
+　`playground_nozomi/projects/checkerboard/nu12_boson/PSG_NOTES.md`(唯一の正)。
 ・**FCI アンザッツ比較キャンペーン フェーズ 1 を走行中**(2026-08-25 投入)。
 　「色々なアンザッツを試して最もエネルギーが下がるものを調べる」というユーザー依頼。
 　設計 = `docs/superpowers/specs/2026-08-25-fci-ansatz-survey-design.md`、
@@ -1424,7 +1428,7 @@ n_idx 比例部分が支配する(積の項は (96,16) の 5.184 秒のうち 0.
 　- **第 1 波(17 構成 × 10 seed = 170 run)を走行中**。ν=1/2 の 80 run は完走、
 　  ν=1/3 は 90 中 30 完了(2026-08-26 08:20 時点)。残り約 7〜9 h
 　  第 2 波 = ν=1/3 の `ef9 × full` 3 構成(163 h)は**後回し**(ユーザー指示)
-　- 出力: `playground_nozomi/cb_nu12_boson/runs_ansatz/`(roster = `_roster.dat`)
+　- 出力: `playground_nozomi/projects/checkerboard/nu12_boson/runs_ansatz/`(roster = `_roster.dat`)
 　- **ν=1/2 は全構成完走**。E_best = −16.275461(ef4·indep·full)、不足 0.0295。
 　  3 軸(ef4>xexet2 / indep>sym / full>model)とも理屈通りだが**全部足して 0.0069**
 　  しか動かない(ED 不足の 1/4)。既存の c4n2 = −16.28315 を誰も超えていない
@@ -1441,7 +1445,7 @@ n_idx 比例部分が支配する(積の項は (96,16) の 5.184 秒のうち 0.
 　  幅/gap ≈ 0.5 で飽和し、**ED が届く範囲では改善不能**(短辺 4 は 6×4 で数日規模)
 　- `zvo_out.dat` の 4 列目 = **規格化分散 σ²/E²**。ED 不要の品質指標として使える
 ・フェーズ B(8×8 ドープ)・キャンペーン再投入・PSG の続きはこの後。
-・詳細・判断ログはすべて `playground_nozomi/cb_nu12_boson/PROJECT.md`(唯一の正)。
+・詳細・判断ログはすべて `playground_nozomi/projects/checkerboard/nu12_boson/PROJECT.md`(唯一の正)。
 
 ## ブランチ運用(2026-08-14 確定)
 
@@ -1497,7 +1501,7 @@ git push origin main
 | **Pf パートン(PartonMode = 2)のマニュアル** | `docs/parton_pair.md` | 設計は `DESIGN_parton_pf.md`(本体 DESIGN の別冊)。2026-11-01 に parton-mode へ合流 |
 | テスト | `MVMCOptimizers.jl/test/` `MVMCExpertModeParsers.jl/test/` `test/` | |
 | 手元の計算 | `playground_nozomi/` | **git 管理外**(`.gitignore`)。入力・出力・診断コードが混在 |
-| アンザッツ比較の出力 | `playground_nozomi/cb_nu12_boson/runs_ansatz/` | 第 1 波 170 run。`_roster.dat` が一次データ |
+| アンザッツ比較の出力 | `playground_nozomi/projects/checkerboard/nu12_boson/runs_ansatz/` | 第 1 波 170 run。`_roster.dat` が一次データ |
 
 注意点:
 
@@ -1557,7 +1561,7 @@ julia --project=. ../tools/parton_gen_pair_def.jl out.def km 4 4 1/2 2 4 1
 # 実行(MPI 16。NVMCSample はランクあたり)
 MPX=$(julia --project=. -e 'using MPI; MPI.mpiexec(p -> print(p))')
 JULIA_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 $MPX -n 16 julia --project=. \
-  /home/nozomihigashino/Julia-mVMC/playground_nozomi/parton_pf/T4/run_case_mpi.jl <run>/namelist.def <run>/out_mpi16
+  /home/nozomihigashino/Julia-mVMC/playground_nozomi/dev/parton_pf/T4/run_case_mpi.jl <run>/namelist.def <run>/out_mpi16
 # 収束図と判定(<out_dir>/parton_conv.pdf)
 julia --project=/home/nozomihigashino/Julia-mVMC/tools ../tools/plot_parton_conv.jl <run>/out_mpi16
 ```
@@ -1579,7 +1583,7 @@ julia --project=/home/nozomihigashino/Julia-mVMC/tools ../tools/plot_parton_conv
 **再開手順**(試走はユーザー推奨の条件: dt 0.003・StaDel 0.1・RedCut 1e-8・2000 step・NVMCSample 2000・1 プロセス・小規模系):
 
 ```bash
-cat playground_nozomi/km/REPORT_orbparam.md           # 試走の結果と判定
+cat playground_nozomi/projects/kapit_mueller/km/REPORT_orbparam.md           # 試走の結果と判定
 # α 解 → Φ 入力 → modpara を編集 → 1 プロセスで実行
 julia --project=MVMCOptimizers.jl tools/parton_alpha_to_orbparam.jl <stage_in> <stage_out> <new_dir>
 JULIA_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 julia --project=MVMCOptimizers.jl -e \
@@ -1589,10 +1593,10 @@ JULIA_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 julia --project=MVMCOptimizers.jl -e 
 
 - [x] 第 1 段(上流型、§12.11)の実装・検証・試走(`d7cc568`)
 - [x] 制限付き Φ(PartonOrbIdx)と Bloch 形の生成・α からの変換(§12.12、計画 `docs/superpowers/plans/2026-10-31-parton-orbparam-restricted.md`)。
-      判断の記録は `playground_nozomi/km/orbparam_ledger_restricted.md`
+      判断の記録は `playground_nozomi/projects/kapit_mueller/km/orbparam_ledger_restricted.md`
 - [~] **ボソン ν=1/2 KM 8×4 のホールドープスキャン(N = 8 → 1)を Φ モードで実行中に一時停止**
       (2026-10-31、ユーザーが実装を変更するため。9 プロセスを SIGSTOP)。入口 =
-      `playground_nozomi/km_nu12_holedope_phi/README.md`(再開 / 破棄の手順、止めた時点の値)。
+      `playground_nozomi/projects/kapit_mueller/nu12_holedope_phi/README.md`(再開 / 破棄の手順、止めた時点の値)。
       厳密 KM なので E = −N に縮退し、見ているのは「乱数 Φ から縮退多様体に降りられるか」
 - [ ] **★次: KM ν=1/3 9×4 で α(−3.9399)を下回るか**。2000 step で Φ の列空間が 0.9° しか動かなかったので、
       dt を上げる / StaDel を下げる / step を延ばす。BLAS 化で 2000 step ≈ 8 分
@@ -1606,7 +1610,7 @@ JULIA_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 julia --project=MVMCOptimizers.jl -e 
 ### 検討待ち: CFL が出る模型の再検討(2026-11-02、着手は未定・ユーザー判断で記録のみ)
 
 **動機**: KM φ=1/2・U=1 の 8×8 で、最良の Pf 変分状態が CFL ではなく Q = (π/2, π) のストライプ型 CDW 寄りに見えた
-(`playground_nozomi/km_cfl_pf/physcal/NOTE.md`)。φ=1/2 は l_B = a/√(2πφ) ≈ 0.56a と格子間隔より短く、ρ = 1/4 はストライプと
+(`playground_nozomi/projects/kapit_mueller/cfl_pf/physcal/NOTE.md`)。φ=1/2 は l_B = a/√(2πφ) ≈ 0.56a と格子間隔より短く、ρ = 1/4 はストライプと
 通約するので、格子が CDW を後押ししている可能性がある。ED でも U とともにピークが伸びる(8×4: U = 0.1/1/7 で 1.47/1.92/2.61)。
 **着手前に熟議モードで詰める**。候補:
 
@@ -1638,15 +1642,15 @@ JULIA_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 julia --project=MVMCOptimizers.jl -e 
 ### KM のドープ(エニオン)(2026-09-16)
 
 **状況**: ED・VMC とも一通り完了し、結論は上の「★新規: KM FCI への 1 粒子ドープ」節と
-`playground_nozomi/km/REPORT_doping.md` にある。**走行中のジョブはない**。
+`playground_nozomi/projects/kapit_mueller/km/REPORT_doping.md` にある。**走行中のジョブはない**。
 
 **再開時にまず見るもの**:
 
 ```bash
 # VMC と ED の突き合わせ(ドープ系)
-julia --project=. playground_nozomi/km/scripts/km_doped_analyze.jl
+julia --project=. playground_nozomi/projects/kapit_mueller/km/scripts/km_doped_analyze.jl
 # 厳密列挙・1 粒子状態・フラックス・改善検証のログ
-ls -t playground_nozomi/km/qh_analysis/*.log
+ls -t playground_nozomi/projects/kapit_mueller/km/qh_analysis/*.log
 ```
 
 - [x] ED の準空孔多重項の数え上げ(4 系とも D_qh と一致)
@@ -1667,13 +1671,13 @@ ls -t playground_nozomi/km/qh_analysis/*.log
 
 ```bash
 # 1. run の進捗を見る
-cat playground_nozomi/cb_nu12_boson/runs_c4L08/_submit.log
-for d in playground_nozomi/cb_nu12_boson/runs_c4L08/L08_ef4_fsym_c4n2_s*; do
+cat playground_nozomi/projects/checkerboard/nu12_boson/runs_c4L08/_submit.log
+for d in playground_nozomi/projects/checkerboard/nu12_boson/runs_c4L08/L08_ef4_fsym_c4n2_s*; do
   printf "%-28s step=%5d  最小 E=%s\n" "${d##*/}" "$(wc -l < $d/stage1_out/zvo_out.dat)" \
     "$(awk 'NR>1{if($1<b||b==""){b=$1}}END{printf "%.5f", b}' $d/stage1_out/zvo_out.dat)"
 done
 # 2. 完走した run のバンド/実空間の C4 非対称度を測る(対照 = s1009 の band_c4 0.910)
-julia --project=. playground_nozomi/cb_nu12_boson/scripts/c4_band_asym.jl
+julia --project=. playground_nozomi/projects/checkerboard/nu12_boson/scripts/c4_band_asym.jl
 ```
 
 - [x] **s1001 / s1002 完走**(s1001 外れ −59.69 / **s1002 当たり −65.093**)。s1003 走行中
@@ -1855,4 +1859,4 @@ s1002(C4あり)0.00508 / s1009(C4なし)0.00444 と**ほぼ同じ**で、これ�
 - [ ] S 行列の定義差(上流規約が `Im⟨O_a⟩Im⟨O_b⟩` を落としている。REPORT §15-7)。
   既存 run の再現性に関わるので保留。upstream 報告候補
 - [ ] `NSplitSize > 1` の解禁検証(M3)
-- [ ] 診断コード(`playground_nozomi/diag_sr/`)を `test/` か `tools/` へ移すか判断する
+- [ ] 診断コード(`playground_nozomi/projects/checkerboard/diag_sr/`)を `test/` か `tools/` へ移すか判断する

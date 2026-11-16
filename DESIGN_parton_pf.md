@@ -260,8 +260,8 @@ PartonPairOrbital 読み込み(OptFlag 行を含む)
 | `validate_parton_data` は orbital_terms が空でないことと NOrbitalIdx ≠ 0 を拒否する | `parton_unsupported_inputs.jl:239-246, 331-338` | 「既存スピン Orbital との同時指定」の門番としてそのまま使える |
 | PfaPack の LTL 分解(`julia_zsktf2!` / `julia_zsktf2_turbo!`)→ `utu2pfa`(Pf)→ `utu2inv!`(逆行列)が上流の全再計算の部品。上流は格納の都合で最後に符号を反転する | `calculate_m_all.jl:172-215` | 契約 1 で流用する。符号は T1 の G·F = I で機械的に確かめる |
 | 奇数次元の Pf・不対軌道は上流にも無い | `types.jl:120, 193`、`PfaPack.jl/src/pfaffian.jl:24` | KN 奇数は門番で拒否 |
-| PfaPack の部品の規約(P1 で実測): `julia_zsktf2!` は上三角だけを読む。特異なら info > 0。`utu2inv!` の結果は X⁻¹ そのもの(‖A·X − I‖ ~ 1e−15) | `playground_nozomi/parton_pf/T4/checks/check_pfapack.jl` | 下の行の理由で、結局 Pf モードでは使わない |
-| **PfaPack の `julia_zsktf2!` は、消去すべき副列が全部 0 になるステップのある正則行列で info = 2 を返す**(P1 第 4 段で発見)。最小例: 2×2 ブロックの直和 [[0,a],[−a,0]] ⊕ [[0,b],[−b,0]]、その行と列を交互に並べたもの、C⁻¹ = [[0, −I], [I, 0]](K = 2)。いずれも正則なのに info = 2(本来は消去を飛ばせばよいだけ)。Pf モードでは、同フレーバーだけを組んだ f(adjacent ペアリング)で全配置が Pf = 0 と判定された。契約 2 の X = C⁻¹ + BᵀGB も BᵀGB が小さいとこの形に近づく | `playground_nozomi/parton_pf/T4/checks/debug_adjacent.jl`、T1 の「交互ブロック構造」テスト | **契約 1・2 の Pf は自前の Parlett–Reid(列ピボットつき、割り当てなし)、G は LU** に差し替えた(§8)。§12 の報告候補 |
+| PfaPack の部品の規約(P1 で実測): `julia_zsktf2!` は上三角だけを読む。特異なら info > 0。`utu2inv!` の結果は X⁻¹ そのもの(‖A·X − I‖ ~ 1e−15) | `playground_nozomi/dev/parton_pf/T4/checks/check_pfapack.jl` | 下の行の理由で、結局 Pf モードでは使わない |
+| **PfaPack の `julia_zsktf2!` は、消去すべき副列が全部 0 になるステップのある正則行列で info = 2 を返す**(P1 第 4 段で発見)。最小例: 2×2 ブロックの直和 [[0,a],[−a,0]] ⊕ [[0,b],[−b,0]]、その行と列を交互に並べたもの、C⁻¹ = [[0, −I], [I, 0]](K = 2)。いずれも正則なのに info = 2(本来は消去を飛ばせばよいだけ)。Pf モードでは、同フレーバーだけを組んだ f(adjacent ペアリング)で全配置が Pf = 0 と判定された。契約 2 の X = C⁻¹ + BᵀGB も BᵀGB が小さいとこの形に近づく | `playground_nozomi/dev/parton_pf/T4/checks/debug_adjacent.jl`、T1 の「交互ブロック構造」テスト | **契約 1・2 の Pf は自前の Parlett–Reid(列ピボットつき、割り当てなし)、G は LU** に差し替えた(§8)。§12 の報告候補 |
 | **PfaPack の `pfaffian_ltl!` は複素行列で n ≥ 4 のとき誤った値を返す**(実数行列と n = 2 では正しい)。本番経路は使っておらず、使うのは PfaPack 自身のテストだけ | `PfaPack.jl/src/pfaffian.jl:38`、P1 の実測(`utu2pfa` と独立な Parlett–Reid は一致し、`pfaffian_ltl!` だけがずれる) | Pf モードでは使わない。§12 の報告候補 |
 
 ## 4. アーキテクチャ
@@ -700,7 +700,7 @@ runinfo は時刻と githash の行を除いて一致。実行時間のファイ
 **T4 本番**: 乱数初期化だけを 4 系、推奨試走条件(dt 0.003・StaDel 0.1・RedCut 1e−8・2000 step)で回した。
 1 プロセスでは時間がかかるので、MPI 16 ランク(ランクあたり NVMCSample 125、合計 2000)に切り替えた(ユーザー了承)。
 CB 4×4 で 1 step 0.079 s(1 プロセスの約 10 倍速)。その後、1 段目の出力を In で読み込む追い込みの段
-(dt 0.001・StaDel 0.05・RedCut 1e−10、ユーザー指定)も回した。run は `playground_nozomi/parton_pf/T4/`(本体側、git 管理外)。
+(dt 0.001・StaDel 0.05・RedCut 1e−10、ユーザー指定)も回した。run は `playground_nozomi/dev/parton_pf/T4/`(本体側、git 管理外)。
 
 | 系 | 1 段目 | 追い込み後 | ED | PartonMode = 1 との差 |
 |---|---|---|---|---|
@@ -729,7 +729,7 @@ Ly = 4 のトーラスで 1 本のバンドを埋めると y 運動量の和は 
   平均して正則な J を作り、射影の残差 ≤ 1e−14、ip_Pf / ip_det は 200 配置で 1.6e−12 まで一定)。
   素朴な(エネルギー順の)異フレーバー組の J を平均すると特異になりうるので、乱数の J から平均すること
 - 同じセルでも、Pf の対関数は det^K より狭い運動量のセクターしか表せない。def で並進を共有するときは、
-  目的の状態の運動量と合っているかを必ず確かめる(`playground_nozomi/parton_pf/T4/checks/check_momentum.jl` の方法: 占有軌道への並進の作用 U_T の det。
+  目的の状態の運動量と合っているかを必ず確かめる(`playground_nozomi/dev/parton_pf/T4/checks/check_momentum.jl` の方法: 占有軌道への並進の作用 U_T の det。
   新しい def と QP で Mode 1 の解が厳密に表せることの検査は同じ場所の `check_sector.jl`)
 
 **(2) KM 9×4 の diagCut の 37 刻みの出入りは実装ミスではない**。最適化で Jastrow の最近接の斥力が強まり(v = −1.5 → −2.8)、
@@ -751,7 +751,7 @@ SR は厳密解の上で安定。乱数初期化で −3.88 に止まったの�
 
 ### 13.6 セクター合わせの再実行と、乱数スタートで下げきる処方(2026-11-01)
 
-run はすべて `playground_nozomi/parton_pf/T4/`、MPI 16 ランク・合計 2000 サンプル。
+run はすべて `playground_nozomi/dev/parton_pf/T4/`、MPI 16 ランク・合計 2000 サンプル。
 
 **(1) セクターを合わせた K = 3 の 2 系**(§13.5 (1) の def と QP)
 
@@ -763,7 +763,7 @@ run はすべて `playground_nozomi/parton_pf/T4/`、MPI 16 ランク・合計 2
 - KM 9×4 は f が 2 倍(1944 idx、実 3996 > サンプル 2000)で 1 step 2.08 s。同じ step では旧 def より遅れ、追い込みの終わりでも
   下がり続けている。§13.6 (4) の判定 1 と 5 を満たさないので、ED との差を表現力の議論に使えない
 - CB 6×3 は打ち切った(ユーザー判断)。ED の 3 重項は 3 つとも K = (−0.5, 0) で C2 だけが違い、パートン解は C2 = −1 側(E3)に
-  落ちる(本体 `playground_nozomi/cb_nu12_boson/REPORT_sector.md`)。運動量を合わせても基底状態 E1 は選べず、パートン境界条件の
+  落ちる(本体 `playground_nozomi/projects/checkerboard/nu12_boson/REPORT_sector.md`)。運動量を合わせても基底状態 E1 は選べず、パートン境界条件の
   y 方向 Z₃ ひねりが要る。この系の ED との差は実装の物差しにならない
 
 **(2) KM 4×4 の乱数スタートは、続ければ厳密解に届く**。追い込みの出力から 1 段目と同じ条件(dt 0.003・StaDel 0.1)で
@@ -810,7 +810,7 @@ E = −3.99928 ± 3e−5(σ²/E² 1.2e−4)。step 4500〜6500 は平らに見�
 区間内のブロック平均の直線当てはめで求める(終盤は前者の信号/雑音が 3e−4・0.3 以下で使えない)。Mode 1 の経路は分岐の手前で
 抜けるので変わらない(KM 9×4 の Mode 1 run で、標準出力が旧版と一致し PDF のサイズも同じことを確かめた)。
 
-**(6) T4 に残した道具**(本体側 `playground_nozomi/parton_pf/T4/`、git 管理外): `make_sector_inputs.jl`(セクター合わせの def と QP)、
+**(6) T4 に残した道具**(本体側 `playground_nozomi/dev/parton_pf/T4/`、git 管理外): `make_sector_inputs.jl`(セクター合わせの def と QP)、
 `prepare_extend.jl`(前の段の出力を In にして条件を変えた入力を作る)、`run_km44_scan.sh`(SR 設定のスキャン)、
 `random_mf_init.jl`(乱数のパートン平均場から f の初期値を作る。射影の残差 1.9e−14 を確認済み、run には未使用)、
 `pair_conv.jl`(ツール対応前の判定スクリプト。ツールで置き換え済み)、`checks/`(P1〜P2 の検証スクリプト一式)

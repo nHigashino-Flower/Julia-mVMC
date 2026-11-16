@@ -1,7 +1,7 @@
 # FCI アンザッツ比較キャンペーン(方針 1・フェーズ 1 = ED 系)設計
 
 作成 2026-08-25。brainstorming で確定した内容。判断ログは
-`playground_nozomi/cb_nu12_boson/PROJECT.md`(唯一の正)に日付付きで転記する。
+`playground_nozomi/projects/checkerboard/nu12_boson/PROJECT.md`(唯一の正)に日付付きで転記する。
 
 ## 0. 背景と目的
 
@@ -107,7 +107,7 @@
     (既存の共変性テストと同じ検査)、n_idx = (変位クラス数 + オンサイト) × 群数。
   - 6×3(nx ≠ ny)で (3,1)/(3,3) の fixture が生成でき、クラス数が理論値に一致。
 
-### 3.2 `playground_nozomi/cb_nu12_boson/scripts/gen_def.jl`
+### 3.2 `playground_nozomi/projects/checkerboard/nu12_boson/scripts/gen_def.jl`
 
 - `FILLINGS = Dict(:nu12 => (q=2, F=2, u_mf=0.0, u_phys=0.0, stat=:boson), :nu13 => (q=3, F=3, u_mf=1.0, u_phys=1.0, stat=:fermion))`。
 - `SYSTEMS` を `(nx, ny, nu)` で引けるようにし、`(4,4,:nu12)`・`(6,3,:nu13)` を登録
@@ -165,7 +165,7 @@
 - 完走判定(`chain.log` に stage1)でスキップ、`runs_ansatz/_roster.dat` に
   `run_id nu ansatz flavor graph seed started wall_sec status E_tail min_gap sDiagMax converged`
   を追記。`expect_gap = true`。失敗は記録して**続行**(1 構成の失敗で全体を止めない)。
-- 出力先 `playground_nozomi/cb_nu12_boson/runs_ansatz/`、ログ `_logs/`。
+- 出力先 `playground_nozomi/projects/checkerboard/nu12_boson/runs_ansatz/`、ログ `_logs/`。
 
 ### 3.6 `scripts/analyze_ansatz.jl`
 

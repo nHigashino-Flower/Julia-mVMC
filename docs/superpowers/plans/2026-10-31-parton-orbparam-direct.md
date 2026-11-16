@@ -408,7 +408,7 @@ Expected: すべて PASS(P 層は 1292 件が基準)
 git worktree add --detach <scratch>/baseline HEAD
 # SFMT.jl / PfaPack.jl はサブモジュールなので baseline 側へシンボリックリンクを張る
 ```
-入力は `playground_nozomi/km/runs/L4x4_nu12_sym_k0_hm8p0_s1001/stage1_in` をスクラッチへ複製し、modpara の `NSROptItrStep 20`・`NSROptItrSmp 5` に書き換えたもの。両方の worktree で
+入力は `playground_nozomi/projects/kapit_mueller/km/runs/L4x4_nu12_sym_k0_hm8p0_s1001/stage1_in` をスクラッチへ複製し、modpara の `NSROptItrStep 20`・`NSROptItrSmp 5` に書き換えたもの。両方の worktree で
 `$JL --project=<tree>/MVMCOptimizers.jl -e 'using MVMCOptimizers; exit(parton_run_para_opt_from_namelist(ARGS[1]; output_dir = ARGS[2]))' <in>/namelist.def <out>`
 を回し、`cmp` で比べる。
 
@@ -446,7 +446,7 @@ Expected: `zvo_out.dat`・`zvo_var.dat`・`zvo_SRinfo.dat`・`zvo_conv.dat`・`z
 
 - [ ] **Step 2: 失敗を確認する → Step 3: 道具を実装する → Step 4: 通過を確認する**
 
-- [ ] **Step 5: Φ-9 を手で回す**。`playground_nozomi/km/runs/L4x4_nu12_sym_k0_hm8p0_s1001/stage1_{in,out}` をスクラッチへ変換し、`NSROptItrStep 50`・`NSROptItrSmp 10` で 1 プロセス実行。
+- [ ] **Step 5: Φ-9 を手で回す**。`playground_nozomi/projects/kapit_mueller/km/runs/L4x4_nu12_sym_k0_hm8p0_s1001/stage1_{in,out}` をスクラッチへ変換し、`NSROptItrStep 50`・`NSROptItrSmp 10` で 1 プロセス実行。
 Expected: `zvo_out.dat` の全行で |E + 4| < 1e-8、分散(4 列目)< 1e-12。orbdiag の log10 cond が step を通じて一定
 
 ---
@@ -454,10 +454,10 @@ Expected: `zvo_out.dat` の全行で |E + 4| < 1e-8、分散(4 列目)< 1e-12。
 ### Task 11: 試走(Φ-10)と「致命的な問題」の判定
 
 **Files:**
-- Create: `playground_nozomi/km/REPORT_orbparam.md`(git 管理外)
+- Create: `playground_nozomi/projects/kapit_mueller/km/REPORT_orbparam.md`(git 管理外)
 - Modify: `.claude/CLAUDE.md`(現在の状況に結果を 1 節)
 
-- [ ] **Step 1: コストを実測する**。`playground_nozomi/km/runs/L9x4_nu13_indep_k0_hm8p0_s1001/stage1_{in,out}`(α の最良 −3.93989)を Task 10 の道具で変換し、`NSROptItrStep 20` で 1 プロセス実行。`zvo_parton_time.dat` から 1 step の秒数を読み、本走の step 数と並列数を決める(推測で決めない)
+- [ ] **Step 1: コストを実測する**。`playground_nozomi/projects/kapit_mueller/km/runs/L9x4_nu13_indep_k0_hm8p0_s1001/stage1_{in,out}`(α の最良 −3.93989)を Task 10 の道具で変換し、`NSROptItrStep 20` で 1 プロセス実行。`zvo_parton_time.dat` から 1 step の秒数を読み、本走の step 数と並列数を決める(推測で決めない)
 - [ ] **Step 2: 本走**(Step 1 で決めた条件。並列は MPI.jl 付属の mpiexec、BLAS は 1 スレッド)
 - [ ] **Step 3: §12.11 の目安で判定し、REPORT に書く**:
   - E が α の −3.93989 以下に来るか(ED −3.941102316835)

@@ -10,7 +10,7 @@
 
 **Architecture:** コア(`MVMCOptimizers.jl` などの `MVMC*` パッケージ)は無改修。
 変更は (a) 共有 fixture `test/physics/parton_fixture.jl` のアンザッツ生成の一般化、
-(b) `playground_nozomi/cb_nu12_boson/scripts/` の def 生成・ドライバ・投入・解析、
+(b) `playground_nozomi/projects/checkerboard/nu12_boson/scripts/` の def 生成・ドライバ・投入・解析、
 (c) `~/ED`(git 管理外)の 6×3 ED 計算と並進セクター測定、の 3 層。
 fixture の変更はすべて **既定値で従来と完全にビット一致**させ、新しい挙動は
 新しい kwarg でのみ有効化する。
@@ -59,7 +59,7 @@ ED 側は `~/Code/Module*.jl` + `~/K-S-Model/ParentCode/ModuleParentHamCB.jl`、
 | `test/physics/test_p0_ed_reference.jl`(改修) | P0-d(6×3 ED 台帳)の追加 |
 | `docs/superpowers/specs/2026-08-25-fci-ansatz-survey-design.md` | 設計(既存) |
 
-**playground(git 管理外)** — すべて `playground_nozomi/cb_nu12_boson/scripts/`
+**playground(git 管理外)** — すべて `playground_nozomi/projects/checkerboard/nu12_boson/scripts/`
 
 | ファイル | 責務 |
 |---|---|
@@ -238,7 +238,7 @@ Expected: ジョブ ID が返り、`qstat` に載る。**walltime は `qstat -f`
 git -C /home/nozomihigashino/Julia-mVMC status --short
 ```
 `~/ED` はこのリポジトリの外なのでコミット対象外。投入したジョブ ID と時刻を
-`playground_nozomi/cb_nu12_boson/PROJECT.md` の新セクションにメモする(Task 12 で本記録)。
+`playground_nozomi/projects/checkerboard/nu12_boson/PROJECT.md` の新セクションにメモする(Task 12 で本記録)。
 
 ---
 
@@ -733,8 +733,8 @@ git status --short
 ## Task 4: `gen_def.jl` を充填一般化する
 
 **Files:**
-- Modify: `playground_nozomi/cb_nu12_boson/scripts/gen_def.jl:52-58`(`ANSATZ`)、`:92-106`(`SYSTEMS` / `SEEDS`)、`:107-127`(`run_id`)、`:336-410`(`gen_stage1_def`)
-- Test: `playground_nozomi/cb_nu12_boson/scripts/test_gen_def.jl`(新規、playground 内の軽量チェック)
+- Modify: `playground_nozomi/projects/checkerboard/nu12_boson/scripts/gen_def.jl:52-58`(`ANSATZ`)、`:92-106`(`SYSTEMS` / `SEEDS`)、`:107-127`(`run_id`)、`:336-410`(`gen_stage1_def`)
+- Test: `playground_nozomi/projects/checkerboard/nu12_boson/scripts/test_gen_def.jl`(新規、playground 内の軽量チェック)
 
 **Interfaces:**
 - Consumes: Task 2/3 の `write_parton_def_files(...; flavor_groups, graph)`
@@ -747,7 +747,7 @@ git status --short
 
 - [ ] **Step 1: 失敗するテストを書く**
 
-`playground_nozomi/cb_nu12_boson/scripts/test_gen_def.jl`(新規):
+`playground_nozomi/projects/checkerboard/nu12_boson/scripts/test_gen_def.jl`(新規):
 
 ```julia
 # gen_def.jl の充填一般化の軽量チェック(playground 内。git 管理外)。
@@ -826,7 +826,7 @@ Run:
 ```bash
 cd /home/nozomihigashino/Julia-mVMC
 ~/.julia/juliaup/julia-1.10.2+0.x64.linux.gnu/bin/julia --project=MVMCOptimizers.jl \
-  playground_nozomi/cb_nu12_boson/scripts/test_gen_def.jl 2>&1 | tail -20
+  playground_nozomi/projects/checkerboard/nu12_boson/scripts/test_gen_def.jl 2>&1 | tail -20
 ```
 Expected: FAIL(`FILLINGS` が未定義)。
 
@@ -986,7 +986,7 @@ Run:
 ```bash
 cd /home/nozomihigashino/Julia-mVMC
 ~/.julia/juliaup/julia-1.10.2+0.x64.linux.gnu/bin/julia --project=MVMCOptimizers.jl \
-  playground_nozomi/cb_nu12_boson/scripts/test_gen_def.jl 2>&1 | tail -20
+  playground_nozomi/projects/checkerboard/nu12_boson/scripts/test_gen_def.jl 2>&1 | tail -20
 ```
 Expected: Fail 0。
 
@@ -996,7 +996,7 @@ Run:
 ```bash
 cd /home/nozomihigashino/Julia-mVMC
 ~/.julia/juliaup/julia-1.10.2+0.x64.linux.gnu/bin/julia --project=MVMCOptimizers.jl -e '
-include("playground_nozomi/cb_nu12_boson/scripts/gen_def.jl")
+include("playground_nozomi/projects/checkerboard/nu12_boson/scripts/gen_def.jl")
 d = mktempdir()
 gen_stage1_def(d; nx = 4, ny = 4, ne = 8, ansatz = :ef4, seed = 1001, stage = STAGES[1])
 for f in ("pmftrans.def", "pmfpara.def", "physhop.def", "qptransidx.def", "jastrowidx.def")
@@ -1007,7 +1007,7 @@ Expected: 既存 run(`runs_doped/L04_ef4_s1001/stage1_in/`)の同名ファイル
 一致する。比較:
 ```bash
 for f in pmftrans.def pmfpara.def physhop.def qptransidx.def jastrowidx.def; do
-  echo -n "$f "; md5sum < playground_nozomi/cb_nu12_boson/runs_doped/L04_ef4_s1001/stage1_in/$f
+  echo -n "$f "; md5sum < playground_nozomi/projects/checkerboard/nu12_boson/runs_doped/L04_ef4_s1001/stage1_in/$f
 done
 ```
 生成した一時ディレクトリの同名ファイルと md5 が一致すること
@@ -1027,7 +1027,7 @@ git status --short
 ## Task 5: `chain.jl` を充填一般化する
 
 **Files:**
-- Modify: `playground_nozomi/cb_nu12_boson/scripts/chain.jl:285-300`(`prepare_stage` の modpara 再生成)、`:306-372`(`run_stage`)、`:378-445`(CLI)
+- Modify: `playground_nozomi/projects/checkerboard/nu12_boson/scripts/chain.jl:285-300`(`prepare_stage` の modpara 再生成)、`:306-372`(`run_stage`)、`:378-445`(CLI)
 
 **Interfaces:**
 - Consumes: Task 4 の `FILLINGS` / `system_for` / `run_id(nx, ny, …)` / `gen_stage1_def(…; nu, flavor, graph, kx, ky)`
@@ -1174,7 +1174,7 @@ git status --short
 
 Run:
 ```bash
-cd /home/nozomihigashino/Julia-mVMC/playground_nozomi/cb_nu12_boson/scripts
+cd /home/nozomihigashino/Julia-mVMC/playground_nozomi/projects/checkerboard/nu12_boson/scripts
 grep -n 'run_id(' *.jl *.sh 2>/dev/null
 ```
 Expected: `chain.jl` / `submit_doped.jl` / `submit_serial.jl` / `analyze.jl` /
@@ -1192,11 +1192,11 @@ MPIEXEC=$(~/.julia/juliaup/julia-1.10.2+0.x64.linux.gnu/bin/julia --project=MVMC
 SCR=/tmp/claude-1004/-home-nozomihigashino-Julia-mVMC/88b12273-f9d2-435c-8378-38b8185b93cc/scratchpad
 CBNU12_QUICK=1 JULIA_NUM_THREADS=1 $MPIEXEC -n 4 \
   ~/.julia/juliaup/julia-1.10.2+0.x64.linux.gnu/bin/julia --project=MVMCOptimizers.jl \
-  playground_nozomi/cb_nu12_boson/scripts/chain.jl 4 ef4 9001 \
+  playground_nozomi/projects/checkerboard/nu12_boson/scripts/chain.jl 4 ef4 9001 \
   --label stage1 --spec 1 --runs $SCR/smoke 2>&1 | tail -5
 CBNU12_QUICK=1 JULIA_NUM_THREADS=1 $MPIEXEC -n 4 \
   ~/.julia/juliaup/julia-1.10.2+0.x64.linux.gnu/bin/julia --project=MVMCOptimizers.jl \
-  playground_nozomi/cb_nu12_boson/scripts/chain.jl 6 ef9 9001 \
+  playground_nozomi/projects/checkerboard/nu12_boson/scripts/chain.jl 6 ef9 9001 \
   --nu 1/3 --flavor 2+1 --graph model --label stage1 --spec 1 --runs $SCR/smoke 2>&1 | tail -5
 ls $SCR/smoke
 ```
@@ -1210,7 +1210,7 @@ Run:
 cd /home/nozomihigashino/Julia-mVMC
 CBNU12_QUICK=1 JULIA_NUM_THREADS=1 $MPIEXEC -n 4 \
   ~/.julia/juliaup/julia-1.10.2+0.x64.linux.gnu/bin/julia --project=MVMCOptimizers.jl \
-  playground_nozomi/cb_nu12_boson/scripts/chain.jl 4 ef4 9002 \
+  playground_nozomi/projects/checkerboard/nu12_boson/scripts/chain.jl 4 ef4 9002 \
   --graph full --label stage1 --spec 1 --runs $SCR/smoke 2>&1 | tail -5
 grep -c . $SCR/smoke/L04_ef4_full_s9002/stage1_in/pmftrans.def
 head -2 $SCR/smoke/L04_ef4_full_s9002/stage1_in/pmfpara.def | tail -1
@@ -1235,16 +1235,16 @@ PROJECT.md メモに書く。
 ## Task 6: `submit_ansatz.jl`(投入ドライバ)を書く
 
 **Files:**
-- Create: `playground_nozomi/cb_nu12_boson/scripts/submit_ansatz.jl`
+- Create: `playground_nozomi/projects/checkerboard/nu12_boson/scripts/submit_ansatz.jl`
 
 **Interfaces:**
 - Consumes: Task 4 の `run_id` / `SYSTEMS` / `system_for`、Task 5 の `chain.jl` CLI、`stage_io.jl` の `stage_summary(out_dir; expect_gap)`
-- Produces: `playground_nozomi/cb_nu12_boson/runs_ansatz/_roster.dat`(1 run 1 行)、
+- Produces: `playground_nozomi/projects/checkerboard/nu12_boson/runs_ansatz/_roster.dat`(1 run 1 行)、
   `runs_ansatz/_logs/<run_id>_stage1.log`
 
 - [ ] **Step 1: ドライバを書く**
 
-`playground_nozomi/cb_nu12_boson/scripts/submit_ansatz.jl`:
+`playground_nozomi/projects/checkerboard/nu12_boson/scripts/submit_ansatz.jl`:
 
 ```julia
 #=
@@ -1457,7 +1457,7 @@ Step 1 のコードはこの名前で書いてある。念のため実物で確�
 
 Run:
 ```bash
-sed -n '154,172p' /home/nozomihigashino/Julia-mVMC/playground_nozomi/cb_nu12_boson/scripts/stage_io.jl
+sed -n '154,172p' /home/nozomihigashino/Julia-mVMC/playground_nozomi/projects/checkerboard/nu12_boson/scripts/stage_io.jl
 ```
 Expected: `e_tail = t.mean` / `min_gap_tail = gp_tail` / `sdiagmax_tail = sd_tail` /
 `converged = …` が並ぶ。違っていたら Step 1 の書式指定をそちらへ合わせる。
@@ -1468,7 +1468,7 @@ Run:
 ```bash
 cd /home/nozomihigashino/Julia-mVMC
 ~/.julia/juliaup/julia-1.10.2+0.x64.linux.gnu/bin/julia --project=MVMCOptimizers.jl \
-  playground_nozomi/cb_nu12_boson/scripts/submit_ansatz.jl --nu all --k13 0 0 --dry-run
+  playground_nozomi/projects/checkerboard/nu12_boson/scripts/submit_ansatz.jl --nu all --k13 0 0 --dry-run
 ```
 Expected: 20 構成 × 10 seed = 200 run と表示され、run_id が §1 の行列と一致する
 (`L04_xexet2_fsym_s1001` … `L6x3_ef9_nu13_full_s1001` など)。
@@ -1479,7 +1479,7 @@ Run:
 ```bash
 cd /home/nozomihigashino/Julia-mVMC
 ~/.julia/juliaup/julia-1.10.2+0.x64.linux.gnu/bin/julia --project=MVMCOptimizers.jl \
-  playground_nozomi/cb_nu12_boson/scripts/submit_ansatz.jl --nu 1/3 --dry-run 2>&1 | tail -3
+  playground_nozomi/projects/checkerboard/nu12_boson/scripts/submit_ansatz.jl --nu 1/3 --dry-run 2>&1 | tail -3
 ```
 Expected: 「--k13 KX KY が必須」のエラー。
 
@@ -1490,14 +1490,14 @@ Run:
 cd /home/nozomihigashino/Julia-mVMC
 CBNU12_QUICK=1 ~/.julia/juliaup/julia-1.10.2+0.x64.linux.gnu/bin/julia \
   --project=MVMCOptimizers.jl \
-  playground_nozomi/cb_nu12_boson/scripts/submit_ansatz.jl \
+  playground_nozomi/projects/checkerboard/nu12_boson/scripts/submit_ansatz.jl \
   --nu 1/2 --seeds 9001:9001 --np 4 2>&1 | tail -20
-head -5 playground_nozomi/cb_nu12_boson/runs_ansatz/_roster.dat
+head -5 playground_nozomi/projects/checkerboard/nu12_boson/runs_ansatz/_roster.dat
 ```
 Expected: 8 run(QUICK なので各数秒)が走り、roster に 8 行 + ヘッダ。
 **確認後、QUICK で作った run を消す**:
 ```bash
-rm -rf playground_nozomi/cb_nu12_boson/runs_ansatz
+rm -rf playground_nozomi/projects/checkerboard/nu12_boson/runs_ansatz
 ```
 
 ---
@@ -1507,7 +1507,7 @@ rm -rf playground_nozomi/cb_nu12_boson/runs_ansatz
 Task 1 の ED が完走してから実行する。
 
 **プレフライト裁定(Ruling 2、2026-08-25)**: 本タスクは新規実装ではなく
-**既存 `playground_nozomi/cb_nu12_boson/scripts/ed_c4_eigenvalue.jl` の派生**として書く。
+**既存 `playground_nozomi/projects/checkerboard/nu12_boson/scripts/ed_c4_eigenvalue.jl` の派生**として書く。
 当初の記述には実行不能な欠陥が 3 件あった:
 
 1. マスクの全探索(`for m = 0:(1<<36 - 1)`)は 6.9e10 反復で不可能。
@@ -1520,8 +1520,8 @@ Task 1 の ED が完走してから実行する。
 **フェルミオンの置換符号**と、NX/NY/NE/パスの CLI 化だけを足す。
 
 **Files:**
-- Create: `playground_nozomi/cb_nu12_boson/scripts/ed_translation_sector.jl`
-- Reference: `playground_nozomi/cb_nu12_boson/scripts/ed_c4_eigenvalue.jl`(流用元。**変更しない**)
+- Create: `playground_nozomi/projects/checkerboard/nu12_boson/scripts/ed_translation_sector.jl`
+- Reference: `playground_nozomi/projects/checkerboard/nu12_boson/scripts/ed_c4_eigenvalue.jl`(流用元。**変更しない**)
 
 **Interfaces:**
 - Consumes: Task 1 の jld2(キー `"totalenergy"` / `"eigenstates"`)
@@ -1532,7 +1532,7 @@ Task 1 の ED が完走してから実行する。
 
 Run:
 ```bash
-cat /home/nozomihigashino/Julia-mVMC/playground_nozomi/cb_nu12_boson/scripts/ed_c4_eigenvalue.jl
+cat /home/nozomihigashino/Julia-mVMC/playground_nozomi/projects/checkerboard/nu12_boson/scripts/ed_c4_eigenvalue.jl
 ```
 Expected: `rank_of`(colex 順位)、`perm_mask`(符号なし置換)、`overlap`(Gosper
 ホップで基底を走査しつつ ⟨ψ|P|φ⟩ を積む)、`site_to_xy` / `xy_to_site` / `t_of` が読める。
@@ -1541,7 +1541,7 @@ Expected: `rank_of`(colex 順位)、`perm_mask`(符号なし置換)、`overlap`(
 
 - [ ] **Step 2: スクリプトを書く**
 
-`playground_nozomi/cb_nu12_boson/scripts/ed_translation_sector.jl`:
+`playground_nozomi/projects/checkerboard/nu12_boson/scripts/ed_translation_sector.jl`:
 
 ```julia
 # ED 固有状態の単位胞並進固有値(運動量セクター)を測る。
@@ -1682,7 +1682,7 @@ Run:
 ```bash
 cd /home/nozomihigashino/Julia-mVMC
 ~/.julia/juliaup/julia-1.10.2+0.x64.linux.gnu/bin/julia --project=MVMCOptimizers.jl \
-  playground_nozomi/cb_nu12_boson/scripts/ed_translation_sector.jl \
+  playground_nozomi/projects/checkerboard/nu12_boson/scripts/ed_translation_sector.jl \
   "/home/nozomihigashino/ED/Data/Checkerboard/Boson/t=1.0-t1=0.293-t2=-0.293-t3=0.207-ψ=0.785/Nx=4-Ny=4-N=8-q=2-r=0.0/n=0/U=0.0-V=0.0/Psite-Vp=0-0.0/result_eigen_periodic.jld2" \
   4 4 8 3 --boson 2>&1 | tail -10
 ```
@@ -1702,10 +1702,10 @@ D="/home/nozomihigashino/ED/Data/Checkerboard/Fermion/t=1.0-t1=0.293-t2=-0.293-t
 ls "$D"
 J="$D/withoutRandomPotential_result_eigen_periodic.jld2"
 ~/.julia/juliaup/julia-1.10.2+0.x64.linux.gnu/bin/julia --project=MVMCOptimizers.jl \
-  playground_nozomi/cb_nu12_boson/scripts/ed_translation_sector.jl "$J" 6 3 6 6 2>&1 | tail -14
+  playground_nozomi/projects/checkerboard/nu12_boson/scripts/ed_translation_sector.jl "$J" 6 3 6 6 2>&1 | tail -14
 echo "--- 符号なし(対照) ---"
 ~/.julia/juliaup/julia-1.10.2+0.x64.linux.gnu/bin/julia --project=MVMCOptimizers.jl \
-  playground_nozomi/cb_nu12_boson/scripts/ed_translation_sector.jl "$J" 6 3 6 6 --boson 2>&1 | tail -14
+  playground_nozomi/projects/checkerboard/nu12_boson/scripts/ed_translation_sector.jl "$J" 6 3 6 6 --boson 2>&1 | tail -14
 ```
 **注意**: Task 1 で `r = 1.0e8` になっていた場合はディレクトリ名の `r=0.0` を
 `r=1.0e8` に読み替える。`ls "$D"` が失敗したら `find /home/nozomihigashino/ED/Data/Checkerboard/Fermion -path '*Nx=6-Ny=3-N=6*' -name '*.jld2'` で探す。
@@ -1865,7 +1865,7 @@ git status --short
 
 **Interfaces:**
 - Consumes: Task 6 の `submit_ansatz.jl`
-- Produces: `playground_nozomi/cb_nu12_boson/runs_ansatz/` に 80 run + roster 80 行
+- Produces: `playground_nozomi/projects/checkerboard/nu12_boson/runs_ansatz/` に 80 run + roster 80 行
 
 - [ ] **Step 1: マシンが空いていることを確認する**
 
@@ -1882,7 +1882,7 @@ Run:
 ```bash
 cd /home/nozomihigashino/Julia-mVMC
 ~/.julia/juliaup/julia-1.10.2+0.x64.linux.gnu/bin/julia --project=MVMCOptimizers.jl \
-  playground_nozomi/cb_nu12_boson/scripts/submit_ansatz.jl --nu 1/2 --dry-run
+  playground_nozomi/projects/checkerboard/nu12_boson/scripts/submit_ansatz.jl --nu 1/2 --dry-run
 ```
 Expected: 8 構成 × 10 seed = 80 run。
 
@@ -1893,8 +1893,8 @@ Run:
 cd /home/nozomihigashino/Julia-mVMC
 nohup ~/.julia/juliaup/julia-1.10.2+0.x64.linux.gnu/bin/julia \
   --project=MVMCOptimizers.jl \
-  playground_nozomi/cb_nu12_boson/scripts/submit_ansatz.jl --nu 1/2 \
-  > playground_nozomi/cb_nu12_boson/runs_ansatz_nu12_submit.log 2>&1 &
+  playground_nozomi/projects/checkerboard/nu12_boson/scripts/submit_ansatz.jl --nu 1/2 \
+  > playground_nozomi/projects/checkerboard/nu12_boson/runs_ansatz_nu12_submit.log 2>&1 &
 echo $!
 ```
 Expected: PID が返る。ログに `[1/80] L04_xexet2_fsym_s1001 開始` が出る。
@@ -1905,8 +1905,8 @@ Expected: PID が返る。ログに `[1/80] L04_xexet2_fsym_s1001 開始` が出
 
 Run:
 ```bash
-tail -5 /home/nozomihigashino/Julia-mVMC/playground_nozomi/cb_nu12_boson/runs_ansatz_nu12_submit.log
-tail -3 /home/nozomihigashino/Julia-mVMC/playground_nozomi/cb_nu12_boson/runs_ansatz/_roster.dat
+tail -5 /home/nozomihigashino/Julia-mVMC/playground_nozomi/projects/checkerboard/nu12_boson/runs_ansatz_nu12_submit.log
+tail -3 /home/nozomihigashino/Julia-mVMC/playground_nozomi/projects/checkerboard/nu12_boson/runs_ansatz/_roster.dat
 ```
 Expected: roster に E_tail が入った行が積まれている。E_tail が
 **−16 付近**(ν=1/2 4×4 の ED は −16.3049)。桁が違ったら止めて原因を調べる。
@@ -1917,7 +1917,7 @@ Expected: roster に E_tail が入った行が積まれている。E_tail が
 
 Run:
 ```bash
-grep full /home/nozomihigashino/Julia-mVMC/playground_nozomi/cb_nu12_boson/runs_ansatz/_roster.dat | head -3
+grep full /home/nozomihigashino/Julia-mVMC/playground_nozomi/projects/checkerboard/nu12_boson/runs_ansatz/_roster.dat | head -3
 ```
 Expected: `wall_sec` が読める。80 run の総見積りを更新し、Task 12 でメモする。
 `full` が `model` の 10 倍を超えるようなら、seed を 10 → 5 に減らすかどうかを
@@ -1948,9 +1948,9 @@ Run:
 cd /home/nozomihigashino/Julia-mVMC
 KX=<Task 7 の値>; KY=<Task 7 の値>
 ~/.julia/juliaup/julia-1.10.2+0.x64.linux.gnu/bin/julia --project=MVMCOptimizers.jl \
-  playground_nozomi/cb_nu12_boson/scripts/submit_ansatz.jl \
+  playground_nozomi/projects/checkerboard/nu12_boson/scripts/submit_ansatz.jl \
   --nu 1/3 --k13 $KX $KY --seeds 1001:1001 --np 16 2>&1 | tail -20
-grep nu13 playground_nozomi/cb_nu12_boson/runs_ansatz/_roster.dat
+grep nu13 playground_nozomi/projects/checkerboard/nu12_boson/runs_ansatz/_roster.dat
 ```
 Expected: 12 run が順に走る(構成ごとに 1 seed)。E_tail が ED の
 基底エネルギー(Task 8 Step 1 の `E0`)と**同じ桁**。極端に違ったら止める。
@@ -1962,9 +1962,9 @@ Run:
 cd /home/nozomihigashino/Julia-mVMC
 nohup ~/.julia/juliaup/julia-1.10.2+0.x64.linux.gnu/bin/julia \
   --project=MVMCOptimizers.jl \
-  playground_nozomi/cb_nu12_boson/scripts/submit_ansatz.jl \
+  playground_nozomi/projects/checkerboard/nu12_boson/scripts/submit_ansatz.jl \
   --nu 1/3 --k13 $KX $KY \
-  > playground_nozomi/cb_nu12_boson/runs_ansatz_nu13_submit.log 2>&1 &
+  > playground_nozomi/projects/checkerboard/nu12_boson/runs_ansatz_nu13_submit.log 2>&1 &
 echo $!
 ```
 Expected: 済みの 12 run はスキップされ、残り 108 run が走る。
@@ -1973,8 +1973,8 @@ Expected: 済みの 12 run はスキップされ、残り 108 run が走る。
 
 Run:
 ```bash
-wc -l /home/nozomihigashino/Julia-mVMC/playground_nozomi/cb_nu12_boson/runs_ansatz/_roster.dat
-tail -3 /home/nozomihigashino/Julia-mVMC/playground_nozomi/cb_nu12_boson/runs_ansatz_nu13_submit.log
+wc -l /home/nozomihigashino/Julia-mVMC/playground_nozomi/projects/checkerboard/nu12_boson/runs_ansatz/_roster.dat
+tail -3 /home/nozomihigashino/Julia-mVMC/playground_nozomi/projects/checkerboard/nu12_boson/runs_ansatz_nu13_submit.log
 ```
 Expected: roster が 200 行 + ヘッダに向かって伸びる。
 
@@ -1983,7 +1983,7 @@ Expected: roster が 200 行 + ヘッダに向かって伸びる。
 ## Task 11: 集計と Chern 判定(`analyze_ansatz.jl`)
 
 **Files:**
-- Create: `playground_nozomi/cb_nu12_boson/scripts/analyze_ansatz.jl`
+- Create: `playground_nozomi/projects/checkerboard/nu12_boson/scripts/analyze_ansatz.jl`
 - Modify: `tools/parton_band_chern.jl`(`EXEY` に `ef9` / `xexet3` を追加、usage 文字列 2 箇所)
 
 **Interfaces:**
@@ -2015,10 +2015,10 @@ Expected: `const EXEY = Dict(:ef4 => (2, 2), :xexet2 => (2, 1))` 相当の定義
 Run:
 ```bash
 cd /home/nozomihigashino/Julia-mVMC
-RID=$(grep nu13 playground_nozomi/cb_nu12_boson/runs_ansatz/_roster.dat | head -1 | awk '{print $1}')
-ANS=$(grep nu13 playground_nozomi/cb_nu12_boson/runs_ansatz/_roster.dat | head -1 | awk '{print $3}')
+RID=$(grep nu13 playground_nozomi/projects/checkerboard/nu12_boson/runs_ansatz/_roster.dat | head -1 | awk '{print $1}')
+ANS=$(grep nu13 playground_nozomi/projects/checkerboard/nu12_boson/runs_ansatz/_roster.dat | head -1 | awk '{print $3}')
 ~/.julia/juliaup/julia-1.10.2+0.x64.linux.gnu/bin/julia --project=tools \
-  tools/parton_band_chern.jl playground_nozomi/cb_nu12_boson/runs_ansatz/$RID/stage1_out \
+  tools/parton_band_chern.jl playground_nozomi/projects/checkerboard/nu12_boson/runs_ansatz/$RID/stage1_out \
   --nux 6 --nuy 3 --ansatz $ANS 2>&1 | tail -20
 ```
 Expected: 3 フレーバー分の Chern 数(`C_occ`)が出る。落ちたら **nx ≠ ny か F=3 の
@@ -2028,7 +2028,7 @@ Expected: 3 フレーバー分の Chern 数(`C_occ`)が出る。落ちたら **n
 
 - [ ] **Step 3: 集計スクリプトを書く**
 
-`playground_nozomi/cb_nu12_boson/scripts/analyze_ansatz.jl`:
+`playground_nozomi/projects/checkerboard/nu12_boson/scripts/analyze_ansatz.jl`:
 
 ```julia
 #=
@@ -2141,7 +2141,7 @@ Run:
 ```bash
 cd /home/nozomihigashino/Julia-mVMC
 ~/.julia/juliaup/julia-1.10.2+0.x64.linux.gnu/bin/julia --project=MVMCOptimizers.jl \
-  playground_nozomi/cb_nu12_boson/scripts/analyze_ansatz.jl 2>&1 | tail -20
+  playground_nozomi/projects/checkerboard/nu12_boson/scripts/analyze_ansatz.jl 2>&1 | tail -20
 ```
 Expected: 8 構成の表が出る。ΔE が正(VMC は変分上界なので ED より高い)。
 **ΔE が負なら重大なバグ**(ハミルトニアンか ED 参照が違う)なので止めて調べる。
@@ -2152,7 +2152,7 @@ Run:
 ```bash
 cd /home/nozomihigashino/Julia-mVMC
 ~/.julia/juliaup/julia-1.10.2+0.x64.linux.gnu/bin/julia --project=MVMCOptimizers.jl \
-  playground_nozomi/cb_nu12_boson/scripts/analyze_ansatz.jl --chern 2>&1 | tail -30
+  playground_nozomi/projects/checkerboard/nu12_boson/scripts/analyze_ansatz.jl --chern 2>&1 | tail -30
 ```
 Expected: 各構成の最良 run について、フレーバーごとの C_occ が出る。
 FCI = 全フレーバーで |C| = 1 で符号が揃う。
@@ -2165,8 +2165,8 @@ Run:
 ```bash
 cd /home/nozomihigashino/Julia-mVMC
 ~/.julia/juliaup/julia-1.10.2+0.x64.linux.gnu/bin/julia --project=MVMCOptimizers.jl \
-  playground_nozomi/cb_nu12_boson/scripts/analyze_ansatz.jl --chern 2>&1 | tail -40
-cat playground_nozomi/cb_nu12_boson/runs_ansatz/_summary.md
+  playground_nozomi/projects/checkerboard/nu12_boson/scripts/analyze_ansatz.jl --chern 2>&1 | tail -40
+cat playground_nozomi/projects/checkerboard/nu12_boson/runs_ansatz/_summary.md
 ```
 Expected: 20 構成の表が完成する。
 
@@ -2175,7 +2175,7 @@ Expected: 20 構成の表が完成する。
 ## Task 12: 結果を PROJECT.md と CLAUDE.md に記録する
 
 **Files:**
-- Modify: `playground_nozomi/cb_nu12_boson/PROJECT.md`(メモ節に追記)
+- Modify: `playground_nozomi/projects/checkerboard/nu12_boson/PROJECT.md`(メモ節に追記)
 - Modify: `.claude/CLAUDE.md`(現在の状況と TODO を更新)
 
 **Interfaces:**
@@ -2183,7 +2183,7 @@ Expected: 20 構成の表が完成する。
 
 - [ ] **Step 1: PROJECT.md にメモを追記する**
 
-`playground_nozomi/cb_nu12_boson/PROJECT.md` の「## セクション」の**直前**
+`playground_nozomi/projects/checkerboard/nu12_boson/PROJECT.md` の「## セクション」の**直前**
 (既存メモ群の末尾)に追加する。内容:
 
 - 見出し `### 2026-08-25 FCI アンザッツ比較キャンペーン フェーズ 1(ED 系)`

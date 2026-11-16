@@ -6,7 +6,7 @@ SR の変分パラメータとして直接最適化するモード。上流 mVMC
 def で掛けられる。
 
 設計の根拠は `DESIGN_parton.md` §12.11(上流型)と §12.12(制限付き Φ・Bloch 形)、
-試走の結果は `playground_nozomi/km/REPORT_orbparam.md`(git 管理外)にある。
+試走の結果は `playground_nozomi/projects/kapit_mueller/km/REPORT_orbparam.md`(git 管理外)にある。
 
 ## 1. α モードとの違い
 
